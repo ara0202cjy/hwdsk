@@ -1206,9 +1206,9 @@ function delTodo(id){
    母版存于 state.masters；每天查看时按规则惰性生成「实例」写入 state.todos。
    日锁定：每天出现；周锁定：与母版 origin 同一星期几才出现。
    ★ 锁定规则（统一）：「操作日」= 你点击锁定/解锁按钮那一项的日期 ad。
-     · 锁定：仅对 ad 及之后的日期生效；ad 之前的清单永远不会被改动。
-     · 解锁：仅停止 ad 之后的循环、删除 ad 之后未完成的实例；ad 当天仅去掉标记保留，
-       ad 之前的清单不动。
+     · 锁定：对 ad 及之后的「每一日」均生效，并加入后续对应清单；ad 之前的清单永远不会被改动。
+     · 解锁：对 ad 之后的「每一日」均生效——该项从 ad 之后所有日期的清单中清除
+       （无论完成与否，均不再有该项作业内容）；ad 当天仅去掉标记保留，ad 之前不动。
      · 修改内容/预估：仅同步到 ad 之后的实例，不回溯改之前的。
    单击锁定键 = 固定；再次单击同一键 = 取消。
    单天删除 = 仅把该天加入母版 skip，循环照常。 */
@@ -1250,11 +1250,14 @@ function setLock(id, type){
   const ad = t.date;                                 // 「操作日」= 点击该项当天的日期
   let m = t.masterId ? getMaster(t.masterId) : null;
   if(type===null){
-    // 解锁：仅停止 ad 之后的循环；ad 当天只去掉标记保留，ad 之前清单不动
+    // 解锁：对「操作日之后」的每一日生效——清除该项（含已完成）；操作日当天仅去标记保留，之前不动
     if(m){
-      state._delM[m.id]=Date.now();                  // 墓碑：跨端同步停止循环
+      state._delM[m.id]=Date.now();                  // 母版删除墓碑：跨端停止循环
       state.masters = state.masters.filter(x=>x.id!==m.id);
-      state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>ad) );  // 仅删 ad 之后未完成实例
+      state.todos = state.todos.filter(x=>{          // ad 之后每一日均清除（无论完成与否），并记墓碑防云端复活
+        if(x.masterId===m.id && x.date>ad){ tombstone(x.id); return false; }
+        return true;
+      });
     }
     t.lock=null; t.masterId=null; touch(t);
     save(); renderList(); syncDerived();
@@ -2326,7 +2329,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.6";
+const APP_VERSION = "2026.09.10.7";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
