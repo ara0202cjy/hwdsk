@@ -198,6 +198,16 @@
   .mini-btn{width:30px; height:30px; flex:0 0 30px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5;}
   .mini-btn:active{background:var(--ink-soft);}
   .mini-btn.del{color:var(--red); border-color:#f0d3cf;}
+  .mini-btn.lock{font-size:13px; font-weight:800; color:var(--muted);}
+  .mini-btn.lock.on{color:#fff; background:var(--sun); border-color:var(--sun);}
+  .mini-btn.lock.week.on{background:#7a8cff; border-color:#7a8cff;}
+  .add-est{width:62px; flex:0 0 62px; min-width:0; border:1.5px solid var(--line); border-radius:12px; padding:0 8px; font-size:14px; background:#fcfaf5; color:var(--text); text-align:center;}
+  .day-summary{display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:12px; background:linear-gradient(135deg,#fff7e6,#fdeecb); border:1.5px solid #f1e0b8; border-radius:16px;}
+  .day-summary .ds-ico{width:36px; height:36px; flex:0 0 36px; border-radius:11px; background:var(--sun); display:flex; align-items:center; justify-content:center;}
+  .day-summary .ds-main{display:flex; flex-direction:column; gap:2px;}
+  .day-summary .ds-t{font-size:12.5px; color:#9a7b3a; font-weight:600;}
+  .day-summary .ds-v{font-size:21px; font-weight:800; color:#7a5e1e; line-height:1.1;}
+  .day-summary .ds-n{margin-left:auto; font-size:12.5px; color:#9a7b3a; text-align:right;}
   .done-sec .todo-title{color:var(--muted); text-decoration:line-through;}
   .done-sec .card-h .subj-dot{background:var(--gray);}
   .expo{display:none; padding:10px 0 8px 38px; margin-top:2px; border-top:1px dashed var(--line);}
@@ -666,6 +676,8 @@ function load(){
   if(!state || !state.todos){ state = seed(); save(); }
   if(!state.tasks){ state.tasks = []; }
   if(!state._del){ state._del = {}; }        // 删除墓碑：防止已删条目被云端“复活”
+  if(!Array.isArray(state.masters)) state.masters = [];   // 循环锁定母版（每日/每周）
+  if(!state._delM) state._delM = {};          // 母版删除墓碑：跨端同步停止循环
   /* 彻底移除常用词/高频词功能：删除旧数据字段，不再存储、不再同步 */
   delete state.chips; delete state.hot; delete state.hotBlock;
   pruneTombstones();
@@ -688,7 +700,7 @@ function rint(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
 
 function seed(){
   /* 正式使用：不再生成任何示例/演示数据，全新安装从空开始（避免示例混入统计与云端） */
-  return { todos:[], tasks:[], _del:{}, _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, _syncedAt:0 };
   const todos = [];
   const today = new Date(); today.setHours(0,0,0,0);
   const pool = {
@@ -748,6 +760,8 @@ function mkTodo(date, subject, title, o={}){
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null, sample:false,
     segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
+    masterId:null,         // 循环锁定：指向 state.masters 的母版 id；空=一次性作业
+    lock:null,             // 本条目循环类型：'daily' | 'weekly' | null
     _u: Date.now()         // 本条最后修改时间（多端合并时以新的为准）
   }, o);
 }
@@ -980,12 +994,16 @@ function fmtDur(ms){
 
 function renderList(){
   const ds = ymd(viewDate);
+  genRecurring(ds);
   const ts = todosOf(ds);
   const bySubj = {}; SUBJECTS.forEach(s=>bySubj[s]=[]);
   const doneArr = [];
   ts.forEach(t=>{ if(t.done) doneArr.push(t); else (bySubj[t.subject]||(bySubj[t.subject]=[])).push(t); });
 
   let html="";
+  const totalEst = ts.reduce((a,t)=>a+(t.estMin||0),0);
+  const doneN = ts.filter(t=>t.done).length;
+  html += `<div class="day-summary"><div class="ds-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="ds-main"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 预计作业时间总和</span><span class="ds-v">${fmtEst(totalEst)}</span></div><div class="ds-n">共 ${ts.length} 项 · 已完成 ${doneN} 项</div></div>`;
   SUBJECTS.forEach(subj=>{
     const arr = bySubj[subj]||[];
     const total = ts.filter(t=>t.subject===subj).length;
@@ -1014,7 +1032,7 @@ function renderList(){
     <div class="seg4" id="seg4">`;
   SUBJECTS.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${s}" onclick="pickAddSubj(this)">${s}</button>`);
   html += `</div>
-    <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><button class="plus" onclick="doAdd()">+</button></div>
+    <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><button class="plus" onclick="doAdd()">+</button></div>
     <div id="hwWrap" class="hw-wrap">
       <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span><button class="hw-add" onclick="addHW()">＋ 添加</button></div>
       <div id="hwChips" class="hw-chips"></div>
@@ -1045,7 +1063,8 @@ function editHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; const nv=promp
 function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
-  addTodo(addSubj, v); $("addInput").value=""; toast("已添加 · "+addSubj); renderList();
+  const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
+  addTodo(addSubj, v, {estMin:est}); $("addInput").value=""; $("addEst").value=""; toast("已添加 · "+addSubj); renderList();
 }
 
 /* 展开后可编辑的字段：具体内容 / 预估时间 / 错题数量（未完成与已完成共用） */
@@ -1102,6 +1121,8 @@ function todoRow(t){
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
       </div>
       <div class="todo-acts">
+        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','daily')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">日</button>
+        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','weekly')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">周</button>
         <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
         <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -1114,6 +1135,11 @@ function editField(id,key,val){
   const t=getTodo(id); if(!t) return;
   if(key==="estMin"||key==="wrong") t[key]=Math.max(0,parseInt(val||"0",10)||0);
   else { t[key]=val; if(key==="title") recomputeHot(); }
+  // 循环作业：把 标题/内容/预估 同步回母版与同组未开始实例
+  if(t.masterId && (key==="title"||key==="detail"||key==="estMin")){
+    const m=getMaster(t.masterId);
+    if(m){ if(key==="estMin") m.estMin=t.estMin; else m[key]=t[key]; m._u=Date.now(); propagateMaster(m); }
+  }
   touch(t); save(); syncDerived();
 }
 /* 已完成作业：同样可点击展开（再点折叠），展开后可改 具体内容 / 预估时间 / 错题数量 */
@@ -1135,6 +1161,8 @@ function doneRow(t){
         <div class="todo-meta">${meta.join("")}</div>
       </div>
       <div class="todo-acts">
+        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','daily')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">日</button>
+        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','weekly')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">周</button>
         <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
         <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -1148,7 +1176,14 @@ function doneRow(t){
 }
 function delTodo(id){
   const t=getTodo(id); if(!t) return;
-  if(!confirm("确定删除该作业？")) return;
+  const m = t.masterId ? getMaster(t.masterId) : null;
+  if(m){
+    // 循环作业单天删除：仅跳过该天，循环继续
+    if(!confirm("这是循环作业「"+t.title+"」。\n点【确定】＝只删除 "+t.date+" 这一天（之后仍按循环出现）；\n点【取消】＝不删除。")) return;
+    m.skip = m.skip||[]; if(!m.skip.includes(t.date)) m.skip.push(t.date); m._u=Date.now();
+  } else {
+    if(!confirm("确定删除该作业？")) return;
+  }
   tombstone(id);
   state.todos=state.todos.filter(x=>x.id!==id);
   if(openExpo===id) openExpo=null;
@@ -1156,6 +1191,68 @@ function delTodo(id){
   recomputeHot(); save(); renderList(); syncDerived();
   toast("已删除作业");
 }
+/* ============ 循环锁定（每日 / 每周）============
+   母版存于 state.masters；每天查看时按规则惰性生成「实例」写入 state.todos。
+   日锁定：每天出现；周锁定：与母版 origin 同一星期几才出现。
+   双击锁定键 = 解锁（停止循环、删除未来未完成实例，保留历史）。
+   单天删除 = 仅把该天加入母版 skip，循环照常。 */
+function getMaster(id){ return (state.masters||[]).find(m=>m.id===id); }
+function parseDS(ds){ const p=ds.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+function weekdayOf(ds){ return parseDS(ds).getDay(); }
+function ruleMatch(m, ds){
+  if(m.lock==="daily") return true;
+  if(m.lock==="weekly") return weekdayOf(ds)===weekdayOf(m.origin);
+  return false;
+}
+function genRecurring(ds){
+  if(!state.masters || !state.masters.length) return;
+  let added=false;
+  state.masters.forEach(m=>{
+    if(!m.lock) return;                                  // 已解锁不再生成
+    if((m.skip||[]).includes(ds)) return;                // 该天被单独跳过（特殊情况）
+    if(!ruleMatch(m, ds)) return;                        // 不符合日/周规则
+    if(state.todos.some(t=>t.masterId===m.id && t.date===ds)) return;  // 已存在
+    const t = mkTodo(parseDS(ds), m.subject, m.title, { masterId:m.id, lock:m.lock, estMin:m.estMin||0, detail:m.detail||"" });
+    state.todos.push(t); added=true;
+  });
+  if(added) save();
+}
+function fmtEst(m){ m=Math.round(m||0); if(m<=0) return "0 分"; if(m<60) return m+" 分"; const h=Math.floor(m/60), mm=m%60; return mm? h+" 时 "+mm+" 分" : h+" 时"; }
+function propagateMaster(m){
+  // 母版 标题/内容/预估/循环类型 同步到同组「未完成且未计时」的实例
+  state.todos.forEach(x=>{ if(x.masterId===m.id && !x.done && !x.timerRunning){ x.title=m.title; x.detail=m.detail; x.estMin=m.estMin; x.lock=m.lock; } });
+}
+function setLock(id, type){
+  const t=getTodo(id); if(!t) return;
+  let m = t.masterId ? getMaster(t.masterId) : null;
+  if(type===null){
+    // 解锁：停止循环，删除未来未完成实例，保留历史
+    if(m){
+      state._delM[m.id]=Date.now();                      // 墓碑：跨端同步停止循环
+      state.masters = state.masters.filter(x=>x.id!==m.id);
+      const todayDs = ymd(new Date());
+      state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>todayDs) );
+    }
+    t.lock=null; t.masterId=null; touch(t);
+    save(); renderList(); syncDerived();
+    return;
+  }
+  // 上锁 / 切换类型
+  if(!m){
+    m = { id:uid(), subject:t.subject, title:t.title, detail:t.detail||"", estMin:t.estMin||0, lock:type, origin:t.date, skip:[], _u:Date.now() };
+    state.masters.push(m); t.masterId=m.id; t.lock=type;
+  } else {
+    m.lock=type; m.subject=t.subject; m.title=t.title; m.detail=t.detail||""; m.estMin=t.estMin||0; m._u=Date.now();
+    t.lock=type;
+    // 规则变了：删掉旧规则下生成的未来未完成实例，按新规则重生
+    const todayDs = ymd(new Date());
+    state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>todayDs) );
+    propagateMaster(m);
+  }
+  touch(t); save(); renderList(); syncDerived();
+  toast(type==="daily"?"已设为每日锁定":"已设为每周锁定");
+}
+
 function renameTodo(id){
   const t=getTodo(id); if(!t) return;
   const el=$("todo-"+id); if(!el) return;
@@ -1815,6 +1912,9 @@ async function syncPull(mode){
     state = data; state._syncedAt = cloudAt;
     if(!Array.isArray(state.todos)) state.todos = [];
     if(!state.tasks)    state.tasks    = [];
+    if(!Array.isArray(state.masters)) state.masters = [];
+    if(!state._delM) state._delM = {};
+    state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
     delete state.chips; delete state.hot; delete state.hotBlock;   // 常用词功能已移除
     if(Array.isArray(state.todos)) state.todos = state.todos.filter(t=>!t.sample);  // 自愈：剔除云端残留示例数据
     if(Array.isArray(state.tasks)) state.tasks = state.tasks.filter(t=>!t.sample);
@@ -1915,10 +2015,13 @@ function pruneTombstones(){
 /* 云端 + 本机 → 合并结果（顺序确定，便于判断内容是否真的变化） */
 function mergeState(cloud, local){
   const del = mergeDel(cloud._del, local._del);
+  const delM = mergeDel(cloud._delM, local._delM);
+  const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
   return {
     todos: mergeItems(cloud.todos, local.todos, del),
     tasks: mergeItems(cloud.tasks, local.tasks, del),
-    _del: del,
+    masters,
+    _del: del, _delM: delM,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
 }
@@ -1952,7 +2055,7 @@ async function syncCycle(silent){
       if(!rr.ok) throw { status: rr.status };
     }
     // 只有数据真的变了才重渲染，避免定时同步打断正在输入的内容
-    const dataOf = s => JSON.stringify([(s.todos||[]), (s.tasks||[])]);
+    const dataOf = s => JSON.stringify([(s.todos||[]), (s.tasks||[]), (s.masters||[])]);
     const changed = dataOf(merged) !== dataOf(state);
     state = merged; saveLocal();
     if(changed){ pruneTombstones(); recomputeHot(); refreshAll(); renderTasks(); }
