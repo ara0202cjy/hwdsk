@@ -1009,8 +1009,7 @@ function renderList(){
   let html="";
   const totalEst = ts.reduce((a,t)=>a+(t.estMin||0),0);
   const remainEst = ts.filter(t=>!t.done).reduce((a,t)=>a+(t.estMin||0),0);
-  const doneN = ts.filter(t=>t.done).length;
-  html += `<div class="day-summary"><div class="ds-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="ds-main"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 作业预计时间</span><div class="ds-row"><span class="ds-item"><b class="ds-v">${fmtEst(totalEst)}</b><i>预计总</i></span><span class="ds-sep"></span><span class="ds-item"><b class="ds-v2">${fmtEst(remainEst)}</b><i>未完成</i></span></div></div><div class="ds-n">共 ${ts.length} 项 · 已完成 ${doneN} 项</div></div>`;
+  html += `<div class="day-summary"><div class="ds-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="ds-main"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 作业预计时间</span><div class="ds-row"><span class="ds-item"><b class="ds-v">${fmtEst(totalEst)}</b><i>预计总</i></span><span class="ds-sep"></span><span class="ds-item"><b class="ds-v2">${fmtEst(remainEst)}</b><i>未完成</i></span></div></div></div>`;
   SUBJECTS.forEach(subj=>{
     const arr = bySubj[subj]||[];
     const total = ts.filter(t=>t.subject===subj).length;
