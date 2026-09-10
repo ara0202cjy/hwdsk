@@ -214,6 +214,10 @@
   .day-summary .ds-v2{color:var(--red);}
   .day-summary .ds-sep{width:1px; height:20px; background:#e7d3a3;}
   .day-summary .ds-n{margin-left:auto; font-size:12.5px; color:#9a7b3a; text-align:right;}
+  .upbar{position:fixed; left:50%; transform:translateX(-50%) translateY(24px); bottom:22px; z-index:9999; display:none; align-items:center; gap:10px; padding:10px 16px; border-radius:999px; background:#2f3a56; color:#fff; box-shadow:0 8px 26px rgba(0,0,0,.28); cursor:pointer; transition:transform .25s ease, opacity .25s ease; opacity:0;}
+  .upbar.show{display:flex; transform:translateX(-50%) translateY(0); opacity:1;}
+  .upbar .upbar-t{font-size:13px; font-weight:700;}
+  .upbar .upbar-b{font-size:12px; padding:4px 12px; border-radius:999px; background:var(--sun); color:#6a4f13; font-weight:800;}
   .done-sec .todo-title{color:var(--muted); text-decoration:line-through;}
   .done-sec .card-h .subj-dot{background:var(--gray);}
   .expo{display:none; padding:10px 0 8px 38px; margin-top:2px; border-top:1px dashed var(--line);}
@@ -643,6 +647,7 @@
         <div class="mask" id="mask" onclick="closeSheet()"></div>
         <div class="sheet" id="sheet"></div>
         <div class="toast" id="toast"></div>
+        <div class="upbar" id="upbar" onclick="applyUpdate()"><span class="upbar-t">发现新版本</span><span class="upbar-b" id="upbarBtn">点击刷新</span></div>
       </div>
     </div>
   </div>
@@ -2269,6 +2274,38 @@ function detectReal(){
 
 /* ============ Toast ============ */
 let toastT=null;
+/* ===== 自动检测新版本（解决浏览器/手机缓存导致看不到更新）=====
+   原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
+   version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
+   点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
+const APP_VERSION = "2026.09.10.3";
+let remoteVer = null;
+async function checkUpdate(silent){
+  try{
+    const r = await fetch("version.json?t="+Date.now(), { cache:"no-store" });
+    if(!r.ok) return;
+    const j = await r.json();
+    const v = j.v || j.version;
+    if(!v || v===APP_VERSION){ return; }
+    remoteVer = v;
+    const bar = $("upbar");
+    if(bar && !bar.classList.contains("show")){
+      bar.classList.add("show");
+      if(!silent) toast("有新版本可用");
+    }
+  }catch(e){ /* 离线或本地文件打开时忽略 */ }
+}
+function applyUpdate(){
+  const bar = $("upbar");
+  if(bar) bar.classList.remove("show");
+  const tag = remoteVer || Date.now();
+  try{
+    const u = new URL(location.href);
+    u.searchParams.set("v", tag);
+    location.replace(u.toString());
+  }catch(e){ location.reload(); }
+}
+
 function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1500); }
 
 /* ============ 状态栏时钟 ============ */
@@ -2306,6 +2343,8 @@ function startApp(){
   bindPull();                          // 启用下拉刷新
   if(autoCfg) toast("云同步已配置，正在连接…");
   syncInit();          // 已配置则打开时自动拉取云端数据
+  checkUpdate(true);                              // 启动时查一次新版本（静默）
+  setInterval(()=>{ if(!document.hidden) checkUpdate(true); }, 300000);  // 之后每 5 分钟查一次
 }
 document.addEventListener("DOMContentLoaded", init);
 </script>
