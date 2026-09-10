@@ -498,7 +498,7 @@
     <div id="loginForm">
       <div class="lfld"><label>账号</label><input id="loginUser" placeholder="例如 lvcheng" autocomplete="username" value="lvcheng"></div>
       <div class="lfld"><label>密码</label><input id="loginPw" type="password" placeholder="请输入密码" autocomplete="current-password"></div>
-      <div class="lfld"><label>云端 Token</label><input id="loginToken" type="password" placeholder="粘贴你的 GitHub Token（ghp_ 开头）" autocomplete="off"></div>
+      <div class="lfld"><label>云端 Token</label><input id="loginToken" type="password" placeholder="粘贴你的 GitHub 个人访问令牌（Token）" autocomplete="off"></div>
       <button class="lbtn" id="loginBtn" onclick="doLogin()">登录</button>
       <div class="err" id="loginErr"></div>
       <div class="link" onclick="showRegister()">没有账号？注册新账号</div>
@@ -507,7 +507,7 @@
       <div class="lfld"><label>新账号名</label><input id="regUser" placeholder="自定义账号名"></div>
       <div class="lfld"><label>密码（至少 4 位）</label><input id="regPw" type="password" placeholder="设置密码"></div>
       <div class="lfld"><label>确认密码</label><input id="regPw2" type="password" placeholder="再次输入密码"></div>
-      <div class="lfld"><label>云端 Token</label><input id="regToken" type="password" placeholder="粘贴你的 GitHub Token（ghp_ 开头）" autocomplete="off"></div>
+      <div class="lfld"><label>云端 Token</label><input id="regToken" type="password" placeholder="粘贴你的 GitHub 个人访问令牌（Token）" autocomplete="off"></div>
       <button class="lbtn" id="regBtn" onclick="doRegister()">注册并登录</button>
       <div class="err" id="regErr"></div>
       <div class="link" onclick="showLogin()">返回登录</div>
@@ -1132,8 +1132,8 @@ function todoRow(t){
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
       </div>
       <div class="todo-acts">
-        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','daily')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">日</button>
-        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','weekly')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">周</button>
+        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
+        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
         <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
         <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -1172,8 +1172,8 @@ function doneRow(t){
         <div class="todo-meta">${meta.join("")}</div>
       </div>
       <div class="todo-acts">
-        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','daily')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">日</button>
-        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周锁定（双击解锁）" onclick="event.stopPropagation();setLock('${t.id}','weekly')" ondblclick="event.stopPropagation();setLock('${t.id}',null)">周</button>
+        <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
+        <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
         <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
         <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -1205,7 +1205,8 @@ function delTodo(id){
 /* ============ 循环锁定（每日 / 每周）============
    母版存于 state.masters；每天查看时按规则惰性生成「实例」写入 state.todos。
    日锁定：每天出现；周锁定：与母版 origin 同一星期几才出现。
-   双击锁定键 = 解锁（停止循环、删除未来未完成实例，保留历史）。
+   锁定仅对「固定日（含）及以后」的日期生效，固定日之前的清单不被修改。
+   单击锁定键 = 固定；再次单击同一键 = 取消（停止循环、删除之后未完成实例，保留历史）。
    单天删除 = 仅把该天加入母版 skip，循环照常。 */
 function getMaster(id){ return (state.masters||[]).find(m=>m.id===id); }
 function parseDS(ds){ const p=ds.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
@@ -1221,6 +1222,7 @@ function genRecurring(ds){
   state.masters.forEach(m=>{
     if(!m.lock) return;                                  // 已解锁不再生成
     if((m.skip||[]).includes(ds)) return;                // 该天被单独跳过（特殊情况）
+    if(ds < m.origin) return;                            // 仅固定日（含）之后生成，之前的清单不动
     if(!ruleMatch(m, ds)) return;                        // 不符合日/周规则
     if(state.todos.some(t=>t.masterId===m.id && t.date===ds)) return;  // 已存在
     const t = mkTodo(parseDS(ds), m.subject, m.title, { masterId:m.id, lock:m.lock, estMin:m.estMin||0, detail:m.detail||"" });
@@ -1232,6 +1234,12 @@ function fmtEst(m){ m=Math.round(m||0); if(m<=0) return "0 分"; if(m<60) return
 function propagateMaster(m){
   // 母版 标题/内容/预估/循环类型 同步到同组「未完成且未计时」的实例
   state.todos.forEach(x=>{ if(x.masterId===m.id && !x.done && !x.timerRunning){ x.title=m.title; x.detail=m.detail; x.estMin=m.estMin; x.lock=m.lock; } });
+}
+function toggleLock(id, type){
+  // 单击切换：已固定该类型 → 取消；否则固定为该类型
+  const t=getTodo(id); if(!t) return;
+  if(t.lock===type) setLock(id, null);
+  else setLock(id, type);
 }
 function setLock(id, type){
   const t=getTodo(id); if(!t) return;
@@ -2278,7 +2286,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.3";
+const APP_VERSION = "2026.09.10.4";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
