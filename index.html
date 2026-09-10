@@ -295,6 +295,7 @@
   .hw-edit{color:#8a7d5a; background:#efe7d2;}
   .hw-del{color:#fff; background:#c97b7b; margin-left:2px;}
   .hw-empty{font-size:12px; color:var(--muted);}
+  .hw-est{font-size:11px; color:#8a7d5a; background:#ece3cf; border-radius:999px; padding:1px 6px; margin-left:2px; font-weight:700;}
 
   /* ===== 待办事项 ===== */
   .task-add{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
@@ -1060,16 +1061,26 @@ function recomputeHot(){}
 const HW_KEY = "wb_hwdsk_hw_v1";
 function loadHW(){ try{ return JSON.parse(localStorage.getItem(HW_KEY))||{}; }catch(e){ return {}; } }
 function saveHW(o){ try{ localStorage.setItem(HW_KEY, JSON.stringify(o)); }catch(e){} }
+/* 常用词统一为 {t:标题, e:预估分钟}；旧数据仅存字符串，读取时兼容 */function hwItem(x){ if(typeof x==="string") return {t:x, e:0}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0)}; }
 function renderHWChips(){
   const box=$("hwChips"); if(!box) return;
-  const arr=loadHW()[addSubj]||[];
+  const arr=(loadHW()[addSubj]||[]).map(hwItem);
   const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
   if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
-  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w)}<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i></span>`).join("");
+  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i></span>`).join("");
 }
-function fillHW(i){ const arr=loadHW()[addSubj]||[]; const el=$("addInput"); if(el){ el.value=arr[i]||""; el.focus(); } }
-function addHW(){ const v=prompt("为【"+addSubj+"】添加常用词：",""); if(v==null) return; const t=v.trim(); if(!t) return; const hw=loadHW(); (hw[addSubj]||(hw[addSubj]=[])).push(t); saveHW(hw); renderHWChips(); }
-function editHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; const nv=prompt("修改常用词：",arr[i]||""); if(nv==null) return; const t=nv.trim(); if(!t) return; arr[i]=t; saveHW(hw); renderHWChips(); }
+function fillHW(i){ const arr=(loadHW()[addSubj]||[]).map(hwItem); const w=arr[i]; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
+function addHW(){
+  const v=prompt("为【"+addSubj+"】添加常用词（作业内容）：",""); if(v==null) return; const t=v.trim(); if(!t) return;
+  const e=prompt("预估时长（分钟，留空=不填）：",""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
+  const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]); arr.push({t:t, e:est}); saveHW(hw); renderHWChips();
+}
+function editHW(i){
+  const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
+  const v=prompt("修改常用词（作业内容）：",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
+  const e=prompt("预估时长（分钟）：",cur.e?String(cur.e):""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
+  arr[i]={t:t, e:est}; saveHW(hw); renderHWChips();
+}
 function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
@@ -2328,7 +2339,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.9";
+const APP_VERSION = "2026.09.10.10";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
