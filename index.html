@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#2F5D50" />
+<title>作业台</title>
+<style>
+  :root{
+    --ink:#2F5D50;        /* 墨绿 主色 */
+    --ink-2:#3E7A69;
+    --ink-soft:#E7EFEA;
+    --sun:#E8853B;        /* 暖阳橙 强调 */
+    --sun-soft:#FBE9D8;
+    --paper:#F7F2E7;      /* 米白 纸张 */
+    --card:#FFFFFF;
+    --text:#2B2B2B;
+    --muted:#9A948A;
+    --line:#ECE6D8;
+    --red:#C0392B;
+    --green:#3FA46A;
+    --gray:#C9C3B6;
+    --shadow:0 6px 18px rgba(47,93,80,.10);
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB",sans-serif;
+    background:#0e1116; color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  input,textarea,select{font-family:inherit;}
+
+  /* ===== 桌面预览舞台 ===== */
+  .stage{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    justify-content:flex-start; gap:14px; padding:18px 12px 30px;
+  }
+  .modebar{
+    display:flex; align-items:center; gap:10px; color:#cfd6dd;
+    font-size:13px; flex-wrap:wrap; justify-content:center;
+  }
+  .modebar .seg{display:inline-flex; background:#1b2027; border-radius:999px; padding:4px;}
+  .modebar .seg button{color:#aeb6bf; padding:7px 16px; border-radius:999px; font-size:13px; font-weight:600;}
+  .modebar .seg button.on{background:var(--ink); color:#fff;}
+  .modebar .hint{opacity:.6;}
+
+  /* ===== 手机外框 ===== */
+  .phone{
+    --sat-sim:44px; --sab-sim:34px;
+    position:relative; background:#0b0d10;
+    border-radius:54px; padding:13px;
+    box-shadow:0 30px 70px rgba(0,0,0,.55), inset 0 0 0 2px #2a2e35;
+    transition:width .3s, height .3s;
+  }
+  .phone.mode-iphone11{ --sat-sim:44px; width:440px; height:936px; border-radius:54px;}
+  .phone.mode-iphone17{ --sat-sim:62px; width:428px; height:914px; border-radius:60px;}
+  /* iPad 横屏平板外框（无刘海/灵动岛，均匀窄边） */
+  .phone.mode-ipad{ --sat-sim:0; width:1080px; height:760px; border-radius:22px;}
+  .phone.mode-ipad::before,.phone.mode-ipad::after{display:none;}
+  .mode-ipad .phead h1{font-size:23px;}
+  .mode-ipad .tabbar{font-size:15px;}
+  /* ===== 电脑端（PC）宽屏布局 ===== */
+  .phone.mode-pc{ --sat-sim:0; width:100%; height:100vh; max-width:none; border-radius:0; padding:0; background:var(--paper);}
+  .phone.mode-pc::before,.phone.mode-pc::after{display:none;}
+  .phone.mode-pc .screen{border-radius:0; background:var(--paper);}
+  .mode-pc .notch,.mode-pc .island,.mode-pc .statusbar,.mode-pc .home-bar{display:none;}
+  .mode-pc .app-root{ flex-direction:column; }
+  .mode-pc .tabbar{
+    position:absolute; left:0; top:0; bottom:0; width:212px;
+    flex-direction:column; align-items:stretch; gap:4px;
+    border-top:none; border-right:1px solid var(--line);
+    padding:24px 14px; background:var(--paper); z-index:55;
+  }
+  .mode-pc .tabbar .brand{display:flex; align-items:center; gap:9px; font-size:20px; font-weight:800; color:var(--ink); padding:0 12px 20px; letter-spacing:2px;}
+  .mode-pc .tab{ flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 14px; border-radius:12px;}
+  .mode-pc .tab .lb{font-size:14.5px;}
+  .mode-pc .tab.on{background:var(--ink-soft);}
+  .mode-pc .tab.on .lb{color:var(--ink);}
+  .mode-pc .tab:hover{background:var(--ink-soft);}
+  .mode-pc .app-body{ position:absolute; top:0; bottom:0; left:212px; right:0; }
+  .mode-pc .content{max-width:1080px; margin:0 auto; padding:14px 30px 30px;}
+  .mode-pc .sticky{ padding:14px 30px 8px; }
+  .mode-pc .sum-grid{grid-template-columns:repeat(3,1fr); gap:14px;}
+  .mode-pc .phead h1{font-size:26px;}
+  .mode-pc .datebar{font-size:15px;}
+  .mode-pc .cmp-pick{font-size:15px;}
+  .stage-pc{ background:var(--paper); padding:0; }
+  .stage-pc .modebar{display:none;}
+  /* 侧边按键 */
+  .phone::before,.phone::after{content:""; position:absolute; left:-3px; width:3px; background:#2a2e35; border-radius:3px;}
+  .phone::before{top:200px; height:64px;}
+  .phone::after{top:285px; height:96px; box-shadow:0 110px 0 #2a2e35;}
+  .screen{
+    position:relative; width:100%; height:100%;
+    background:var(--paper); border-radius:42px; overflow:hidden;
+  }
+  .phone.mode-iphone17 .screen{border-radius:48px;}
+
+  /* ===== App 根 ===== */
+  .app-root{
+    --sat:max(env(safe-area-inset-top,0px), var(--sat-sim,0px));
+    --sab:max(env(safe-area-inset-bottom,0px), var(--sab-sim,0px));
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    background:var(--paper); overflow:hidden;
+    padding-top:var(--sat);
+  }
+
+  /* ===== 状态栏 ===== */
+  .statusbar{
+    height:var(--sat); flex:0 0 auto; position:relative;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 26px; padding-top:8px;
+    font-size:15px; font-weight:600; color:#1c1c1e; z-index:60;
+  }
+  .statusbar .time{letter-spacing:.3px;}
+  .statusbar .indicators{display:flex; align-items:center; gap:6px;}
+  .statusbar svg{display:block;}
+  /* 刘海 */
+  .notch{
+    position:absolute; top:0; left:50%; transform:translateX(-50%);
+    width:170px; height:30px; background:#000; border-radius:0 0 20px 20px; z-index:61;
+  }
+  /* 灵动岛 */
+  .island{
+    position:absolute; top:9px; left:50%; transform:translateX(-50%);
+    width:118px; height:34px; background:#000; border-radius:20px; z-index:61;
+  }
+  .phone.mode-iphone11 .island{display:none;}
+  .phone.mode-iphone17 .notch{display:none;}
+
+  /* ===== 页面主体 ===== */
+  .app-body{flex:1 1 auto; min-height:0; position:relative;}
+  .page{position:absolute; inset:0; display:none; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  .page.active{display:flex;}
+  .page::-webkit-scrollbar{width:0;}
+
+  .sticky{
+    position:sticky; top:0; z-index:40;
+    background:linear-gradient(180deg,var(--paper) 86%, rgba(247,242,231,0));
+    padding:10px 16px 6px;
+  }
+  .phead{display:flex; align-items:center; justify-content:space-between;}
+  .phead h1{font-size:21px; margin:0; color:var(--ink); font-weight:800; letter-spacing:.5px;}
+  .phead .gear{width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:12px; color:var(--ink);}
+  /* 顶部云同步状态灯：灰=未配置/闲置 绿=已同步 黄=同步中 红=失败 */
+  .phead .sync-btn{width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:12px; color:var(--muted); position:relative; transition:color .2s;}
+  .phead .sync-btn.ok{color:var(--green);}
+  .phead .sync-btn.syncing{color:var(--sun);}
+  .phead .sync-btn.err{color:var(--red);}
+  .phead .sync-btn::after{content:""; position:absolute; right:6px; top:6px; width:6px; height:6px; border-radius:50%; background:currentColor; opacity:0;}
+  .phead .sync-btn.ok::after{opacity:.85;}
+  .phead .sync-btn.syncing::after{opacity:1; animation:syncpulse 1s ease-in-out infinite;}
+  @keyframes syncpulse{0%,100%{opacity:.25;} 50%{opacity:1;}}
+  .phead .gear:active{background:var(--ink-soft);}
+
+  /* 日期控制条 */
+  .datebar{display:flex; align-items:center; justify-content:space-between; margin-top:8px;}
+  .date-btn{display:flex; align-items:center; gap:8px; background:var(--card); border:1.5px solid var(--line); border-radius:14px; padding:9px 14px; box-shadow:var(--shadow);}
+  .date-btn .d-main{font-size:16px; font-weight:700; color:var(--text);}
+  .date-btn .d-sub{font-size:11px; color:var(--muted); margin-top:1px;}
+  .nav{width:38px; height:38px; border-radius:50%; background:var(--card); box-shadow:var(--shadow); display:flex; align-items:center; justify-content:center; color:var(--ink);}
+  .nav:active{transform:scale(.94);}
+  .today-btn{background:var(--sun); color:#fff; border-radius:14px; padding:0 14px; height:38px; font-size:13px; font-weight:700; display:none; align-items:center;}
+  .today-btn.show{display:flex;}
+  .today-btn:active{filter:brightness(.95);}
+
+  .content{padding:6px 14px 18px;}
+
+  /* ===== 卡片 ===== */
+  .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px; margin-bottom:10px;}
+  .card-h{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+  .subj-dot{width:12px; height:12px; border-radius:4px;}
+  .subj-语文{background:#C25B5B;} .subj-数学{background:#3F6FB0;} .subj-英语{background:#C2953B;} .subj-其他{background:#6B8E5A;}
+  .subj-title{font-size:15px; font-weight:800;}
+  .subj-title.语文{color:#C25B5B;} .subj-title.数学{color:#3F6FB0;} .subj-title.英语{color:#C2953B;} .subj-title.其他{color:#6B8E5A;}
+
+  /* 作业条目（折叠） */
+  .todo{position:relative; border-bottom:1px solid var(--line);}
+  .todo:last-child{border-bottom:none;}
+  .todo-top{display:flex; align-items:flex-start; gap:12px; padding:10px 2px; cursor:pointer;}
+  .chk{width:26px; height:26px; flex:0 0 26px; border-radius:50%; border:2px solid var(--gray); display:flex; align-items:center; justify-content:center; color:#fff; transition:.2s; margin-top:1px;}
+  .chk.done{background:var(--green); border-color:var(--green);}
+  .chk:active{transform:scale(.9);}
+  .todo-mid{flex:1 1 auto; min-width:0;}
+  .todo-title{font-size:15.5px; font-weight:600; line-height:1.35; word-break:break-word;}
+  .todo-title.done{text-decoration:line-through; color:var(--muted);}
+  .todo-meta{display:flex; align-items:center; gap:10px; margin-top:5px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
+  .pulse{width:8px; height:8px; border-radius:50%; background:var(--sun); box-shadow:0 0 0 0 rgba(232,133,59,.6); animation:pulse 1.2s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(232,133,59,.55);}70%{box-shadow:0 0 0 9px rgba(232,133,59,0);}100%{box-shadow:0 0 0 0 rgba(232,133,59,0);}}
+  .arrow{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--muted); transition:transform .25s; border-radius:8px;}
+  .arrow.open{transform:rotate(90deg); color:var(--ink);}
+  .todo-acts{display:flex; align-items:center; gap:4px; margin-left:2px; flex:0 0 auto;}
+  .mini-btn{width:30px; height:30px; flex:0 0 30px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5;}
+  .mini-btn:active{background:var(--ink-soft);}
+  .mini-btn.del{color:var(--red); border-color:#f0d3cf;}
+  .done-sec .todo-title{color:var(--muted); text-decoration:line-through;}
+  .done-sec .card-h .subj-dot{background:var(--gray);}
+  .expo{display:none; padding:10px 0 8px 38px; margin-top:2px; border-top:1px dashed var(--line);}
+  .expo.open{display:block; animation:expoIn .22s ease;}
+  @keyframes expoIn{from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:none;}}
+  .field{display:flex; flex-direction:column; gap:6px; margin:14px 0 0;}
+  .field:first-of-type{margin-top:0;}
+  .field label{font-size:13px; color:var(--muted); font-weight:600;}
+  .field .val{font-size:14px; color:var(--text); flex:1; line-height:1.5;}
+  .field textarea,.field input{width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:15px; background:#fcfaf5; resize:none; color:var(--text);}
+  .field textarea{min-height:68px;}
+  .est-row{display:flex; align-items:center; gap:8px; width:100%;}
+  .est-row input{flex:1; min-width:80px; text-align:left; font-size:15px; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; background:#fcfaf5;}
+  .field-row{display:flex; gap:12px; margin-top:14px;}
+  .field-row .field{flex:1; margin-top:0;}
+  .dur-line{display:flex; align-items:baseline; gap:8px; margin-top:2px;}
+  .dur-hint{font-size:13px; color:var(--muted);}
+  .u{color:var(--muted); font-size:13px; margin-left:2px;}
+  .timer-block{margin-top:14px;}
+  .timer-status{font-size:13px; font-weight:800; padding:3px 10px; border-radius:999px;}
+  .timer-status.run{background:var(--sun-soft); color:var(--sun);}
+  .timer-status.pause{background:#efeae0; color:var(--muted);}
+  .timer-status.stop{background:#e3f3ea; color:var(--green);}
+  .timer-actions{display:flex; gap:10px; margin-top:12px;}
+  .timer-actions .tbtn{flex:1; justify-content:center; padding:13px 8px; font-size:14px; border-radius:14px;}
+  .timer-num{font-size:28px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:1px; line-height:1;}
+  .tbtn{border-radius:12px; padding:10px 16px; font-size:13.5px; font-weight:700; display:inline-flex; align-items:center; gap:6px;}
+  .tbtn.start{background:var(--ink); color:#fff;}
+  .tbtn.pause{background:var(--sun); color:#fff;}
+  .tbtn.done{background:var(--green); color:#fff;}
+  .tbtn.dis{opacity:.4; pointer-events:none; filter:grayscale(.3);}
+  .tbtn:active{transform:scale(.96);}
+
+  /* 盖章动效 */
+  .stamp{position:absolute; right:14px; top:8px; color:var(--green); font-size:13px; font-weight:800; border:2px solid var(--green); border-radius:8px; padding:2px 8px; transform:rotate(-12deg) scale(0); opacity:0; pointer-events:none;}
+  .stamp.go{animation:stamp .5s cubic-bezier(.2,1.4,.4,1) forwards;}
+  @keyframes stamp{0%{transform:rotate(-12deg) scale(1.8); opacity:0;}60%{opacity:1;}100%{transform:rotate(-12deg) scale(1); opacity:1;}}
+
+  /* 添加作业统一卡 */
+  .add-title{font-size:15px; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .seg4{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
+  .seg4 button{padding:10px 0; border-radius:12px; background:#f1ece1; color:#6b655b; font-size:13.5px; font-weight:700; border:1.5px solid transparent;}
+  .seg4 button.on{color:#fff; background:var(--ink);}
+  .seg4 button.on[data-s="语文"]{background:#C25B5B;}
+  .seg4 button.on[data-s="数学"]{background:#3F6FB0;}
+  .seg4 button.on[data-s="英语"]{background:#C2953B;}
+  .seg4 button.on[data-s="其他"]{background:#6B8E5A;}
+  /* ===== 横向比较（搜索 + 列表滚动 + 底部固定统计） ===== */
+  #page-compare{ overflow:hidden; }
+  .cmp-search{ margin-top:10px; }
+  .cmp-search input{ width:100%; box-sizing:border-box; border:1.5px solid var(--line); border-radius:14px; padding:12px 14px; font-size:15px; background:#fcfaf5; outline:none; }
+  .cmp-body{ flex:1; min-height:0; display:flex; flex-direction:column; }
+  .cmp-list{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:8px 14px 12px; }
+  .cmp-row{ background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-bottom:9px; }
+  .cmp-row-top{ display:flex; align-items:center; gap:8px; }
+  .cmp-date{ font-size:13px; font-weight:800; color:var(--ink); }
+  .cmp-title{ flex:1; font-size:15px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cmp-row-sub{ display:flex; gap:14px; margin-top:6px; font-size:12.5px; color:var(--muted); }
+  .cmp-row-sub b{ color:var(--ink); font-weight:700; }
+  .cmp-foot{ flex:0 0 auto; border-top:1.5px solid var(--line); background:var(--card); box-shadow:0 -4px 14px rgba(0,0,0,.05); padding:10px 14px 12px; }
+  .mode-pc .cmp-list{ max-width:1080px; margin:0 auto; width:100%; }
+  .mode-pc .cmp-foot .sum-grid{ max-width:1080px; margin:0 auto; }
+  .add-row{display:flex; gap:8px;}
+  .add-row input{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:#fcfaf5;}
+  .add-row .plus{width:46px; height:46px; border-radius:12px; background:var(--sun); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; flex:0 0 46px;}
+  .add-row .plus:active{transform:scale(.94);}
+
+  /* ===== 待办事项 ===== */
+  .task-add{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
+  .task-add .seg3{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px;}
+  .seg3 button{padding:9px 0; border-radius:12px; background:#f1ece1; color:#6b655b; font-size:13.5px; font-weight:700; border:1.5px solid transparent;}
+  .seg3 button.on[data-p="1"]{background:#C0392B; color:#fff;}
+  .seg3 button.on[data-p="2"]{background:#E8853B; color:#fff;}
+  .seg3 button.on[data-p="3"]{background:#6B8E5A; color:#fff;}
+  .due-btn{display:inline-flex; align-items:center; gap:6px; background:#f1ece1; border-radius:12px; padding:9px 12px; font-size:13px; font-weight:600; color:#6b655b; margin-bottom:10px;}
+  .due-btn.set{background:var(--ink-soft); color:var(--ink);}
+  .task-sec{font-size:12px; color:var(--muted); font-weight:800; margin:14px 4px 6px; letter-spacing:.5px;}
+  .task-row{display:flex; align-items:flex-start; gap:12px; padding:13px 12px; background:var(--card); border-bottom:1px solid var(--line);}
+  .task-row:last-child{border-bottom:none;}
+  .task-row .chk{margin-top:1px;}
+  .task-main{flex:1 1 auto; min-width:0;}
+  .task-title{font-size:15.5px; font-weight:600; line-height:1.4; word-break:break-word;}
+  .task-row.done .task-title{text-decoration:line-through; color:var(--muted);}
+  .task-row.done{opacity:.72;}
+  .task-meta{display:flex; align-items:center; gap:8px; margin-top:7px; flex-wrap:wrap;}
+  .pri{display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700;}
+  .pri .dot{width:7px; height:7px; border-radius:50%;}
+  .pri-1{background:#fbe2dd; color:#b3402f;} .pri-1 .dot{background:#C0392B;}
+  .pri-2{background:#fbe9d8; color:#a85f23;} .pri-2 .dot{background:#E8853B;}
+  .pri-3{background:#e9efe9; color:#3E7A69;} .pri-3 .dot{background:#6B8E5A;}
+  .task-due{font-size:11.5px; color:var(--muted);}
+  .task-due.over{color:#b3402f; font-weight:700;}
+  .task-del{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--muted); border-radius:8px;}
+  .task-del:active{background:#f1ece1;}
+
+  /* ===== 作业统计 甘特 ===== */
+  .gantt{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
+  .gantt-axis{position:relative; height:18px; margin:0 4px 8px; font-size:10px; color:var(--muted);}
+  .gantt-axis .tick{position:absolute; top:0; transform:translateX(-50%);}
+  .gantt-track{position:relative; height:34px; background:#f4efe4; border-radius:9px; margin:0 4px;}
+  .gblock{position:absolute; top:3px; height:14px; border-radius:7px; display:flex; align-items:center; padding:0; font-size:0; font-weight:700; color:#fff; overflow:hidden; white-space:nowrap; cursor:pointer; transition:left .9s linear, width .9s linear, opacity .18s, filter .18s; box-shadow:0 1px 3px rgba(0,0,0,.12);}
+  .gblock.g-none{opacity:.42; outline:1.5px dashed rgba(255,255,255,.85); outline-offset:-3px;}
+  .gblock.g-run{box-shadow:0 0 0 3px rgba(255,255,255,.7); animation:gpulse 1.2s infinite;}
+  @keyframes gpulse{0%{box-shadow:0 0 0 2px rgba(255,255,255,.5);}70%{box-shadow:0 0 0 7px rgba(255,255,255,0);}100%{box-shadow:0 0 0 2px rgba(255,255,255,0);}}
+  /* 选中：自身加深、其余变浅，不套框 */
+  .gantt.has-hl .gblock{opacity:.4;}
+  .gantt.has-hl .gblock.hl{opacity:1;}
+  .gblock.hl{filter:brightness(.82) saturate(1.15);}
+  .glegend{display:flex; gap:14px; font-size:11px; color:var(--muted); margin:6px 6px 0;}
+  .glegend i{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
+  /* 自适应多段时间轴（按时间空隙分段：上午/下午/晚上） */
+  .gantt-row{margin-bottom:13px;}
+  .gantt-row:last-of-type{margin-bottom:2px;}
+  .grow-hd{display:flex; align-items:center; gap:8px; margin:0 4px 6px;}
+  .grow-tag{font-size:11.5px; font-weight:800; color:#fff; background:var(--ink); border-radius:7px; padding:3px 9px; flex:0 0 auto;}
+  .grow-tag.上午{background:#6B8E5A;}
+  .grow-tag.下午{background:#E8853B;}
+  .grow-tag.晚上{background:#3F6FB0;}
+  .grow-tag.未开始{background:#9A948A;}
+  .grow-range{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .gantt-track.static{display:flex; gap:5px; align-items:center; height:18px;}
+  .gantt-track.static .gblock{position:static; flex:0 0 auto; min-width:14px; height:14px;}
+  .detail-line{font-size:13.5px; color:var(--text); line-height:1.6; padding:10px 4px; border-top:1px dashed var(--line);}
+  .detail-line b{color:var(--ink);}
+  .srow{padding:9px 4px; border-top:1px solid var(--line);}
+  .srow:first-child{border-top:none;}
+  .srow{transition:opacity .18s;}
+  .srow.hl{background:var(--sun-soft); border-radius:10px;}
+  .card.has-hl .srow{opacity:.42;}
+  .card.has-hl .srow.hl{opacity:1;}
+  .srow-top{display:flex; align-items:center; gap:8px;}
+  .srow-title{font-size:14px; font-weight:700; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .srow-est{font-size:11.5px; color:var(--muted); flex:0 0 auto;}
+  .srow-sub{display:flex; gap:10px; margin-top:4px; font-size:11.5px; color:var(--muted); flex-wrap:wrap;}
+  .srow-sub b{color:var(--ink); font-weight:700;}
+
+  /* ===== 横向比较 ===== */
+  .cmp-pick{display:flex; align-items:center; gap:10px;}
+  .cmp-pick .sel{flex:1; background:var(--card); border:1.5px solid var(--line); border-radius:14px; padding:11px 14px; box-shadow:var(--shadow); display:flex; align-items:center; justify-content:space-between; font-size:14.5px; font-weight:600;}
+  .cmp-table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  .cmp-table th{text-align:left; color:var(--muted); font-weight:600; font-size:12px; padding:8px 8px; border-bottom:1.5px solid var(--line);}
+  .cmp-table td{padding:11px 8px; border-bottom:1px solid var(--line);}
+  .cmp-table tr:active{background:#f6f2e9;}
+  .badge{display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700;}
+  .badge.b-done{background:#e3f3ea; color:var(--green);}
+  .badge.b-run{background:var(--sun-soft); color:var(--sun);}
+  .badge.b-none{background:#efeae0; color:var(--muted);}
+  .sum-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px;}
+  .sum-cell{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:12px;}
+  .sum-cell .k{font-size:12px; color:var(--muted);}
+  .sum-cell .v{font-size:22px; font-weight:800; color:var(--ink); margin-top:3px;}
+  .sum-cell .v small{font-size:12px; color:var(--muted); font-weight:600;}
+
+  /* ===== 月度统计 ===== */
+  .kpi{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
+  .kpi-cell{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 6px; text-align:center;}
+  .kpi-cell .v{font-size:20px; font-weight:800; color:var(--ink); line-height:1.1;}
+  .kpi-cell .k{font-size:10.5px; color:var(--muted); margin-top:4px;}
+  .cal{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px;}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .cal-dow{text-align:center; font-size:11px; color:var(--muted); padding:4px 0; font-weight:600;}
+  .cal-cell{aspect-ratio:1/1; border-radius:10px; background:#f6f2e9; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; font-size:13px; color:#5b564c;}
+  .cal-cell.today{outline:2px solid var(--ink); outline-offset:-2px;}
+  .cal-cell.empty{background:transparent;}
+  .cal-cell .stars{font-size:9px; color:var(--sun); margin-top:1px; line-height:1; letter-spacing:1px;}
+  .cal-cell .s0{color:var(--muted);}
+  .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
+  .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
+
+  .empty-tip{text-align:center; color:var(--muted); font-size:13px; padding:30px 0;}
+
+  /* ===== 底部 Tab ===== */
+  .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
+  .home-bar::after{content:""; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#1c1c1e; opacity:.85;}
+  .tabbar{flex:0 0 auto; display:flex; background:var(--paper); border-top:1px solid var(--line); padding:6px 0 2px;}
+  .tab{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; color:var(--muted);}
+  .tab.on{color:var(--ink);}
+  .tab .ic{width:26px; height:26px; display:flex; align-items:center; justify-content:center;}
+  .tab .lb{font-size:10.5px; font-weight:600;}
+  .tabbar .brand{display:none;}
+
+  /* ===== 底部弹层 ===== */
+  .mask{position:absolute; inset:0; background:rgba(20,25,30,.42); z-index:80; display:none; opacity:0; transition:opacity .25s;}
+  .mask.show{display:block; opacity:1;}
+  .sheet{position:absolute; left:0; right:0; bottom:0; background:var(--paper); border-radius:22px 22px 0 0; z-index:81; transform:translateY(100%); transition:transform .3s cubic-bezier(.2,.8,.2,1); padding:14px 16px calc(22px + var(--sab)); max-height:86%; overflow-y:auto;}
+  .sheet.show{transform:translateY(0);}
+  .sheet-h{font-size:17px; font-weight:800; color:var(--ink); text-align:center; margin:4px 0 14px; position:relative;}
+  .sheet-h .close{position:absolute; right:0; top:-2px; width:34px; height:34px; color:var(--muted); display:flex; align-items:center; justify-content:center; border-radius:10px;}
+  .opt{display:flex; align-items:center; justify-content:space-between; padding:14px 14px; background:var(--card); border-radius:14px; margin-bottom:9px; font-size:15px; font-weight:600; box-shadow:var(--shadow);}
+  .opt:active{background:#f1ece1;}
+  .opt .sub{font-size:12px; color:var(--muted); font-weight:500;}
+  .opt.danger{color:var(--red);}
+
+  /* 云同步（GitHub Gist）面板 */
+  .sync-box{background:var(--card); border-radius:14px; padding:14px; margin-bottom:9px; box-shadow:var(--shadow);}
+  .sync-box .sync-h{display:flex; align-items:center; gap:6px; font-size:15px; font-weight:800; color:var(--ink); margin-bottom:4px;}
+  .sync-box .sync-note{font-size:12px; color:var(--muted); line-height:1.5; margin:0 0 10px;}
+  .sync-box .fld{margin-bottom:9px;}
+  .sync-box label{display:block; font-size:12px; color:var(--muted); font-weight:700; margin-bottom:4px;}
+  .sync-box input{flex:1; width:100%; border:1.5px solid var(--line); border-radius:10px; padding:10px 12px; font-size:14px; background:#fcfaf5;}
+  .sync-box .btns{display:flex; gap:8px; margin-top:4px;}
+  .sync-box .sbtn{flex:1; padding:11px 0; border-radius:12px; border:none; font-size:14px; font-weight:800; color:#fff; background:var(--ink);}
+  .sync-box .sbtn.alt{background:#6B8E5A;}
+  .sync-box .sbtn:active{transform:scale(.97);}
+  .sync-box .sbtn:disabled{opacity:.5;}
+  .sync-status{font-size:12.5px; margin-top:9px; min-height:16px; color:var(--muted);}
+  .sync-status.ok{color:var(--green);}
+  .sync-status.err{color:var(--red);}
+
+  /* 日期选择网格 */
+  .dp-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .dp-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:5px;}
+  .dp-dow{text-align:center; font-size:11px; color:var(--muted); padding:4px 0;}
+  .dp-cell{aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; border-radius:50%; font-size:14px; color:var(--text);}
+  .dp-cell.empty{visibility:hidden;}
+  .dp-cell.sel{background:var(--ink); color:#fff; font-weight:700;}
+  .dp-cell.today{outline:2px solid var(--sun); outline-offset:-2px;}
+
+  /* 长按清空进度 */
+  .hold{border-radius:14px; padding:14px; background:#fbeae6; color:var(--red); font-weight:700; text-align:center; font-size:14px; position:relative; overflow:hidden; user-select:none;}
+  .hold .fill{position:absolute; left:0; top:0; bottom:0; width:0; background:var(--red); opacity:.16;}
+  .hold.go{background:#f6d9d2;}
+
+  .toast{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.9); background:rgba(20,25,30,.9); color:#fff; padding:12px 18px; border-radius:14px; font-size:14px; z-index:90; opacity:0; transition:.2s; pointer-events:none; max-width:80%; text-align:center;}
+  .toast.show{opacity:1; transform:translate(-50%,-50%) scale(1);}
+
+  /* 真机（无外框）下隐藏桌面预览元素 */
+  .app-root.real .phone-bezel-hint{display:none;}
+  @media (max-width:479px){
+    body{background:var(--paper);}
+    .stage{padding:0; min-height:100vh;}
+    .modebar{display:none;}
+    .phone{width:100%!important; height:100vh!important; border-radius:0; padding:0; box-shadow:none; background:var(--paper);}
+    .phone::before,.phone::after{display:none;}
+    .screen{border-radius:0;}
+  }
+  /* 登录 / 注册 */
+  .login-screen{position:fixed; inset:0; z-index:200; background:linear-gradient(160deg,#2f5d50,#3f6fb0); display:flex; align-items:center; justify-content:center; padding:24px;}
+  .login-card{width:100%; max-width:340px; background:#fff; border-radius:22px; padding:26px 22px; box-shadow:0 18px 50px rgba(0,0,0,.28);}
+  .login-card h2{margin:0 0 4px; font-size:22px; color:var(--ink);}
+  .login-card .sub{margin:0 0 18px; font-size:13px; color:var(--muted);}
+  .login-card .lfld{margin-bottom:12px;}
+  .login-card .lfld label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px;}
+  .login-card .lfld input{width:100%; box-sizing:border-box; padding:12px 13px; border:1.5px solid #e3ddd0; border-radius:12px; font-size:15px; outline:none;}
+  .login-card .lfld input:focus{border-color:var(--ink);}
+  .login-card .lbtn{width:100%; margin-top:6px; padding:13px; border:none; border-radius:12px; background:var(--ink); color:#fff; font-size:16px; font-weight:700; cursor:pointer;}
+  .login-card .lbtn:active{opacity:.85;}
+  .login-card .lbtn[disabled]{opacity:.6;}
+  .login-card .link{margin-top:14px; text-align:center; font-size:13px; color:var(--ink); cursor:pointer; user-select:none;}
+  .login-card .err{color:var(--red); font-size:12.5px; min-height:16px; margin-top:8px; text-align:center;}
+  .login-card .row2{display:flex; gap:10px;}
+  .login-card .row2 .lbtn{flex:1;}
+  .login-card .ghost{background:#eef2f4;}
+  .login-card .who{font-size:13px; color:var(--muted); margin-bottom:14px;}
+  .pull-hint{position:absolute; left:0; right:0; top:0; height:0; overflow:hidden; display:flex; align-items:center; justify-content:center; color:var(--ink); font-size:13px; font-weight:600; background:rgba(255,255,255,.6); transition:height .15s; pointer-events:none; z-index:60;}
+</style>
+</head>
+<body>
+<!-- 登录 / 注册 -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <h2 id="loginTitle">作业台 · 登录</h2>
+    <p class="sub" id="loginSub">登录后自动云端同步，多端数据互联</p>
+    <div id="loginForm">
+      <div class="lfld"><label>账号</label><input id="loginUser" placeholder="例如 lvcheng" autocomplete="username" value="lvcheng"></div>
+      <div class="lfld"><label>密码</label><input id="loginPw" type="password" placeholder="请输入密码" autocomplete="current-password"></div>
+      <div class="lfld"><label>云端 Token</label><input id="loginToken" type="password" placeholder="粘贴你的 GitHub Token（ghp_ 开头）" autocomplete="off"></div>
+      <button class="lbtn" id="loginBtn" onclick="doLogin()">登录</button>
+      <div class="err" id="loginErr"></div>
+      <div class="link" onclick="showRegister()">没有账号？注册新账号</div>
+    </div>
+    <div id="regForm" style="display:none;">
+      <div class="lfld"><label>新账号名</label><input id="regUser" placeholder="自定义账号名"></div>
+      <div class="lfld"><label>密码（至少 4 位）</label><input id="regPw" type="password" placeholder="设置密码"></div>
+      <div class="lfld"><label>确认密码</label><input id="regPw2" type="password" placeholder="再次输入密码"></div>
+      <div class="lfld"><label>云端 Token</label><input id="regToken" type="password" placeholder="粘贴你的 GitHub Token（ghp_ 开头）" autocomplete="off"></div>
+      <button class="lbtn" id="regBtn" onclick="doRegister()">注册并登录</button>
+      <div class="err" id="regErr"></div>
+      <div class="link" onclick="showLogin()">返回登录</div>
+    </div>
+    <div id="whoForm" style="display:none;">
+      <p class="who" id="whoText"></p>
+      <div class="row2">
+        <button class="lbtn ghost" onclick="showLogin()">切换账号</button>
+        <button class="lbtn" onclick="doLogout()">退出登录</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <div class="modebar">
+    <span class="hint">桌面预览 · 选择机型：</span>
+    <span class="seg">
+      <button id="m11" class="on" onclick="setMode('iphone11')">iPhone 11（刘海）</button>
+      <button id="m17" onclick="setMode('iphone17')">iPhone 17（灵动岛）</button>
+      <button id="mip" onclick="setMode('ipad')">iPad（横屏）</button>
+      <button id="mpc" onclick="setMode('pc')">电脑端</button>
+    </span>
+  </div>
+
+  <div class="phone mode-iphone11" id="phone">
+      <div class="screen">
+        <div class="pull-hint" id="pullHint">↓ 下拉刷新</div>
+      <div class="app-root" id="app">
+        <!-- 页面主体 -->
+        <div class="app-body">
+          <!-- 作业清单 -->
+          <section class="page active" id="page-list">
+            <div class="sticky">
+              <div class="phead">
+                <h1>作业清单</h1>
+                <button class="sync-btn" id="syncBtn" onclick="syncCycle(false)" title="云同步" aria-label="云同步">
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.6A4 4 0 0 1 17 18" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 12v6M12 18l-2.5-2.5M12 18l2.5-2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="gear" onclick="openSettings()" aria-label="设置">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12h2.5M19 12h2.5M4.2 19.8l1.8-1.8M18 6l1.8-1.8" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+              <div class="datebar">
+                <button class="nav" onclick="shiftDate(-1)" aria-label="前一天"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <button class="date-btn" onclick="openDatePicker()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>
+                  <span><span class="d-main" id="listDate">--</span><span class="d-sub" id="listWeek">--</span></span>
+                </button>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <button class="today-btn" id="todayBtn" onclick="gotoToday()">今天</button>
+                  <button class="nav" onclick="shiftDate(1)" aria-label="后一天"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="content" id="listContent"></div>
+          </section>
+
+          <!-- 作业统计 -->
+          <section class="page" id="page-stats">
+            <div class="sticky">
+              <div class="phead"><h1>作业统计</h1></div>
+              <div class="datebar">
+                <span style="font-size:13px;color:var(--muted);" id="statsDate">--</span>
+                <div style="display:flex;gap:8px;">
+                  <button class="nav" onclick="shiftDate(-1)" aria-label="前一天"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  <button class="nav" onclick="shiftDate(1)" aria-label="后一天"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="content" id="statsContent"></div>
+          </section>
+
+          <!-- 待办事项 -->
+          <section class="page" id="page-tasks">
+            <div class="sticky">
+              <div class="phead"><h1>待办事项</h1></div>
+            </div>
+            <div class="content" id="tasksContent"></div>
+          </section>
+
+          <!-- 横向比较 -->
+          <section class="page" id="page-compare">
+            <div class="sticky">
+              <div class="phead"><h1>横向比较</h1></div>
+              <div class="cmp-search">
+                <input id="cmpInput" placeholder="输入文字筛选（作业内容 / 科目 / 备注）…" oninput="onCmpInput()" />
+              </div>
+            </div>
+            <div class="cmp-body">
+              <div class="cmp-list" id="compareList"></div>
+            </div>
+            <div class="cmp-foot" id="compareStats"></div>
+          </section>
+
+          <!-- 月度统计 -->
+          <section class="page" id="page-month">
+            <div class="sticky">
+              <div class="phead"><h1>月度统计</h1></div>
+              <div class="month-nav" style="margin-top:8px;">
+                <button class="nav" onclick="shiftMonth(-1)" aria-label="上个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <span id="monthLabel" style="font-size:15px;font-weight:700;color:var(--ink);">--</span>
+                <button class="nav" onclick="shiftMonth(1)" aria-label="下个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              </div>
+            </div>
+            <div class="content" id="monthContent"></div>
+          </section>
+        </div>
+
+        <!-- home indicator + tabbar -->
+        <div class="home-bar"></div>
+        <div class="tabbar" id="tabbar">
+          <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5A2 2 0 0 1 6 4h6v15H6a2 2 0 0 0-2 1.5zM20 5.5A2 2 0 0 0 18 4h-6v15h6a2 2 0 0 1 2 1.5z" stroke-linejoin="round"/></svg>作业台</div>
+          <button class="tab on" data-tab="list" onclick="switchTab('list')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h4" stroke-linecap="round"/></svg></span>
+            <span class="lb">清单</span>
+          </button>
+          <button class="tab" data-tab="stats" onclick="switchTab('stats')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
+            <span class="lb">统计</span>
+          </button>
+          <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
+            <span class="lb">待办</span>
+          </button>
+          <button class="tab" data-tab="compare" onclick="switchTab('compare')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M7 4L4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="lb">比较</span>
+          </button>
+          <button class="tab" data-tab="month" onclick="switchTab('month')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4" stroke-linecap="round"/></svg></span>
+            <span class="lb">月度</span>
+          </button>
+        </div>
+
+        <!-- 弹层 -->
+        <div class="mask" id="mask" onclick="closeSheet()"></div>
+        <div class="sheet" id="sheet"></div>
+        <div class="toast" id="toast"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============ 常量 ============ */
+const STORE_KEY = "wb_hwdsk_v1";
+const SUBJECTS = ["语文","数学","英语","其他"];
+const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
+const SUBJ_COLOR = {"语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
+
+/* ============ 工具 ============ */
+const $ = id => document.getElementById(id);
+const pad2 = n => (n<10?"0":"")+n;
+const ymd = d => d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+const parseYmd = s => { const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); };
+const clockToMin = s => { if(!s) return null; const [h,m]=s.split(":").map(Number); return h*60+m; };
+const minToClock = m => { m=((m%1440)+1440)%1440; return pad2(Math.floor(m/60))+":"+pad2(m%60); };
+const sameDay = (a,b)=> a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+const WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+/* ============ 状态 ============ */
+let state = null;
+let viewDate = new Date(); viewDate.setHours(0,0,0,0);
+let monthView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+let cmpTitle = null;
+let cmpQuery = "";       // 横向比较：文字筛选关键词
+let openExpo = null;      // 当前展开的 todoId（手风琴：同时只展开一个）
+let ganttHL = null;      // 高亮 todoId
+
+/* ============ 数据层 ============ */
+function load(){
+  try{ const raw = localStorage.getItem(STORE_KEY); if(raw){ state = JSON.parse(raw); } }catch(e){}
+  if(!state || !state.todos){ state = seed(); save(); }
+  if(!state.tasks){ state.tasks = []; }
+  if(!state._del){ state._del = {}; }        // 删除墓碑：防止已删条目被云端“复活”
+  /* 彻底移除常用词/高频词功能：删除旧数据字段，不再存储、不再同步 */
+  delete state.chips; delete state.hot; delete state.hotBlock;
+  pruneTombstones();
+  /* 自愈：示例/演示数据（sample:true）一律清除；清掉后写回并同步，顺带把云端也洗清 */
+  const n0=(state.todos||[]).length+(state.tasks||[]).length;
+  state.todos=(state.todos||[]).filter(t=>!t.sample);
+  state.tasks=(state.tasks||[]).filter(t=>!t.sample);
+  if(state.todos.length+(state.tasks||[]).length !== n0){ save(); }
+  recomputeHot();
+}
+/* 仅写本机，不触发云同步（供同步流程内部使用，避免递归） */
+function saveLocal(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
+/* 正常保存：写本机 + 若已配置云同步则延迟自动上传 */
+function save(){ saveLocal(); syncSchedule(); }
+
+/* 确定性随机，保证示例可复现 */
+let _s = 987654321;
+function rnd(){ _s = (_s*1103515245 + 12345) & 0x7fffffff; return _s/0x7fffffff; }
+function rint(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
+
+function seed(){
+  /* 正式使用：不再生成任何示例/演示数据，全新安装从空开始（避免示例混入统计与云端） */
+  return { todos:[], tasks:[], _del:{}, _syncedAt:0 };
+  const todos = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const pool = {
+    "语文":["阅读名著《朝花夕拾》","背诵古诗三首","单元测试卷订正","记叙文写作练习"],
+    "数学":["练习册 P45-48","错题本订正","应用题专项训练","口算每日一练"],
+    "英语":["Unit3 单词听写","课文跟读录音","语法填空练习","绘本阅读"],
+    "其他":["科学实验记录","美术手抄报","体育锻炼打卡","整理书包书桌"]
+  };
+  // 今天：演示各种状态（含「暂停后分段」的起止时间展示）
+  const now = Date.now();
+  todos.push(mkTodo(today,"语文","阅读名著《朝花夕拾》第2章",{estMin:30,detail:"读完并批注精彩段落",done:true,wrong:1,startClock:"16:00",endClock:"17:30",accum:70*60000,sample:true,segments:[{s:"16:00",e:"16:40"},{s:"17:00",e:"17:30"}]}));
+  todos.push(mkTodo(today,"数学","练习册 P45-48",{estMin:18,detail:"完成 1-12 题",wrong:2,done:true,startClock:"16:20",endClock:"16:38",accum:18*60000,sample:true}));
+  todos.push(mkTodo(today,"英语","Unit3 单词听写",{estMin:20,detail:"背诵黑体词 15 个",sample:true}));
+  todos.push(mkTodo(today,"其他","科学实验记录",{estMin:15,detail:"记录种子发芽观察",wrong:0,done:true,startClock:"18:00",endClock:"18:15",accum:15*60000,sample:true}));
+
+  // 过去 30 天历史
+  for(let d=30; d>=1; d--){
+    const dt = new Date(today); dt.setDate(today.getDate()-d);
+    const n = rint(2,4);
+    const used = {};
+    for(let i=0;i<n;i++){
+      const subj = SUBJECTS[rint(0,3)];
+      const title = pool[subj][rint(0,pool[subj].length-1)];
+      const key = subj+title; if(used[key]) continue; used[key]=1;
+      const est = rint(15,45);
+      const done = rnd() > 0.18;
+      const wrong = done ? rint(0,8) : 0;
+      const startH = rint(16,19), startM = [0,15,30,45][rint(0,3)];
+      const startMin = startH*60+startM;
+      const endMin = startMin + est + rint(0,10);
+      const t = mkTodo(dt, subj, title, {
+        estMin:est, wrong:wrong,
+        done:done,
+        startClock: done?minToClock(startMin):null,
+        endClock: done?minToClock(endMin):null,
+        accum: done? (endMin-startMin)*60000 : 0,
+        sample:true
+      });
+      todos.push(t);
+    }
+  }
+  // 待办事项示例（与作业数据完全隔离，不进任何统计）
+  const tasks = [];
+  const t_tomorrow = new Date(today); t_tomorrow.setDate(today.getDate()+1);
+  tasks.push(mkTask("买美术课手工材料", ymd(t_tomorrow), 1, true));
+  tasks.push(mkTask("给花盆浇水", null, 3, true));
+  tasks.push(mkTask("整理下周错题本", null, 2, true));
+  const doneLow = mkTask("还图书馆绘本", null, 3, true);
+  doneLow.done=true; doneLow.doneAt=Date.now()-3600000; tasks.push(doneLow);
+
+  return { todos, tasks };
+}
+function mkTodo(date, subject, title, o={}){
+  return Object.assign({
+    id:uid(), date:ymd(date), subject, title,
+    detail:"", estMin:0, wrong:0, done:false,
+    accum:0, timerRunning:false, startedAt:null,
+    startClock:null, endClock:null, sample:false,
+    segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
+    _u: Date.now()         // 本条最后修改时间（多端合并时以新的为准）
+  }, o);
+}
+/* 标记为「本机已改动」，供云端合并判定谁更新 */
+function touch(t){ if(t) t._u = Date.now(); return t; }
+
+/* ============ 计时分段（暂停即分段） ============ */
+function nowClock(){ const d=new Date(); return pad2(d.getHours())+":"+pad2(d.getMinutes()); }
+function segOpen(t, clock){ const a=(t.segments=t.segments||[]); if(!a.length || a[a.length-1].e!=null) a.push({s:clock, e:null}); }
+function segClose(t, clock){ const a=(t.segments=t.segments||[]); const last=a[a.length-1]; if(last && last.e==null) last.e=clock; }
+/* 展示用：有真实分段用真实分段，否则用 起止 兜底（兼容旧数据） */
+function segmentsOf(t){
+  const arr=(t.segments||[]).filter(x=>x.s);
+  let list;
+  if(arr.length) list = arr.map(x=>({s:x.s, e: x.e || (t.timerRunning?"进行中":x.s)}));
+  else {
+    // 无分段：用「计时开始 + 计时器实际用时」；从未计时则不显示时间段
+    const sm=clockToMin(t.startClock), dur=Math.round(spentOf(t)/60000);
+    if(sm==null || dur<=0) return [];
+    list=[{s:t.startClock, e: t.timerRunning ? "进行中" : minToClock(sm+dur)}];
+  }
+  if(list.length<2) return list;
+  // 相邻段暂停 <GAP_MERGE 分钟 → 合并为一段（与色块一致）
+  const merged=[];
+  list.forEach(seg=>{
+    const last=merged[merged.length-1];
+    if(last && last.e!=="进行中"){
+      const ge=clockToMin(last.e), gs=clockToMin(seg.s);
+      if(gs!=null && ge!=null && (gs-ge)<=GAP_MERGE){ last.e=seg.e; return; }
+    }
+    merged.push({s:seg.s, e:seg.e});
+  });
+  return merged;
+}
+function segText(t){
+  const segs=segmentsOf(t);
+  return segs.length ? segs.map(x=> x.s+"–"+x.e).join("、") : "未开始";
+}
+function addTodo(subject, title, opts={}){
+  const t = mkTodo(viewDate, subject, title, opts);
+  state.todos.push(t); recomputeHot(); save(); syncDerived(); return t;
+}
+function getTodo(id){ return state.todos.find(t=>t.id===id); }
+
+/* ============ 待办事项（独立于作业数据，不进任何统计） ============ */
+const PRI = {1:{label:"高",cls:"pri-1"},2:{label:"中",cls:"pri-2"},3:{label:"低",cls:"pri-3"}};
+const TASK_KEEP = 10;                 // 已完成最多保留
+let addPri = 2, addDue = null;        // 添加卡草稿
+function mkTask(title, due, priority, sample){
+  return { id:uid(), title, due: due||null, priority: priority||2, done:false, doneAt:null, createdAt:Date.now(), sample:!!sample, _u: Date.now() };
+}
+function addTask(title, due, priority){
+  title=(title||"").trim(); if(!title) return null;
+  const t = mkTask(title, due, priority);
+  state.tasks.push(t); save(); renderTasks(); return t;
+}
+function getTask(id){ return state.tasks.find(t=>t.id===id); }
+function toggleTask(id){
+  const t=getTask(id); if(!t) return;
+  t.done=!t.done; touch(t);
+  if(t.done){ t.doneAt=Date.now(); pruneTasks(); toast("待办已完成 · 已下沉"); }
+  else { t.doneAt=null; toast("已恢复为未完成"); }
+  save(); renderTasks();
+}
+function delTask(id){       // 仅未完成可删除（已完成由数量上限自动清理）
+  const t=getTask(id); if(!t || t.done) return;
+  tombstone(id);
+  state.tasks = state.tasks.filter(x=>x.id!==id); save(); renderTasks(); toast("已删除待办");
+}
+/* 删除记录：写入墓碑，避免合并时又被云端数据“复活” */
+function tombstone(id){
+  if(!id) return;
+  state._del = state._del||{};
+  state._del[id] = Date.now();
+}
+function pruneTasks(){      // 已完成超过上限，按完成时间逐条删最旧
+  const done = state.tasks.filter(t=>t.done);
+  if(done.length <= TASK_KEEP) return;
+  done.sort((a,b)=> (a.doneAt||0)-(b.doneAt||0));   // 旧 → 前
+  const over = done.length - TASK_KEEP;
+  const kill = new Set(done.slice(0, over).map(t=>t.id));
+  state.tasks = state.tasks.filter(t=>!kill.has(t.id));
+}
+function setTaskPri(id, p){ const t=getTask(id); if(!t) return; t.priority=p; touch(t); save(); renderTasks(); }
+function toggleDone(id){
+  const t = getTodo(id); if(!t) return;
+  t.done = !t.done; touch(t);
+  if(t.done){
+    // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
+    if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
+    finalizeEnd(t, Date.now());
+  }
+  else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; }  // 取消完成 → 清空分段重新计
+  save(); syncDerived();
+}
+function finalizeEnd(t, now){
+  const d = new Date(now);
+  t.endClock = pad2(d.getHours())+":"+pad2(d.getMinutes());
+  if(!t.startClock){
+    const span = Math.round((t.accum||0)/60000);
+    const endMin = d.getHours()*60+d.getMinutes();
+    t.startClock = minToClock(endMin - span);
+  }
+}
+function timerStart(id){
+  const t=getTodo(id); if(!t) return;
+  if(t.done){ t.done=false; t.endClock=null; }
+    if(!t.timerRunning){
+    const c=nowClock();
+    t.timerRunning=true; t.startedAt=Date.now();
+    if(!t.startClock){ t.startClock=c; }
+    segOpen(t, c);                      // 新开一段（暂停后再开始会再开一段）
+  }
+  touch(t);
+  save(); afterTimer(); toast("计时已开始");
+}
+function timerPause(id){
+  const t=getTodo(id); if(!t||!t.timerRunning) return;
+  t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null;
+  segClose(t, nowClock());              // 暂停 → 闭合当前段
+  touch(t); save(); afterTimer(); toast("计时已暂停");
+}
+function timerDone(id){
+  const t=getTodo(id); if(!t) return;
+  if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
+  t.done=true; touch(t); finalizeEnd(t, Date.now()); save();
+  afterTimer(); toast("计时已停止");
+}
+function afterTimer(){ renderList(); syncDerived(); }
+
+/* ============ 计算层 ============ */
+function todosOf(dateStr){ return state.todos.filter(t=>t.date===dateStr); }
+function spentOf(t){ return (t.accum||0) + (t.timerRunning ? (Date.now()-t.startedAt) : 0); }
+/* 计时器最后一段的结束时刻（分钟）；无计时数据返回 null —— 时间轴一律以计时器为准 */
+function segLastEndMin(t){
+  const a=(t.segments||[]).filter(x=>x && x.s);
+  if(!a.length) return null;
+  const last=a[a.length-1];
+  if(last.e!=null){ const m=clockToMin(last.e); if(m!=null) return m; }
+  if(t.timerRunning) return Math.floor(Date.now()/60000)%1440;
+  return null;
+}
+/* 开始时刻：优先取计时器第一段，其次才是兜底的 startClock */
+function startMinOf(t){
+  const a=(t.segments||[]).filter(x=>x && x.s);
+  if(a.length){ const m=clockToMin(a[0].s); if(m!=null) return m; }
+  return clockToMin(t.startClock);
+}
+/* 结束时刻：优先计时器最后一段；运行中取当前；都没有才用「完成时间」兜底（兼容早期数据） */
+function endMinOf(t){
+  const m=segLastEndMin(t); if(m!=null) return m;
+  if(t.timerRunning && t.startedAt) return Math.floor(Date.now()/60000)%1440;
+  return clockToMin(t.endClock);
+}
+/* 实际用时不足 1 分钟 → 视作当时未计时，不计入任何「用时」类统计 */
+const MIN_STAT_MS = 60000;
+function isTimed(t){ return spentOf(t) >= MIN_STAT_MS; }
+/* 有效计时分钟数组：剔除不足 1 分钟（疑似未计时）与明显过长（>3×中位数，疑似忘记按完成） */
+function validMinutes(todos){
+  const ms = todos.map(t=>spentOf(t)/60000).filter(m=> m>=1);
+  if(ms.length<3) return ms;                       // 样本太少不剔除，避免误伤
+  const s=[...ms].sort((a,b)=>a-b);
+  const mid=Math.floor(s.length/2);
+  const med = s.length%2 ? s[mid] : (s[mid-1]+s[mid])/2;
+  const cap = med*3;                                // 超过 3 倍中位数视为明显过长
+  return ms.filter(m=> m<=cap);
+}
+function dayStats(dateStr){
+  const ts = todosOf(dateStr);
+  const done = ts.filter(t=>t.done).length;
+  const timedAll = ts.filter(isTimed);              // 仅真正计时过的进用时统计
+  const valid = validMinutes(ts);
+  const totalMin = Math.round(valid.reduce((s,m)=>s+m,0));
+  const wrongSum = ts.reduce((s,t)=>s+(t.wrong||0),0);
+  let maxEnd=null;
+  ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
+  return {ts, done, total:ts.length, totalMin, wrongSum, maxEnd,
+          timedN:timedAll.length, validN:valid.length, untimedN:ts.length-timedAll.length,
+          allDone: ts.length>0 && done===ts.length};
+}
+/* 用时展示：不足 1 分钟显示「未计时」，避免把 0 分当成真实成绩 */
+function spentLabel(t){ const m=Math.round(spentOf(t)/60000); return m>0 ? m+" 分" : "未计时"; }
+function dayStars(dateStr){
+  const s = dayStats(dateStr);
+  if(s.total===0) return {stars:0, allDone:false, settled:false, pending:false};
+  if(!s.allDone) return {stars:0, allDone:false, settled:dateStr < ymd(new Date()), pending:false};
+  // 全部完成：基础 1 颗星
+  let stars = 1;
+  if(s.wrongSum <= 5) stars++;                       // 错题 ≤5 题 → +1 星
+  if(s.maxEnd != null && s.maxEnd < 21*60) stars++;  // 晚上 9 点前完成 → +1 星
+  const isPast = dateStr < ymd(new Date());
+  if(isPast) return {stars, allDone:true, settled:true, pending:false};
+  return {stars:0, allDone:true, settled:false, pending:true};  // 今日全做完，次日结算
+}
+
+/* ============ 渲染层 ============ */
+function switchTab(tab){
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  $("page-"+tab).classList.add("active");
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.tab===tab));
+  if(tab==="list") renderList();
+  if(tab==="stats") renderStats();
+  if(tab==="tasks") renderTasks();
+  if(tab==="compare") renderCompare();
+  if(tab==="month") renderMonth();
+}
+function refreshHeader(){
+  const ds = ymd(viewDate);
+  $("listDate").textContent = (viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日";
+  $("listWeek").textContent = WEEK[viewDate.getDay()];
+  $("statsDate").textContent = (viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日 · "+WEEK[viewDate.getDay()];
+  $("todayBtn").classList.toggle("show", !sameDay(viewDate,new Date()));
+}
+function refreshAll(){ refreshHeader(); renderList(); renderStats(); renderCompare(); renderMonth(); }
+function syncDerived(){ renderStats(); renderCompare(); renderMonth(); }
+
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+function chkSvg(done){ return done
+  ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  : ''; }
+function arrowSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+function penSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+function trashSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+
+function fmtDur(ms){
+  const s=Math.round(ms/1000); const m=Math.floor(s/60); const ss=s%60;
+  return pad2(m)+":"+pad2(ss);
+}
+
+function renderList(){
+  const ds = ymd(viewDate);
+  const ts = todosOf(ds);
+  const bySubj = {}; SUBJECTS.forEach(s=>bySubj[s]=[]);
+  const doneArr = [];
+  ts.forEach(t=>{ if(t.done) doneArr.push(t); else (bySubj[t.subject]||(bySubj[t.subject]=[])).push(t); });
+
+  let html="";
+  SUBJECTS.forEach(subj=>{
+    const arr = bySubj[subj]||[];
+    const total = ts.filter(t=>t.subject===subj).length;
+    html += `<div class="card"><div class="card-h"><span class="subj-dot subj-${subj}"></span><span class="subj-title ${subj}">${subj}</span><span style="font-size:12px;color:var(--muted);margin-left:auto;">${arr.length}/${total} 项</span></div>`;
+    if(arr.length===0){
+      html += `<div class="empty-tip" style="padding:16px 0;">${total>0?"该科已完成":"今日暂无"+subj+"作业"}</div>`;
+    } else {
+      arr.forEach(t=>{ html += todoRow(t); });
+    }
+    html += `</div>`;
+  });
+
+  // 已完成：沉底至添加栏上方
+  if(doneArr.length){
+    html += `<div class="card done-sec"><div class="card-h"><span class="subj-dot" style="background:var(--gray)"></span><span class="subj-title" style="color:var(--muted)">已完成</span><span style="font-size:12px;color:var(--muted);margin-left:auto;">${doneArr.length} 项 · 已沉底</span></div>`;
+    doneArr.forEach(t=>{ html += doneRow(t); });
+    html += `</div>`;
+  }
+
+  // 添加作业统一卡
+  html += `<div class="card">
+    <div class="add-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+      添加作业
+    </div>
+    <div class="seg4" id="seg4">`;
+  SUBJECTS.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${s}" onclick="pickAddSubj(this)">${s}</button>`);
+  html += `</div>
+    <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><button class="plus" onclick="doAdd()">+</button></div>
+  </div>`;
+
+  $("listContent").innerHTML = html;
+}
+
+let addSubj = "语文";
+function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); }
+/* 高频词/常用词功能已移除：recomputeHot 留作空操作，避免其它调用点报错 */
+function recomputeHot(){}
+function doAdd(){
+  const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
+  addTodo(addSubj, v); $("addInput").value=""; toast("已添加 · "+addSubj); renderList();
+}
+
+/* 展开后可编辑的字段：具体内容 / 预估时间 / 错题数量（未完成与已完成共用） */
+function expoFields(t){
+  return `
+      <div class="field">
+        <label>具体内容</label>
+        <textarea onchange="editField('${t.id}','detail',this.value)" placeholder="点此填写">${esc(t.detail)}</textarea>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>预估时间</label>
+          <div class="est-row"><input type="number" min="0" value="${t.estMin||''}" onchange="editField('${t.id}','estMin',this.value)"><span class="u">分</span></div>
+        </div>
+        <div class="field">
+          <label>错题数量</label>
+          <div class="est-row"><input type="number" min="0" value="${t.wrong||''}" onchange="editField('${t.id}','wrong',this.value)"><span class="u">道</span></div>
+        </div>
+      </div>`;
+}
+
+function todoRow(t){
+  const open = openExpo===t.id;
+  const running = t.timerRunning;
+  const meta = [];
+  if(running) meta.push(`<span class="pulse"></span><span style="color:var(--sun);font-weight:700;" data-timer="${t.id}">● 计时中 ${fmtDur(spentOf(t))}</span>`);
+  if(t.done && !running) meta.push(`<span style="color:var(--green);font-weight:600;">✓ 已完成</span>`);
+  if(t.estMin) meta.push(`预估 ${t.estMin} 分`);
+  if(t.wrong>0) meta.push(`<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>`);
+  const statusCls = running ? "run" : (t.done ? "stop" : "pause");
+  const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
+  const detail = `
+    <div class="expo ${open?'open':''}" id="expo-${t.id}">
+      ${expoFields(t)}
+      <div class="timer-block">
+        <div class="dur-line">
+          <span class="timer-num" data-timer="${t.id}">${fmtDur(spentOf(t))}</span>
+          <span class="timer-status ${statusCls}">${statusTxt}</span>
+        </div>
+        <div class="timer-actions">
+          <button class="tbtn start ${running?'dis':''}" ${running?'disabled':''} onclick="timerStart('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>开始</button>
+          <button class="tbtn pause ${!running?'dis':''}" ${!running?'disabled':''} onclick="timerPause('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>暂停</button>
+          <button class="tbtn done ${t.done?'dis':''}" ${t.done?'disabled':''} onclick="timerDone('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>完成</button>
+        </div>
+        ${ (t.accum>0 || t.done || t.timerRunning) ? `<div class="dur-hint" style="margin-top:9px;">起止时间：<b style="color:var(--ink)">${segText(t)}</b></div>` : "" }
+      </div>
+    </div>`;
+  return `<div class="todo" id="todo-${t.id}">
+    ${ t.done?'<span class="stamp" id="stamp-'+t.id+'">已完成</span>':'' }
+    <div class="todo-top">
+      <button class="chk ${t.done?'done':''}" onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
+      <div class="todo-mid" onclick="toggleExpo('${t.id}')">
+        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}</div>
+        ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
+      </div>
+      <div class="todo-acts">
+        <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
+        <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
+        <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
+      </div>
+    </div>
+    ${detail}
+  </div>`;
+}
+function editField(id,key,val){
+  const t=getTodo(id); if(!t) return;
+  if(key==="estMin"||key==="wrong") t[key]=Math.max(0,parseInt(val||"0",10)||0);
+  else { t[key]=val; if(key==="title") recomputeHot(); }
+  touch(t); save(); syncDerived();
+}
+/* 已完成作业：同样可点击展开（再点折叠），展开后可改 具体内容 / 预估时间 / 错题数量 */
+function doneRow(t){
+  const open = openExpo===t.id;
+  const sp = Math.round(spentOf(t)/60000);
+  const meta = [
+    `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
+    t.estMin ? `预估 ${t.estMin} 分` : "",
+    sp>0 ? `用时 ${sp} 分` : "",
+    t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : ""
+  ].filter(Boolean);
+  return `<div class="todo" id="todo-${t.id}">
+    <span class="stamp" id="stamp-${t.id}">已完成</span>
+    <div class="todo-top">
+      <button class="chk done" onclick="onChk('${t.id}')">${chkSvg(true)}</button>
+      <div class="todo-mid" onclick="toggleExpo('${t.id}')">
+        <div class="todo-title done">${esc(t.title)}</div>
+        <div class="todo-meta">${meta.join("")}</div>
+      </div>
+      <div class="todo-acts">
+        <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
+        <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
+        <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
+      </div>
+    </div>
+    <div class="expo ${open?'open':''}" id="expo-${t.id}">
+      ${expoFields(t)}
+      <div class="dur-hint" style="margin-top:2px;">计时时间：<b style="color:var(--ink)">${segText(t)}</b></div>
+    </div>
+  </div>`;
+}
+function delTodo(id){
+  const t=getTodo(id); if(!t) return;
+  if(!confirm("确定删除该作业？")) return;
+  tombstone(id);
+  state.todos=state.todos.filter(x=>x.id!==id);
+  if(openExpo===id) openExpo=null;
+  if(ganttHL===id) ganttHL=null;
+  recomputeHot(); save(); renderList(); syncDerived();
+  toast("已删除作业");
+}
+function renameTodo(id){
+  const t=getTodo(id); if(!t) return;
+  const el=$("todo-"+id); if(!el) return;
+  const titleEl=el.querySelector(".todo-title"); if(!titleEl) return;
+  const inp=document.createElement("input");
+  inp.value=t.title; inp.className="todo-title"; inp.style.font="inherit";
+  titleEl.replaceWith(inp); inp.focus(); inp.select();
+  let done=false;
+  const commit=()=>{ if(done) return; done=true; const v=inp.value.trim(); if(v) editField(id,"title",v); renderList(); };
+  inp.addEventListener("blur", commit);
+  inp.addEventListener("keydown", e=>{ if(e.key==="Enter") inp.blur(); });
+}
+function toggleExpo(id){
+  const prev = openExpo;
+  if(prev && prev!==id){ const pt=getTodo(prev); if(pt && pt.timerRunning){ timerPause(prev); } }
+  openExpo = (openExpo===id) ? null : id;
+  renderList();
+}
+function onChk(id){
+  const was = getTodo(id).done;
+  toggleDone(id);
+  if(!was){ const st=$("stamp-"+id); if(st){ st.classList.add("go"); } }
+  renderList();
+}
+
+/* ===== 作业统计（自适应多段时间轴 + 条目式列表） ===== */
+const GAP_SPLIT = 90;   // 相邻作业空隙超过该分钟数，就另起一条时间轴
+const MAX_ROWS  = 3;    // 时间轴最多分几段（对应 上午 / 下午 / 晚上）
+const GAP_MERGE = 10;   // 同一作业相邻计时段之间，暂停短于该分钟数则合并为一段（只计实际工时）；满 10 分钟以上才拆成两段
+/* 色块宽度：末尾减 2px，让相邻色块之间留出细微间隔，便于分清 */
+const blkWidth = p => `max(calc(${p}% - 2px), 3px)`;
+const LANE_H = 20;        // 每条泳道高度（压低，让时间轴更贴近“一行”）
+const BLK_H  = 14;        // 单个色块高度（无文字、短条）
+/* 单条作业的真实计时分段（分钟）；相邻段暂停 <GAP_MERGE 合并为一段，
+   合并后色块长度=各段实际工时之和（暂停不计入），即“色块只显示实际工作时间” */
+function segMins(t){
+  const now = Math.floor(Date.now()/60000)%1440;
+  const raw=[];
+  const segs=(t.segments||[]).filter(x=>x && x.s);
+  if(segs.length){
+    segs.forEach(x=>{
+      const sm=clockToMin(x.s); if(sm==null) return;
+      const run = (x.e==null && t.timerRunning);
+      let em = x.e!=null ? clockToMin(x.e) : (run ? now : sm);
+      if(em==null || em<sm) em = sm + Math.max(Math.round((t.estMin||20)/2),5);
+      const e2 = Math.max(em, sm+5);
+      raw.push({sm, realEnd:e2, dur:e2-sm, running:run});
+    });
+  } else {
+    // 无分段：只用计时器实际用时；从未计时就不臆造时间条（不再按“完成时间”拉长）
+    const dur = Math.round(spentOf(t)/60000);
+    if(dur<=0) return [];
+    let sm = clockToMin(t.startClock);
+    if(sm==null) sm = t.timerRunning ? now : null;
+    if(sm==null) return [];
+    const e2 = sm + Math.max(dur, 5);
+    raw.push({sm, realEnd:e2, dur:e2-sm, running:t.timerRunning});
+  }
+  raw.sort((a,b)=> a.sm-b.sm || a.realEnd-b.realEnd);
+  const out=[];
+  raw.forEach(seg=>{
+    const last=out[out.length-1];
+    if(last && (seg.sm - last.realEnd) <= GAP_MERGE){
+      // 短暂停：合并为一段，长度只累加实际工时，暂停空档不计入
+      last.dur += seg.dur;
+      last.realEnd = Math.max(last.realEnd, seg.realEnd);
+      last.em = last.sm + last.dur;
+      last.running = last.running || seg.running;
+    } else {
+      out.push({sm:seg.sm, em:seg.sm+seg.dur, realEnd:seg.realEnd, dur:seg.dur, running:seg.running});
+    }
+  });
+  return out;
+}
+
+/* 按时间空隙把当日作业聚成若干段；段内按泳道排布避免色块重叠 */
+function buildRows(s){
+  const untimed=[], segs=[];
+  s.ts.forEach(t=>{
+    const m=segMins(t);
+    if(!m.length){ if(!t.timerRunning) untimed.push(t); else segs.push({t, sm:clockToMin(t.startClock)||0, em:Math.floor(Date.now()/60000)%1440, running:true, lane:0}); }
+    else m.forEach(seg=> segs.push({t, sm:seg.sm, em:seg.em, running:seg.running, lane:0}));
+  });
+  segs.sort((a,b)=> a.sm-b.sm);
+
+  let clusters=[];
+  segs.forEach(it=>{
+    const c = clusters[clusters.length-1];
+    if(!c) clusters.push({items:[it], minStart:it.sm, maxEnd:it.em, laneEnds:[it.em]});
+    else if(it.sm - c.maxEnd > GAP_SPLIT) clusters.push({items:[it], minStart:it.sm, maxEnd:it.em, laneEnds:[it.em]});
+    else {
+      c.items.push(it); c.minStart=Math.min(c.minStart,it.sm); c.maxEnd=Math.max(c.maxEnd,it.em);
+      // 分配泳道：找第一条「末端 ≤ 本段起点」的泳道，放入后更新其末端；否则新增泳道
+      let placed=false;
+      for(let i=0;i<c.laneEnds.length;i++){ if(c.laneEnds[i] <= it.sm){ it.lane=i; c.laneEnds[i]=it.em; placed=true; break; } }
+      if(!placed){ it.lane=c.laneEnds.length; c.laneEnds.push(it.em); }
+    }
+  });
+
+  // 段数超过上限时，反复合并间隔最小的相邻两段
+  while(clusters.length > MAX_ROWS){
+    let bi=0, bg=Infinity;
+    for(let i=0;i<clusters.length-1;i++){
+      const g = clusters[i+1].minStart - clusters[i].maxEnd;
+      if(g < bg){ bg=g; bi=i; }
+    }
+    const a=clusters[bi], b=clusters[bi+1];
+    clusters.splice(bi,2,{ items:a.items.concat(b.items),
+      minStart:Math.min(a.minStart,b.minStart), maxEnd:Math.max(a.maxEnd,b.maxEnd),
+      laneEnds: a.laneEnds.concat(b.laneEnds) });
+  }
+  clusters.forEach(c=>{ c.lanes = c.laneEnds.length; });   // 该段时间轴需要的泳道数
+  return {clusters, untimed};
+}
+function periodLabel(m){ return m < 12*60 ? "上午" : (m < 18*60 ? "下午" : "晚上"); }
+function spanText(m){ const h=Math.floor(m/60), r=m%60;
+  return (h? h+" 小时":"") + (h&&r? " ":"") + (r? r+" 分":"") + (!h&&!r? "0 分":""); }
+/* 每段基准起点：段首 -15 分后向下取整到 30 分 */
+function rowBase(c){ return Math.max(0, Math.floor((c.minStart-15)/30)*30); }
+/* 当日统一时长：取覆盖所有段所需长度的最大值，向上取整到 30 分（至少 60 分） */
+function commonSpan(clusters){
+  let need = 60;
+  clusters.forEach(c=>{ need = Math.max(need, Math.min(1440, c.maxEnd+15) - rowBase(c)); });
+  return Math.max(60, Math.min(1440, Math.ceil(need/30)*30));
+}
+/* 各行共用同一 span，只有起点不同 → 同一日每条时间轴代表的时间长度相等 */
+function rowRange(c, span){
+  let base = rowBase(c);
+  if(base + span > 1440) base = Math.max(0, 1440 - span);   // 贴近日终时左移，保证等长
+  return {base, end: base+span, span};
+}
+
+function renderStats(){
+  const ds=ymd(viewDate); const s=dayStats(ds);
+  if(s.total===0){ $("statsContent").innerHTML = `<div class="empty-tip">这一天还没有作业记录</div>`; return; }
+
+  // 按开始时间排序（未开始置后）→ 供下方条目列表使用
+  const byStart = a => startMinOf(a)==null ? 1e9 : startMinOf(a);
+  const sorted = s.ts.slice().sort((a,b)=> byStart(a)-byStart(b));
+
+  const {clusters, untimed} = buildRows(s);
+  const legend = SUBJECTS.map(sb=>`<span><i style="background:${SUBJ_COLOR[sb]}"></i>${sb}</span>`).join("");
+  const span = commonSpan(clusters);                     // 当日统一时长：各行时间轴等长
+  const step = span<=150 ? 30 : (span<=330 ? 60 : 120);  // 刻度步长各行一致
+
+  let html = `<div class="gantt${ganttHL?' has-hl':''}">
+    <div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:10px;">今日作业时段${clusters.length>1?`　每段 ${spanText(span)}`:""}</div>`;
+
+  // 各时间段：一段一条时间轴，各行时长相同、仅起点不同
+  clusters.forEach(c=>{
+    const {base,end}=rowRange(c, span);
+    let ticks="";
+    for(let m=base; m<=end; m+=step){ const left=((m-base)/span)*100; ticks+=`<span class="tick" style="left:${left}%">${minToClock(m)}</span>`; }
+    let blocks="";
+    c.items.forEach(it=>{
+      const t=it.t;
+      const leftP  = Math.min(Math.max(((it.sm-base)/span)*100, 0), 96);
+      const widthP = Math.min(Math.max(((it.em-it.sm)/span)*100, 3), 100-leftP);
+      const cls = t.done ? "" : (it.running ? "g-run" : "g-none");
+      const hl  = ganttHL===t.id ? "hl":"";
+      const col = SUBJ_COLOR[t.subject]||"#6B8E5A";
+      const top = it.lane*LANE_H + Math.round((LANE_H-BLK_H)/2);
+      const tip = esc(t.title) + " · " + t.subject;
+      blocks += `<div class="gblock ${cls} ${hl}" style="left:${leftP}%;top:${top}px;height:${BLK_H}px;width:${blkWidth(widthP)};background:${col}" title="${tip}" data-gid="${t.id}" data-sm="${it.sm}" onclick="ganttClick('${t.id}')"></div>`;
+    });
+    const tag = periodLabel(c.minStart);
+    const todoCnt = new Set(c.items.map(i=>i.t.id)).size;
+    html += `<div class="gantt-row">
+      <div class="grow-hd"><span class="grow-tag ${tag}">${tag}</span><span class="grow-range">${minToClock(base)} – ${minToClock(end)} · ${todoCnt} 项</span></div>
+      <div class="gantt-axis">${ticks}</div>
+      <div class="gantt-track" data-base="${base}" data-span="${span}" style="height:${Math.max(1,c.lanes)*LANE_H}px">${blocks}</div>
+    </div>`;
+  });
+
+  // 尚未开始的作业（无时间信息）单独一行，不做时间刻度
+  if(untimed.length){
+    let blocks="";
+    untimed.forEach(t=>{
+      const hl  = ganttHL===t.id ? "hl":"";
+      const col = SUBJ_COLOR[t.subject]||"#6B8E5A";
+      blocks += `<div class="gblock g-none ${hl}" style="background:${col}" title="${esc(t.title)} · ${t.subject}" data-gid="${t.id}" onclick="ganttClick('${t.id}')"></div>`;
+    });
+    const noTimeTag = untimed.some(t=>t.done) ? "未计时" : "未开始";
+    html += `<div class="gantt-row">
+      <div class="grow-hd"><span class="grow-tag 未开始">${noTimeTag}</span><span class="grow-range">尚未计时 · ${untimed.length} 项</span></div>
+      <div class="gantt-track static">${blocks}</div>
+    </div>`;
+  }
+
+  html += `<div class="glegend">${legend}</div></div>`;
+
+  // 条目式列表（按时间顺序）
+  let rows="";
+  sorted.forEach(t=>{
+    const isT = isTimed(t);
+    const sp = Math.round(spentOf(t)/60000);
+    const wr = t.wrong||0;
+    const hl = ganttHL===t.id ? "hl":"";
+    const segs = segmentsOf(t);
+    const segStr = segs.length ? segs.map(x=>x.s+"–"+x.e).join(" / ") : "未开始";
+    rows += `<div class="srow ${hl}" id="srow-${t.id}" onclick="ganttClick('${t.id}')">
+      <div class="srow-top">
+        <span class="subj-dot subj-${t.subject}"></span>
+        <span class="srow-title">${esc(t.title)}</span>
+        <span class="srow-est">预估 ${t.estMin||'-'} 分</span>
+      </div>
+      <div class="srow-sub">
+        <span>起止 <b>${segStr}</b></span>
+        <span>用时 <b style="${isT?'':`color:var(--muted);font-weight:600;`}">${isT? sp+" 分" : "未计时"}</b></span>
+        <span>错题 <b style="color:${wr>=5?RED:'var(--ink)'}">${wr}</b></span>
+      </div>
+    </div>`;
+  });
+  html += `<div class="card${ganttHL?' has-hl':''}" style="padding:10px 12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:4px;">当日作业（按时间）</div>${rows}</div>`;
+
+  // 本日汇总
+  html += `<div class="card" style="margin-top:12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:8px;">本日汇总</div>
+    <div class="sum-grid">
+      <div class="sum-cell"><div class="k">作业项</div><div class="v">${s.total}</div></div>
+      <div class="sum-cell"><div class="k">已完成</div><div class="v">${s.done}<small> / ${s.total}</small></div></div>
+      <div class="sum-cell"><div class="k">总用时</div><div class="v">${s.totalMin}<small> 分</small></div></div>
+      <div class="sum-cell"><div class="k">错题合计</div><div class="v" style="color:${s.wrongSum>=5?RED:'var(--ink)'}">${s.wrongSum}<small> 道</small></div></div>
+    </div>
+    ${ (s.untimedN>0 || s.validN<s.timedN) ? `<div style="margin-top:9px;font-size:12px;color:var(--muted);line-height:1.6;">用时统计按 ${s.validN} 项有效计时计算（已剔除不足 1 分钟与明显过长）；另有 ${s.untimedN} 项不足 1 分钟（疑似当时未计时）已排除。</div>` : "" }
+    </div>`;
+
+  $("statsContent").innerHTML = html;
+  if(ganttHL){ const el=$("srow-"+ganttHL); if(el && el.scrollIntoView) el.scrollIntoView({block:"center",behavior:"smooth"}); }
+}
+function ganttClick(id){
+  ganttHL = (ganttHL===id)? null : id;
+  renderStats();
+}
+
+/* ===== 待办事项渲染 ===== */
+function dueLabel(due){
+  if(!due) return {txt:"无截止", over:false};
+  const d=parseYmd(due); const today=new Date(); today.setHours(0,0,0,0);
+  const over = d < today;
+  return { txt:(d.getMonth()+1)+"月"+d.getDate()+"日", over };
+}
+function renderTasks(){
+  const tasks = state.tasks;
+  const active = tasks.filter(t=>!t.done).sort((a,b)=> (a.priority-b.priority) || (a.createdAt-b.createdAt));
+  const done  = tasks.filter(t=>t.done).sort((a,b)=> (b.doneAt||0)-(a.doneAt||0)).slice(0, TASK_KEEP);
+
+  // 添加卡
+  const priBtns=[1,2,3].map(p=>`<button data-p="${p}" class="${addPri===p?'on':''}" onclick="pickAddPri(${p})">${PRI[p].label}</button>`).join("");
+  const dueB = addDue? `<span class="due-btn set" onclick="openDuePicker(null)">📅 ${dueLabel(addDue).txt} · 改</span>`
+                      : `<span class="due-btn" onclick="openDuePicker(null)">📅 设置截止（可选）</span>`;
+  let html = `<div class="task-add">
+    <div class="add-title"><span class="subj-dot subj-其他"></span>添加待办</div>
+    <div class="seg3">${priBtns}</div>
+    ${dueB}
+    <div class="add-row">
+      <input id="taskInput" placeholder="输入待办内容…" />
+      <button class="plus" onclick="commitTask()">+</button>
+    </div>
+  </div>`;
+
+  // 未完成
+  html += `<div class="task-sec">未完成 · ${active.length}</div>`;
+  if(active.length===0) html += `<div class="empty-tip">暂无未完成待办</div>`;
+  else html += active.map(t=>taskRow(t)).join("");
+
+  // 已完成
+  html += `<div class="task-sec">已完成 · ${done.length}${tasks.filter(t=>t.done).length>TASK_KEEP?`（仅保留最新 ${TASK_KEEP} 条）`:""}</div>`;
+  if(done.length===0) html += `<div class="empty-tip">还没有已完成的待办</div>`;
+  else html += done.map(t=>taskRow(t)).join("");
+
+  $("tasksContent").innerHTML = html;
+  const inp=$("taskInput"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitTask(); };
+}
+function taskRow(t){
+  const p=PRI[t.priority]||PRI[2];
+  const dl=dueLabel(t.due);
+  const dueHtml = t.due? `<span class="task-due ${dl.over&&!t.done?'over':''}" onclick="openDuePicker('${t.id}')">截止 ${dl.txt}${dl.over&&!t.done?' · 已逾期':''}</span>`
+                      : `<span class="task-due" onclick="openDuePicker('${t.id}')">无截止</span>`;
+  const delBtn = t.done? "" : `<button class="task-del" onclick="delTask('${t.id}')" aria-label="删除"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 7h14M10 7V5h4v2M6 7l1 12h10l1-12" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+  return `<div class="task-row ${t.done?'done':''}">
+    <button class="chk ${t.done?'done':''}" onclick="toggleTask('${t.id}')">${chkSvg(t.done)}</button>
+    <div class="task-main">
+      <div class="task-title">${esc(t.title)}</div>
+      <div class="task-meta">
+        <span class="pri ${p.cls}" onclick="cyclePri('${t.id}')"><span class="dot"></span>${p.label}</span>
+        ${dueHtml}
+      </div>
+    </div>
+    ${delBtn}
+  </div>`;
+}
+function pickAddPri(p){ addPri=p; renderTasks(); }
+function commitTask(){ const v=$("taskInput").value; if(!v||!v.trim()){ toast("请输入内容"); return; } addTask(v, addDue, addPri); addDue=null; addPri=2; }
+function cyclePri(id){ const t=getTask(id); if(!t) return; setTaskPri(id, t.priority>=3?1:t.priority+1); }
+function openDuePicker(id, oy, om){
+  const t = id? getTask(id): null;
+  // 传入 y,m 时用其定位月份（new Date 自动处理 m<0 / m>11 的跨年溢出）
+  const base = (oy!=null && om!=null) ? new Date(oy, om, 1)
+             : ((t && t.due) ? parseYmd(t.due) : new Date());
+  const y=base.getFullYear(), m=base.getMonth();
+  const first=new Date(y,m,1), startDow=first.getDay(); const days=new Date(y,m+1,0).getDate();
+  let cells=""; WEEK.forEach(w=>cells+=`<div class="dp-dow">${w[1]}</div>`);
+  for(let i=0;i<startDow;i++) cells+=`<div class="dp-cell empty"></div>`;
+  const sel= t&&t.due? t.due : (id?null:addDue);
+  for(let d=1; d<=days; d++){ const dt=new Date(y,m,d); const sd=ymd(dt); const tdy=sameDay(dt,new Date());
+    cells+=`<div class="dp-cell ${sel===sd?'sel':''} ${tdy?'today':''}" onclick="pickDue('${id||''}',${y},${m},${d})">${d}</div>`; }
+  const cls = id? "setTaskDue": "setAddDue";
+  let html=`<div class="sheet-h">设置截止时间<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+    <div class="dp-nav"><button class="nav" onclick="dueMonth('${id||''}',${y},${m-1})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span style="font-weight:700;color:var(--ink);">${y}年${m+1}月</span><button class="nav" onclick="dueMonth('${id||''}',${y},${m+1})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    <div class="dp-grid">${cells}</div>
+    <div class="opt" style="margin-top:14px;justify-content:center;background:var(--ink);color:#fff;" onclick="${cls}('${id||''}',null)">${id?'清除截止时间':'不设置截止'}</div>`;
+  openSheet(html);
+}
+function dueMonth(id,y,m){ openDuePicker(id||null, y, m); }
+function pickDue(id,y,m,d){ const ds=ymd(new Date(y,m,d)); if(id) setTaskDue(id, ds); else { addDue=ds; renderTasks(); } closeSheet(); }
+function setAddDue(id, ds){ addDue = ds; renderTasks(); closeSheet(); }
+function setTaskDue(id, ds){ const t=getTask(id); if(!t) return; t.due=ds; save(); renderTasks(); closeSheet(); }
+
+/* ===== 横向比较 ===== */
+function onCmpInput(){ cmpQuery = $("cmpInput") ? $("cmpInput").value : ""; renderCompare(); }
+function renderCompare(){
+  const q=(cmpQuery||"").trim().toLowerCase();
+  // 文字筛选：作业内容 / 科目 / 备注
+  let recs = state.todos.filter(t=>{
+    if(!q) return true;
+    return (t.title||"").toLowerCase().includes(q)
+        || (t.detail||"").toLowerCase().includes(q)
+        || (t.subject||"").toLowerCase().includes(q);
+  });
+  // 按时间从新到旧
+  recs.sort((a,b)=> a.date<b.date ? 1 : a.date>b.date ? -1 : (a.id<b.id?1:-1));
+  // 列表（可滚动）
+  let rows="";
+  if(recs.length===0){
+    rows = `<div class="empty-tip">${q? "没有匹配「"+esc(cmpQuery)+"」的作业" : "暂无可比较的作业"}</div>`;
+  } else {
+    recs.forEach(t=>{
+      const isT=isTimed(t);
+      const sp=Math.round(spentOf(t)/60000);
+      const w=t.wrong||0;
+      const status = t.done? (t.timerRunning?'run':'done') : (t.timerRunning?'run':'none');
+      const badge = status==='done'?'<span class="badge b-done">已完成</span>': status==='run'?'<span class="badge b-run">计时中</span>':'<span class="badge b-none">未开始</span>';
+      const spTxt = isT ? sp+" 分" : `<span style="color:var(--muted)">未计时</span>`;
+      rows += `<div class="cmp-row">
+        <div class="cmp-row-top">
+          <span class="subj-dot subj-${t.subject}"></span>
+          <span class="cmp-date">${t.date.slice(5)}</span>
+          <span class="cmp-title">${esc(t.title||"（无标题）")}</span>
+          ${badge}
+        </div>
+        <div class="cmp-row-sub">
+          <span>预估 ${t.estMin||'-'}分</span>
+          <span>用时 <b>${spTxt}</b></span>
+          <span>错题 <b style="color:${w>=5?RED:'var(--ink)'}">${w}</b></span>
+        </div>
+      </div>`;
+    });
+  }
+  $("compareList").innerHTML = rows;
+  // 统计（固定显示在底部）
+  const tot=recs.length;
+  const doneN=recs.filter(t=>t.done).length;
+  const valid=validMinutes(recs);
+  const avgT = valid.length? Math.round(valid.reduce((s,m)=>s+m,0)/valid.length):0;
+  const wSum=recs.reduce((s,t)=>s+(t.wrong||0),0);
+  const avgW = tot? (wSum/tot).toFixed(1):"0";
+  const timedAll = recs.filter(isTimed).length;
+  const skips = timedAll - valid.length;          // 明显过长（疑似忘记按完成）
+  const untimedN = tot - timedAll;                // 不足 1 分钟（疑似未计时）
+  let html = `<div class="sum-grid">
+    <div class="sum-cell"><div class="k">总次数</div><div class="v">${tot}</div></div>
+    <div class="sum-cell"><div class="k">已完成</div><div class="v">${doneN}</div></div>
+    <div class="sum-cell"><div class="k">平均用时</div><div class="v">${avgT}<small> 分</small></div></div>
+    <div class="sum-cell"><div class="k">平均错题</div><div class="v">${avgW}<small> 道</small></div></div>
+  </div>`;
+  if(tot>0){
+    html += `<div style="margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;">平均用时按 ${valid.length} 次有效计时计算；已剔除 ${untimedN} 次不足 1 分钟（疑似未计时）${skips>0?`、${skips} 次明显过长（疑似忘记按完成）`:""}。</div>`;
+  }
+  $("compareStats").innerHTML = html;
+}
+
+/* ===== 月度统计 ===== */
+function renderMonth(){
+  const y=monthView.getFullYear(), m=monthView.getMonth();
+  $("monthLabel").textContent = y+"年"+(m+1)+"月";
+  const first=new Date(y,m,1), startDow=first.getDay();
+  const days=new Date(y,m+1,0).getDate();
+  // KPI（基于当前月已过的日期）
+  let stars=0, full=0, streak=0, hours=0;
+  const today=new Date(); today.setHours(0,0,0,0);
+  // 连续全勤：从今天往前
+  let cur=new Date(today); let breaking=false;
+  while(true){
+    const ds=ymd(cur); const st=dayStars(ds);
+    if(cur.getMonth()!==m || cur.getFullYear()!==y) break;
+    if(st.allDone){ if(!breaking){ streak++; } }
+    else { breaking=true; }
+    cur.setDate(cur.getDate()-1);
+    if(cur.getMonth()!==m) break;
+  }
+  // 汇总全月
+  for(let d=1; d<=days; d++){
+    const dt=new Date(y,m,d); if(dt>today) continue;
+    const ds=ymd(dt); const st=dayStars(ds); const s=dayStats(ds);
+    stars += st.stars; if(st.allDone) full++; hours += s.totalMin/60;
+  }
+  let kpi = `<div class="kpi">
+    <div class="kpi-cell"><div class="v">${stars}</div><div class="k">本月星星</div></div>
+    <div class="kpi-cell"><div class="v">${full}</div><div class="k">全勤天数</div></div>
+    <div class="kpi-cell"><div class="v">${streak}</div><div class="k">连续全勤</div></div>
+    <div class="kpi-cell"><div class="v">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
+  </div>`;
+
+  let grid = `<div class="cal"><div class="cal-grid">`;
+  WEEK.forEach(w=> grid+=`<div class="cal-dow">${w[1]}</div>`);
+  for(let i=0;i<startDow;i++) grid+=`<div class="cal-cell empty"></div>`;
+  for(let d=1; d<=days; d++){
+    const dt=new Date(y,m,d); const ds=ymd(dt); const st=dayStars(ds);
+    const isToday = sameDay(dt, today);
+    const starTxt = st.stars>0 ? "★".repeat(st.stars) : (st.pending ? '<span class="s0">待</span>' : '<span class="s0">·</span>');
+    grid += `<div class="cal-cell ${isToday?'today':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div><div class="stars">${starTxt}</div></div>`;
+  }
+  grid += `</div><div class="legend-row">
+    <span><i style="background:var(--sun)"></i>全完成 1 星</span>
+    <span><i style="background:var(--green)"></i>错题≤5 +1</span>
+    <span><i style="background:var(--ink)"></i>21:00 前 +1</span>
+    <span><i style="background:var(--muted)"></i>次日结算</span>
+  </div></div>`;
+
+  $("monthContent").innerHTML = kpi + grid;
+}
+
+/* ============ 交互：日期 / 月份 ============ */
+function shiftDate(d){ viewDate.setDate(viewDate.getDate()+d); refreshHeader(); renderList(); renderStats(); }
+function gotoToday(){ viewDate=new Date(); viewDate.setHours(0,0,0,0); refreshHeader(); renderList(); renderStats(); }
+function shiftMonth(d){ monthView.setMonth(monthView.getMonth()+d); renderMonth(); }
+function gotoDate(y,m,d){ viewDate=new Date(y,m,d); refreshHeader(); switchTab('list'); }
+
+/* ============ 弹层 ============ */
+function openSheet(html){ $("sheet").innerHTML=html; $("mask").classList.add("show"); requestAnimationFrame(()=>$("sheet").classList.add("show")); }
+function closeSheet(){ $("sheet").classList.remove("show"); $("mask").classList.remove("show"); }
+
+function openDatePicker(){ const y=viewDate.getFullYear(), m=viewDate.getMonth(); openSheet(buildDatePicker(y,m)); }
+function buildDatePicker(y,m){
+  const dt=new Date(y,m,1); y=dt.getFullYear(); m=dt.getMonth();
+  const startDow=dt.getDay(); const days=new Date(y,m+1,0).getDate();
+  let cells=""; WEEK.forEach(w=>cells+=`<div class="dp-dow">${w[1]}</div>`);
+  for(let i=0;i<startDow;i++) cells+=`<div class="dp-cell empty"></div>`;
+  for(let d=1; d<=days; d++){ const dt2=new Date(y,m,d); const sel=sameDay(dt2,viewDate); const tdy=sameDay(dt2,new Date());
+    cells+=`<div class="dp-cell ${sel?'sel':''} ${tdy?'today':''}" onclick="pickDate(${y},${m},${d})">${d}</div>`; }
+  return `<div class="sheet-h">选择日期<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+    <div class="dp-nav"><button class="nav" onclick="dpMonth(${y},${m-1})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span style="font-weight:700;color:var(--ink);">${y}年${m+1}月</span><button class="nav" onclick="dpMonth(${y},${m+1})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    <div class="dp-grid">${cells}</div>
+    <div class="opt" style="margin-top:14px;justify-content:center;background:var(--ink);color:#fff;" onclick="pickDate(${new Date().getFullYear()},${new Date().getMonth()},${new Date().getDate()})">回到今天</div>`;
+}
+function dpMonth(y,m){ openSheet(buildDatePicker(y,m)); }
+function pickDate(y,m,d){ viewDate=new Date(y,m,d); refreshHeader(); renderList(); renderStats(); closeSheet(); }
+
+/* ============ 云同步：GitHub Gist ============
+   数据整体存为一个私密 Gist 文件 hwdsk.json。
+   Token 与 Gist ID 存在独立 localStorage 键，不写入 state，因此永不上传。 */
+const SYNC_KEY   = "hwdsk_sync_v1";
+const SYNC_FILE  = "hwdsk.json";
+let syncReady    = false;   // 初始化完成前不触发自动上传
+let syncPushT    = null;
+
+/* ============ 账号系统（本地登录 + 自动云端同步）============
+   无后端：账号存本机 localStorage；所有账号共用用户自己填写的云端 Token 向各自私密 Gist 同步。
+   登录/注册时由用户填写一次 Token（仅存本机浏览器，永不上传源码）。 */
+const TOKEN_KEY = "wb_hwdsk_token_v1";
+let MASTER_TOKEN = (function(){ try{ return localStorage.getItem(TOKEN_KEY)||""; }catch(e){ return ""; } })();
+const LVCHENG_GIST = "c7160b8d4af6819ee036789e26fa02d0";
+const ACCOUNTS_KEY = "wb_hwdsk_accounts_v1";
+const SESSION_KEY  = "wb_hwdsk_session_v1";
+
+function hashPW(pw, salt){
+  let h=2166136261>>>0; const s=salt+pw;
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+  return (h>>>0).toString(16);
+}
+function loadAccounts(){ try{ return JSON.parse(localStorage.getItem(ACCOUNTS_KEY))||{}; }catch(e){ return {}; } }
+function saveAccounts(a){ try{ localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(a)); }catch(e){} }
+function seedAccounts(){
+  const a=loadAccounts();
+  if(!a.lvcheng){
+    const salt="lc"+Math.floor(Math.random()*1e6);
+    a.lvcheng={ ph:hashPW("000000",salt), salt:salt, gist:LVCHENG_GIST };
+    saveAccounts(a);
+  }
+  return a;
+}
+async function apiCreateGist(token){
+  const r=await fetch("https://api.github.com/gists",{
+    method:"POST",
+    headers:{ "Authorization":"token "+(token||MASTER_TOKEN), "Accept":"application/vnd.github+json", "Content-Type":"application/json" },
+    body:JSON.stringify({ description:"作业台 用户云端数据", public:false, files:{ [SYNC_FILE]:{ content:"{}" } } })
+  });
+  if(!r.ok) throw { status:r.status };
+  const j=await r.json(); return j.id;
+}
+async function registerAccount(user, pw){
+  user=(user||"").trim(); pw=(pw||"");
+  if(!user) throw { msg:"请输入账号名" };
+  if(pw.length<4) throw { msg:"密码至少 4 位" };
+  const a=loadAccounts();
+  if(a[user]) throw { msg:"该账号已存在" };
+  const gist=await apiCreateGist(MASTER_TOKEN);
+  const salt="u"+Math.floor(Math.random()*1e6);
+  a[user]={ ph:hashPW(pw,salt), salt:salt, gist:gist };
+  saveAccounts(a);
+  return user;
+}
+function loginAs(user){
+  const a=loadAccounts(); const acc=a[user];
+  if(!acc) return false;
+  localStorage.setItem(SESSION_KEY, user);
+  localStorage.setItem(SYNC_KEY, JSON.stringify({ token:MASTER_TOKEN, gist:acc.gist }));
+  return true;
+}
+function currentUser(){ return localStorage.getItem(SESSION_KEY)||""; }
+function logout(){
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SYNC_KEY);
+}
+/* 登录界面交互 */
+function showLogin(){ $("loginForm").style.display="block"; $("regForm").style.display="none"; $("whoForm").style.display="none"; $("loginTitle").textContent="作业台 · 登录"; $("loginSub").textContent="登录后自动云端同步，多端数据互联"; $("loginErr").textContent=""; $("loginPw").value=""; }
+function showRegister(){ $("loginForm").style.display="none"; $("regForm").style.display="block"; $("whoForm").style.display="none"; $("loginTitle").textContent="注册新账号"; $("loginSub").textContent="注册后自动创建独立云端空间"; $("regErr").textContent=""; }
+function showWho(user){ $("loginForm").style.display="none"; $("regForm").style.display="none"; $("whoForm").style.display="block"; $("loginTitle").textContent="已登录"; $("whoText").textContent="当前账号："+user; }
+async function doLogin(){
+  const u=$("loginUser").value.trim(), p=$("loginPw").value;
+  const tk=$("loginToken").value.trim();
+  $("loginErr").textContent="";
+  if(!tk){ $("loginErr").textContent="请先填写云端 Token（见使用说明）"; return; }
+  MASTER_TOKEN=tk; try{ localStorage.setItem(TOKEN_KEY, tk); }catch(e){}
+  const a=loadAccounts(); const acc=a[u];
+  if(!acc){ $("loginErr").textContent="账号不存在，请先注册"; return; }
+  if(hashPW(p, acc.salt)!==acc.ph){ $("loginErr").textContent="密码错误"; return; }
+  if(loginAs(u)){ hideLogin(); startApp(); }
+}
+async function doRegister(){
+  const u=$("regUser").value, p=$("regPw").value, p2=$("regPw2").value;
+  const tk=$("regToken").value.trim();
+  $("regErr").textContent="";
+  if(!tk){ $("regErr").textContent="请先填写云端 Token（见使用说明）"; return; }
+  MASTER_TOKEN=tk; try{ localStorage.setItem(TOKEN_KEY, tk); }catch(e){}
+  if(p!==p2){ $("regErr").textContent="两次密码不一致"; return; }
+  $("regBtn").disabled=true; $("regBtn").textContent="注册中…";
+  try{
+    const user=await registerAccount(u,p);
+    loginAs(user); hideLogin(); startApp();
+  }catch(e){ $("regErr").textContent=(e&&e.msg)||("注册失败："+(syncErr(e)||"网络异常")); }
+  finally{ $("regBtn").disabled=false; $("regBtn").textContent="注册并登录"; }
+}
+function doLogout(){ logout(); showLogin(); $("loginScreen").style.display="flex"; }
+function hideLogin(){ $("loginScreen").style.display="none"; }
+
+/* 下拉刷新：在页面顶部下拉触发自动同步 */
+let _pull=null;
+function bindPull(){
+  if(_pull) return; _pull=1;
+  const hint=$("pullHint");
+  document.querySelectorAll(".page").forEach(p=>{
+    let startY=0, pulling=false, y=0;
+    p.addEventListener("touchstart", e=>{ if(p.scrollTop<=0){ startY=e.touches[0].clientY; pulling=true; } }, {passive:true});
+    p.addEventListener("touchmove", e=>{
+      if(!pulling) return;
+      const dy=e.touches[0].clientY-startY;
+      if(dy>0 && p.scrollTop<=0){
+        if(e.cancelable) e.preventDefault();
+        y=Math.min(dy*0.5, 80);
+        if(hint){ hint.style.height="32px"; hint.textContent = y>55 ? "松开立即同步" : "↓ 下拉刷新"; }
+      } else { pulling=false; if(hint){ hint.style.height="0"; } }
+    }, {passive:false});
+    p.addEventListener("touchend", ()=>{
+      if(pulling && y>55){ hint.textContent="正在同步…"; syncCycle(true); setTimeout(()=>{ if(hint) hint.style.height="0"; }, 700); }
+      else if(hint){ hint.style.height="0"; }
+      pulling=false; y=0;
+    });
+  });
+}
+
+function syncCfg(){ try{ return JSON.parse(localStorage.getItem(SYNC_KEY))||{}; }catch(e){ return {}; } }
+function syncEnabled(){ const c=syncCfg(); return !!(c.token && c.gist); }
+
+function syncStatus(msg, type){
+  const el=$("syncStatus"); if(!el) return;
+  el.textContent=msg||""; el.className="sync-status"+(type?" "+type:"");
+}
+function syncErr(e){
+  const s = e && e.status;
+  if(s===401) return "Token 无效或已过期";
+  if(s===404) return "Gist 未找到，检查 Gist ID";
+  if(s===403) return "请求被拒绝（可能触发限流）";
+  if(s===-2)  return "云端缺少 "+SYNC_FILE+" 文件";
+  if(s===-3)  return "云端数据格式不正确";
+  if(s===-4)  return "云端暂无有效数据";
+  return "网络异常，请检查联网";
+}
+function syncHeaders(cfg){
+  return { "Authorization":"token "+cfg.token, "Accept":"application/vnd.github+json" };
+}
+/* 保存用户填写的 Token / Gist ID（只存本机） */
+function syncSaveCfg(){
+  const t=($("syncToken").value||"").trim();
+  let g=($("syncGist").value||"").trim();
+  g = g.replace(/^.*gist\.github\.com\/[^\/]+\//,"").replace(/\/.*$/,"").trim();  // 允许直接粘贴完整网址
+  try{ localStorage.setItem(SYNC_KEY, JSON.stringify({token:t, gist:g})); }catch(e){}
+  if(t && g){
+    syncStatus("配置已保存到本机","ok"); toast("配置已保存，正在连接…");
+    syncCycle(true);     // 立即合并一次（云端有数据则合并，云端为空则上传本机）
+  }else{
+    syncStatus("请填写完整的 Token 与 Gist ID","err"); toast("请填写完整的 Token 与 Gist ID");
+  }
+}
+/* 从云端下载。mode="auto"：仅在云端不比本机旧时覆盖，且不弹 toast；其他值：强制覆盖并提示 */
+async function syncPull(mode){
+  const cfg=syncCfg();
+  if(!cfg.token || !cfg.gist){
+    if(mode!=="auto"){ syncStatus("请先填写 Token 与 Gist ID","err"); toast("请先填写 Token 与 Gist ID"); }
+    return false;
+  }
+  if(mode!=="auto") syncStatus("正在从云端下载…");
+  try{
+    const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), { headers: syncHeaders(cfg) });
+    if(!r.ok) throw { status:r.status };
+    const j = await r.json();
+    const f = j && j.files && j.files[SYNC_FILE];
+    if(!f) throw { status:-2 };
+    const data = JSON.parse(f.content);
+    if(!data || typeof data!=="object") throw { status:-3 };
+
+    /* ---- 覆盖决策：安全优先，绝不让“空/只有示例”的云端吞掉本机真实数据 ---- */
+    const cTodos    = Array.isArray(data.todos) ? data.todos : [];
+    const cloudN    = cTodos.length;                                  // 云端总条数
+    const cloudReal = cTodos.filter(x=>!x.sample).length;             // 云端真实条数（不含示例）
+    const cloudAt   = data._syncedAt || 0;
+    const lTodos    = (state.todos||[]);
+    const localN    = lTodos.length;
+    const localReal = lTodos.filter(x=>!x.sample).length;
+    const localAt   = state._syncedAt || 0;
+
+    if(mode==="auto"){
+      if(cloudN===0){ syncStatus("云端暂无数据，保留本机"); return false; }          // → 随后上传本机
+      if(localReal>0 && cloudReal===0){ syncStatus("云端只有示例数据，保留本机"); return false; }
+      if(localReal>0 && cloudAt<=localAt){ syncStatus("本机数据已是最新"); return true; }
+      // 其余情况（本机只有示例 / 云端明显更新）→ 采用云端
+    }else{
+      // 手动下载会覆盖本机，先二次确认
+      if(localN>0){
+        const tip = cloudN===0
+          ? "云端暂无作业数据，继续下载会清空本机的 "+localN+" 条作业。确定吗？"
+          : "从云端下载会用云端的 "+cloudN+" 条作业覆盖本机的 "+localN+" 条。确定吗？";
+        if(!confirm(tip)){ syncStatus("已取消下载"); return false; }
+      }
+    }
+
+    state = data; state._syncedAt = cloudAt;
+    if(!Array.isArray(state.todos)) state.todos = [];
+    if(!state.tasks)    state.tasks    = [];
+    delete state.chips; delete state.hot; delete state.hotBlock;   // 常用词功能已移除
+    if(Array.isArray(state.todos)) state.todos = state.todos.filter(t=>!t.sample);  // 自愈：剔除云端残留示例数据
+    if(Array.isArray(state.tasks)) state.tasks = state.tasks.filter(t=>!t.sample);
+    saveLocal(); recomputeHot(); refreshAll(); renderTasks();
+    const n = (state.todos||[]).length;
+    syncStatus("已同步云端 "+n+" 条作业","ok");
+    if(mode!=="auto") toast("已下载云端数据 "+n+" 条");
+    return true;
+  }catch(e){
+    const msg = syncErr(e);
+    syncStatus("下载失败："+msg,"err");
+    if(mode!=="auto") toast("下载失败："+msg);
+    return false;
+  }
+}
+/* 把本机数据整体上传到云端 */
+async function syncPush(silent){
+  const cfg=syncCfg();
+  if(!cfg.token || !cfg.gist){
+    if(!silent){ syncStatus("请先填写 Token 与 Gist ID","err"); toast("请先填写 Token 与 Gist ID"); }
+    return false;
+  }
+  if(!silent) syncStatus("正在上传到云端…");
+  try{
+    state._syncedAt = Date.now();
+    /* 只上传真实数据：示例（sample:true）永不进云端，避免污染 */
+    const up = JSON.parse(JSON.stringify(state));
+    if(Array.isArray(up.todos)) up.todos = up.todos.filter(t=>!t.sample);
+    if(Array.isArray(up.tasks)) up.tasks = up.tasks.filter(t=>!t.sample);
+    delete up.chips; delete up.hot; delete up.hotBlock;   // 常用词功能已移除，永不进云端
+    const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
+      method:"PATCH",
+      headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
+      body: JSON.stringify({ files:{ [SYNC_FILE]:{ content: JSON.stringify(up) } } })
+    });
+    if(!r.ok) throw { status:r.status };
+    saveLocal();
+    const d=new Date();
+    syncStatus("已上传 · "+pad2(d.getHours())+":"+pad2(d.getMinutes()),"ok");
+    if(!silent) toast("已上传到云端");
+    return true;
+  }catch(e){
+    const msg = syncErr(e);
+    syncStatus("上传失败："+msg,"err");
+    if(!silent) toast("上传失败："+msg);
+    return false;
+  }
+}
+/* ============ 自动同步核心 ============
+   每次同步 =「取云端 → 与本机逐条合并 → 写回云端」。
+   同一条数据以「最后修改时间 _u」较新的一方为准，删除走墓碑，
+   因此任何一端的新数据都不会被另一端的旧数据覆盖。 */
+let syncBusy = false;
+
+/* 按 id 合并两组条目：同 id 取 _u 更大的一方；墓碑中的 id 直接丢弃 */
+function mergeItems(cloudArr, localArr, del){
+  const map = new Map();
+  (cloudArr||[]).forEach(it=>{ if(it && it.id && !del[it.id]) map.set(it.id, it); });
+  (localArr||[]).forEach(it=>{
+    if(!it || !it.id) return;
+    if(del[it.id]){ map.delete(it.id); return; }
+    const c = map.get(it.id);
+    if(!c) map.set(it.id, it);
+    else if((it._u||0) > (c._u||0)) map.set(it.id, it);
+  });
+  return Array.from(map.values());
+}
+/* 关键词类（chips / hot）：按 id 取较新的一方 */
+function mergeGroups(cloudG, localG){
+  const out={};
+  SUBJECTS.forEach(s=>{
+    const map=new Map();
+    ((cloudG&&cloudG[s])||[]).forEach(c=>{ if(c&&c.id) map.set(c.id,c); });
+    ((localG&&localG[s])||[]).forEach(c=>{
+      if(!c||!c.id) return;
+      const o=map.get(c.id); if(!o || (c._u||0)>(o._u||0)) map.set(c.id,c);
+    });
+    out[s]=Array.from(map.values());
+  });
+  return out;
+}
+function mergeBlock(cloudB, localB){
+  const out={};
+  SUBJECTS.forEach(s=>{ out[s]=Array.from(new Set([].concat((cloudB&&cloudB[s])||[], (localB&&localB[s])||[]))); });
+  return out;
+}
+function mergeDel(cloudD, localD){
+  const out=Object.assign({}, cloudD||{}, localD||{});
+  const cut=Date.now()-60*24*3600*1000;
+  Object.keys(out).forEach(k=>{ if(!out[k] || out[k]<cut) delete out[k]; });
+  return out;
+}
+function pruneTombstones(){
+  if(!state._del) return;
+  const cut=Date.now()-60*24*3600*1000;
+  Object.keys(state._del).forEach(k=>{ if(!state._del[k] || state._del[k]<cut) delete state._del[k]; });
+}
+/* 云端 + 本机 → 合并结果（顺序确定，便于判断内容是否真的变化） */
+function mergeState(cloud, local){
+  const del = mergeDel(cloud._del, local._del);
+  return {
+    todos: mergeItems(cloud.todos, local.todos, del),
+    tasks: mergeItems(cloud.tasks, local.tasks, del),
+    _del: del,
+    _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
+  };
+}
+/* 一轮完整同步：合并后写回云端 */
+async function syncCycle(silent){
+  if(syncBusy || !syncEnabled()) return false;
+  syncBusy = true; setSyncUI("syncing");
+  try{
+    const cfg=syncCfg();
+    const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), { headers: syncHeaders(cfg) });
+    if(!r.ok) throw { status:r.status };
+    const j = await r.json();
+    const f = j && j.files && j.files[SYNC_FILE];
+    let cloud=null;
+    if(f){ try{ cloud=JSON.parse(f.content); }catch(e){ cloud=null; } }
+    if(!cloud || typeof cloud!=="object" || !Array.isArray(cloud.todos)){
+      const okd = await syncPush(silent);        // 云端无效/为空 → 直接上传本机
+      setSyncUI(okd?"ok":"err");
+      return okd;
+    }
+    const merged = mergeState(cloud, state);
+    let content = JSON.stringify(merged);
+    if(content !== f.content){                   // 内容一致则无需写入，避免空转
+      merged._syncedAt = Date.now();
+      content = JSON.stringify(merged);
+      const rr = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
+        method:"PATCH",
+        headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
+        body: JSON.stringify({ files:{ [SYNC_FILE]:{ content: content } } })
+      });
+      if(!rr.ok) throw { status: rr.status };
+    }
+    // 只有数据真的变了才重渲染，避免定时同步打断正在输入的内容
+    const dataOf = s => JSON.stringify([(s.todos||[]), (s.tasks||[])]);
+    const changed = dataOf(merged) !== dataOf(state);
+    state = merged; saveLocal();
+    if(changed){ pruneTombstones(); recomputeHot(); refreshAll(); renderTasks(); }
+    setSyncUI("ok");
+    return true;
+  }catch(e){
+    setSyncUI("err");
+    if(!silent) toast("同步失败："+syncErr(e));
+    return false;
+  }finally{ syncBusy=false; }
+}
+
+/* 数据变更后自动同步（合并连续操作，避免频繁请求） */
+function syncSchedule(){
+  if(!syncReady || !syncEnabled()) return;
+  clearTimeout(syncPushT);
+  syncPushT = setTimeout(()=>syncCycle(true), 800);
+}
+/* 离开页面前把待发的同步立刻发出，避免关掉 App 丢改动 */
+function syncFlush(){
+  if(syncPushT){ clearTimeout(syncPushT); syncPushT=null; syncCycle(true); }
+}
+function syncInit(){
+  if(!syncEnabled()){ syncReady=true; return; }
+  syncCycle(true).then(()=>{ syncReady=true; }, ()=>{ syncReady=true; });
+  setInterval(()=>{ if(!document.hidden) syncCycle(true); }, 45000);   // 使用中也定时同步
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncCycle(true); });
+  window.addEventListener("pagehide", syncFlush);
+}
+/* 顶部云朵图标状态：syncing / ok / err */
+function setSyncUI(kind){
+  const el=$("syncBtn");
+  if(el){
+    el.className="sync-btn "+kind;
+    el.title = kind==="ok" ? "云端已同步（点此立即同步）" : (kind==="syncing" ? "正在同步…" : "同步失败，点此重试");
+  }
+  const st=$("syncStatus");
+  if(st){
+    const d=new Date();
+    st.textContent = kind==="ok" ? "已同步 · "+pad2(d.getHours())+":"+pad2(d.getMinutes())
+                   : kind==="syncing" ? "正在同步…" : "同步失败，请检查网络";
+    st.className="sync-status"+(kind==="ok"?" ok":kind==="err"?" err":"");
+  }
+}
+/* 一键配置：支持 .../#t=<token>&g=<gistId>，写入本机后立即把网址里的敏感信息抹掉 */
+function syncFromHash(){
+  try{
+    const h=(location.hash||"").replace(/^#/,""); if(!h) return false;
+    const p=new URLSearchParams(h);
+    const t=(p.get("t")||"").trim(), g=(p.get("g")||"").trim();
+    if(!t || !g) return false;
+    localStorage.setItem(SYNC_KEY, JSON.stringify({token:t, gist:g}));
+    history.replaceState(null,"",location.pathname+location.search);   // 网址不再含 Token
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ============ 设置 ============ */
+function openSettings(){
+  const u=currentUser();
+  let html=`<div class="sheet-h">设置<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+    <div class="sync-box">
+      <div class="sync-h"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.6A4 4 0 0 1 17 18" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 12v6M12 18l-2.5-2.5M12 18l2.5-2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>云同步（已登录账号 <b>${esc(u)}</b>）</div>
+      <p class="sync-note">数据改动后自动上传；在页面顶部<b>下拉</b>或点右上角云朵可立即同步；打开页面 / 回到前台 / 使用中每 45 秒自动同步。多端按「最后修改时间」逐条合并，新数据不会被旧数据覆盖。</p>
+      <div class="btns">
+        <button class="sbtn" onclick="syncCycle(false)">立即同步</button>
+        <button class="sbtn alt" onclick="syncPull()">以云端为准</button>
+        <button class="sbtn alt" onclick="doLogout(); closeSheet()">退出登录</button>
+      </div>
+      <div class="sync-status" id="syncStatus"></div>
+    </div>
+    <div class="opt" onclick="exportExcel()"><span>导出 Excel 数据</span><span class="sub">CSV · 可用 Excel 打开</span></div>
+    <div class="opt" onclick="importExcel()"><span>导入 Excel 数据</span><span class="sub">选择 .csv 文件</span></div>
+    <div class="opt" onclick="clearSample()"><span>只清除示例数据</span><span class="sub">保留我的录入</span></div>
+    <div class="opt danger" id="holdOpt"><div class="hold" id="holdBtn"><div class="fill" id="holdFill"></div>长按 3 秒清空全部数据</div></div>`;
+  openSheet(html);
+  bindHold();
+}
+function csvCell(v){ v = v==null?"":String(v); if(/[",\n\r]/.test(v)) return '"'+v.replace(/"/g,'""')+'"'; return v; }
+function parseCSV(text){
+  const rows=[]; let row=[]; let cur=""; let q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
+    else { if(ch==='"') q=true;
+      else if(ch===','){ row.push(cur); cur=""; }
+      else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; }
+      else if(ch!=='\r') cur+=ch; }
+  }
+  if(cur.length||row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+function exportExcel(){
+  try{
+    const head=["日期","科目","作业内容","具体内容","预估(分)","错题(道)","状态","开始","结束","用时(分)"];
+    const rows=[head];
+    state.todos.forEach(t=>{
+      rows.push([t.date, t.subject, t.title, t.detail||"", t.estMin||0, t.wrong||0, t.done?"已完成":"未开始", t.startClock||"", t.endClock||"", Math.round(spentOf(t)/60000)]);
+    });
+    const csv="﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="作业台数据_"+ymd(new Date())+".csv"; a.click();
+    toast("已导出 Excel（CSV）"); closeSheet();
+  }catch(e){ toast("导出失败"); }
+}
+function importExcel(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".csv,text/csv,application/vnd.ms-excel";
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return; const r=new FileReader();
+    r.onload=()=>{ try{
+      const rows=parseCSV(r.result); if(rows.length<2) throw 0;
+      const idx={}; rows[0].map(h=>h.trim()).forEach((h,i)=>idx[h]=i);
+      if(idx["日期"]==null || idx["科目"]==null || idx["作业内容"]==null) throw 0;
+      const todos=[];
+      for(let i=1;i<rows.length;i++){ const c=rows[i]; if(!c || c.length<3) continue;
+        const title=(c[idx["作业内容"]]||"").trim(); if(!title) continue;
+        const ds=(c[idx["日期"]]||"").trim(); const p=ds.split("-");
+        const dt = p.length===3 ? new Date(+p[0], +p[1]-1, +p[2]) : new Date();
+        const t=mkTodo(dt, c[idx["科目"]]||"其他", title, {});
+        t.detail=(c[idx["具体内容"]]||"").trim();
+        t.estMin=parseInt(c[idx["预估(分)"]]!=null?c[idx["预估(分)"]]:c[idx["预估"]]||"0",10)||0;
+        t.wrong=parseInt(c[idx["错题(道)"]]!=null?c[idx["错题(道)"]]:c[idx["错题"]]||"0",10)||0;
+        t.done=((c[idx["状态"]]||"").indexOf("完成")>=0);
+        t.startClock=(c[idx["开始"]]||"").trim();
+        t.endClock=(c[idx["结束"]]||"").trim();
+        const um=parseFloat(c[idx["用时(分)"]]||"0")||0; t.accum=Math.round(um*60000);
+        todos.push(t);
+      }
+      if(todos.length===0) throw 0;
+      state.todos=todos; recomputeHot(); save(); refreshAll(); toast("已导入 "+todos.length+" 条"); closeSheet();
+    }catch(e){ toast("Excel 解析失败，请检查格式"); } };
+    r.readAsText(f,"utf-8"); };
+  inp.click();
+}
+function clearSample(){
+  const before=state.todos.length+state.tasks.length;
+  state.todos=state.todos.filter(t=>!t.sample);
+  state.tasks=state.tasks.filter(t=>!t.sample);
+  recomputeHot(); save(); refreshAll(); renderTasks(); toast("已清除示例 "+ (before-(state.todos.length+state.tasks.length)) +" 条"); closeSheet();
+}
+function bindHold(){
+  const btn=$("holdBtn"), fill=$("holdFill"), opt=$("holdOpt");
+  if(!btn) return; let raf=null, start=0, dur=3000, holding=false;
+  function step(ts){ if(!holding) return; const p=Math.min(1,(ts-start)/dur); fill.style.width=(p*100)+"%";
+    if(p>=1){ holding=false; doClearAll(); return; } raf=requestAnimationFrame(step); }
+  btn.addEventListener("touchstart",e=>{ e.preventDefault(); holding=true; start=performance.now(); btn.classList.add("go"); raf=requestAnimationFrame(step); });
+  btn.addEventListener("touchend",()=>{ holding=false; cancelAnimationFrame(raf); fill.style.width="0"; btn.classList.remove("go"); });
+  btn.addEventListener("mousedown",e=>{ e.preventDefault(); holding=true; start=performance.now(); btn.classList.add("go"); raf=requestAnimationFrame(step); });
+  btn.addEventListener("mouseup",()=>{ holding=false; cancelAnimationFrame(raf); fill.style.width="0"; btn.classList.remove("go"); });
+  btn.addEventListener("mouseleave",()=>{ holding=false; cancelAnimationFrame(raf); fill.style.width="0"; btn.classList.remove("go"); });
+}
+function doClearAll(){
+  state.todos=[]; save(); refreshAll(); closeSheet(); toast("已全部清空");
+}
+
+/* ============ 计时器实时刷新 ============ */
+function tickTimers(){
+  // 仅更新计时数字与进行中的甘特色块，不整页重渲染
+  document.querySelectorAll("[data-timer]").forEach(el=>{
+    const t=getTodo(el.dataset.timer); if(t && t.timerRunning) el.textContent="● 计时中 "+fmtDur(spentOf(t));
+  });
+  // 甘特进行块按实际工时向右延伸（不含暂停，与色块“只显示实际工作时间”一致）
+  document.querySelectorAll(".gblock.g-run").forEach(b=>{
+    const track=b.closest(".gantt-track"); if(!track) return;
+    const span=+track.dataset.span; if(!span) return;
+    const t=getTodo(b.dataset.gid); if(!t) return;
+    let w=(spentOf(t)/60000/span)*100; if(w<4)w=4; if(w>100)w=100;
+    b.style.width=w+"%";
+  });
+}
+
+/* ============ 启动收尾（防后台虚增） ============ */
+function boot(){
+  const now=Date.now();
+  state.todos.forEach(t=>{
+    if(t.timerRunning && t.startedAt){
+      t.accum += (now - t.startedAt); t.timerRunning=false; t.startedAt=null;
+      segClose(t, nowClock());      // 收尾时闭合遗留的分段
+    }
+  });
+  save();
+}
+
+/* ============ 机型切换 / 真机识别 ============ */
+function setMode(mode){
+  const phone=$("phone"); phone.classList.remove("mode-iphone11","mode-iphone17","mode-ipad","mode-pc");
+  phone.classList.add("mode-"+mode);
+  const stage=$("stage"); if(stage) stage.classList.toggle("stage-pc", mode==="pc");
+  $("m11").classList.toggle("on",mode==="iphone11");
+  $("m17").classList.toggle("on",mode==="iphone17");
+  $("mip").classList.toggle("on",mode==="ipad");
+  const mpc=$("mpc"); if(mpc) mpc.classList.toggle("on",mode==="pc");
+}
+function detectReal(){
+  // 真机：短边 >=700 视为平板（iPad）；否则用 env(safe-area-inset-top) 区分刘海/灵动岛
+  const shortSide=Math.min(window.innerWidth, window.innerHeight);
+  if(shortSide>=700){ setMode("ipad"); return; }
+  const probe=document.createElement("div");
+  probe.style.cssText="position:fixed;top:env(safe-area-inset-top);left:0;height:0;";
+  document.body.appendChild(probe);
+  const top=probe.getBoundingClientRect().top;
+  document.body.removeChild(probe);
+  if(top>=50){ setMode("iphone17"); }
+  else if(top>0){ setMode("iphone11"); }
+}
+
+/* ============ Toast ============ */
+let toastT=null;
+function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1500); }
+
+/* ============ 状态栏时钟 ============ */
+function tickClock(){
+  const d=new Date(); const hh=d.getHours(); const mm=pad2(d.getMinutes());
+  const t=$("sbTime"); if(t) t.textContent=hh+":"+mm;
+}
+
+/* ============ 初始化 ============ */
+function init(){
+  seedAccounts();                       // 预置 lvcheng 账号
+  const u=currentUser();
+  if(u && loadAccounts()[u]){
+    loginAs(u); hideLogin(); startApp();
+  }else{
+    showLogin();
+    load(); boot(); renderList(); refreshHeader();   // 登录页背后渲染空壳，避免白屏
+  }
+}
+/* 登录成功后启动应用（原 init 主体） */
+function startApp(){
+  const autoCfg = syncFromHash();      // 通过一键配置链接打开时，自动写入 Token / Gist ID
+  load();
+  boot();
+  refreshHeader();
+  renderList();
+  const urlMode = new URLSearchParams(location.search).get("mode");
+  const isReal = window.innerWidth<480;
+  if(isReal){ $("app").classList.add("real"); detectReal(); }
+  else if(urlMode==="iphone11" || urlMode==="iphone17" || urlMode==="ipad" || urlMode==="pc"){ setMode(urlMode); }
+  else { setMode(window.innerWidth>=820 ? "pc" : "ipad"); }
+  tickClock(); setInterval(tickClock, 10000);
+  setInterval(tickTimers, 1000);
+  switchTab("list");
+  bindPull();                          // 启用下拉刷新
+  if(autoCfg) toast("云同步已配置，正在连接…");
+  syncInit();          // 已配置则打开时自动拉取云端数据
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
