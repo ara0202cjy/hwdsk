@@ -217,6 +217,7 @@
   .day-summary .ds-v{color:#7a5e1e;}
   .day-summary .ds-v2{color:var(--red);}
   .day-summary .ds-v3{color:#2e9e6b;}
+  .day-summary .ds-note{font-size:11px; color:#9a7b3a; text-align:right; margin-top:2px;}
   .day-summary .ds-n{margin-left:auto; font-size:12.5px; color:#9a7b3a; text-align:right;}
   .upbar{position:fixed; left:50%; transform:translateX(-50%) translateY(24px); bottom:22px; z-index:9999; display:none; align-items:center; gap:10px; padding:10px 16px; border-radius:999px; background:#2f3a56; color:#fff; box-shadow:0 8px 26px rgba(0,0,0,.28); cursor:pointer; transition:transform .25s ease, opacity .25s ease; opacity:0;}
   .upbar.show{display:flex; transform:translateX(-50%) translateY(0); opacity:1;}
@@ -1021,7 +1022,8 @@ function renderList(){
   const totalEst = ts.reduce((a,t)=>a+(t.estMin||0),0);
   const doneEst = ts.filter(t=>t.done).reduce((a,t)=>a+(t.estMin||0),0);
   const remainEst = ts.filter(t=>!t.done).reduce((a,t)=>a+(t.estMin||0),0);
-  html += `<div class="day-summary"><div class="ds-main"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 作业时间</span><div class="ds-row ds-labels"><span>预计时长</span><span>已做时长</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v2">${fmtEst(remainEst)}</b></div></div></div>`;
+  const untimedN = ts.filter(t=>(t.estMin||0)<=1).length;
+  html += `<div class="day-summary"><div class="ds-main"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 作业时间</span><div class="ds-row ds-labels"><span>预计时长</span><span>已做时长</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v2">${fmtEst(remainEst)}</b></div><div class="ds-note">${untimedN} 项作业未计时（≤1分钟）</div></div></div>`;
   SUBJECTS.forEach(subj=>{
     const arr = bySubj[subj]||[];
     const total = ts.filter(t=>t.subject===subj).length;
@@ -2354,7 +2356,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.12";
+const APP_VERSION = "2026.09.10.13";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
