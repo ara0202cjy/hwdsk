@@ -1149,7 +1149,7 @@ function editField(id,key,val){
   // 循环作业：把 标题/内容/预估 同步回母版与同组未开始实例
   if(t.masterId && (key==="title"||key==="detail"||key==="estMin")){
     const m=getMaster(t.masterId);
-    if(m){ if(key==="estMin") m.estMin=t.estMin; else m[key]=t[key]; m._u=Date.now(); propagateMaster(m); }
+    if(m){ if(key==="estMin") m.estMin=t.estMin; else m[key]=t[key]; m._u=Date.now(); propagateMaster(m, t.date); }
   }
   touch(t); save(); syncDerived();
 }
@@ -1205,8 +1205,12 @@ function delTodo(id){
 /* ============ 循环锁定（每日 / 每周）============
    母版存于 state.masters；每天查看时按规则惰性生成「实例」写入 state.todos。
    日锁定：每天出现；周锁定：与母版 origin 同一星期几才出现。
-   锁定仅对「固定日（含）及以后」的日期生效，固定日之前的清单不被修改。
-   单击锁定键 = 固定；再次单击同一键 = 取消（停止循环、删除之后未完成实例，保留历史）。
+   ★ 锁定规则（统一）：「操作日」= 你点击锁定/解锁按钮那一项的日期 ad。
+     · 锁定：仅对 ad 及之后的日期生效；ad 之前的清单永远不会被改动。
+     · 解锁：仅停止 ad 之后的循环、删除 ad 之后未完成的实例；ad 当天仅去掉标记保留，
+       ad 之前的清单不动。
+     · 修改内容/预估：仅同步到 ad 之后的实例，不回溯改之前的。
+   单击锁定键 = 固定；再次单击同一键 = 取消。
    单天删除 = 仅把该天加入母版 skip，循环照常。 */
 function getMaster(id){ return (state.masters||[]).find(m=>m.id===id); }
 function parseDS(ds){ const p=ds.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
@@ -1231,9 +1235,9 @@ function genRecurring(ds){
   if(added) save();
 }
 function fmtEst(m){ m=Math.round(m||0); if(m<=0) return "0 分"; if(m<60) return m+" 分"; const h=Math.floor(m/60), mm=m%60; return mm? h+" 时 "+mm+" 分" : h+" 时"; }
-function propagateMaster(m){
-  // 母版 标题/内容/预估/循环类型 同步到同组「未完成且未计时」的实例
-  state.todos.forEach(x=>{ if(x.masterId===m.id && !x.done && !x.timerRunning){ x.title=m.title; x.detail=m.detail; x.estMin=m.estMin; x.lock=m.lock; } });
+function propagateMaster(m, ad){
+  // 仅把 标题/内容/预估/循环类型 同步到「锁定日之后、未完成且未计时」的实例（ad 之后）
+  state.todos.forEach(x=>{ if(x.masterId===m.id && !x.done && !x.timerRunning && (!ad || x.date>ad)){ x.title=m.title; x.detail=m.detail; x.estMin=m.estMin; x.lock=m.lock; } });
 }
 function toggleLock(id, type){
   // 单击切换：已固定该类型 → 取消；否则固定为该类型
@@ -1243,14 +1247,14 @@ function toggleLock(id, type){
 }
 function setLock(id, type){
   const t=getTodo(id); if(!t) return;
+  const ad = t.date;                                 // 「操作日」= 点击该项当天的日期
   let m = t.masterId ? getMaster(t.masterId) : null;
   if(type===null){
-    // 解锁：停止循环，删除未来未完成实例，保留历史
+    // 解锁：仅停止 ad 之后的循环；ad 当天只去掉标记保留，ad 之前清单不动
     if(m){
-      state._delM[m.id]=Date.now();                      // 墓碑：跨端同步停止循环
+      state._delM[m.id]=Date.now();                  // 墓碑：跨端同步停止循环
       state.masters = state.masters.filter(x=>x.id!==m.id);
-      const todayDs = ymd(new Date());
-      state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>todayDs) );
+      state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>ad) );  // 仅删 ad 之后未完成实例
     }
     t.lock=null; t.masterId=null; touch(t);
     save(); renderList(); syncDerived();
@@ -1258,18 +1262,17 @@ function setLock(id, type){
   }
   // 上锁 / 切换类型
   if(!m){
-    m = { id:uid(), subject:t.subject, title:t.title, detail:t.detail||"", estMin:t.estMin||0, lock:type, origin:t.date, skip:[], _u:Date.now() };
+    m = { id:uid(), subject:t.subject, title:t.title, detail:t.detail||"", estMin:t.estMin||0, lock:type, origin:ad, skip:[], _u:Date.now() };
     state.masters.push(m); t.masterId=m.id; t.lock=type;
   } else {
     m.lock=type; m.subject=t.subject; m.title=t.title; m.detail=t.detail||""; m.estMin=t.estMin||0; m._u=Date.now();
     t.lock=type;
-    // 规则变了：删掉旧规则下生成的未来未完成实例，按新规则重生
-    const todayDs = ymd(new Date());
-    state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>todayDs) );
-    propagateMaster(m);
+    // 规则变了：删掉「ad 之后」旧规则生成的未完成实例，按新规则惰性重生（查看时生成）
+    state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>ad) );
+    propagateMaster(m, ad);                          // 同步内容到 ad 之后的实例
   }
   touch(t); save(); renderList(); syncDerived();
-  toast(type==="daily"?"已设为每日锁定":"已设为每周锁定");
+  toast(type==="daily"?"已设为每日锁定（仅对锁定日之后生效）":"已设为每周锁定（仅对锁定日之后生效）");
 }
 
 function renameTodo(id){
@@ -2323,7 +2326,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.5";
+const APP_VERSION = "2026.09.10.6";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
