@@ -264,6 +264,19 @@
   .add-row input{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:#fcfaf5;}
   .add-row .plus{width:46px; height:46px; border-radius:12px; background:var(--sun); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; flex:0 0 46px;}
   .add-row .plus:active{transform:scale(.94);}
+  /* ===== 高频词 / 常用词（按科目分组） ===== */
+  .hw-wrap{margin-top:10px; border-top:1px dashed var(--line); padding-top:10px;}
+  .hw-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .hw-label{font-size:12.5px; color:var(--muted); font-weight:700;}
+  .hw-add{font-size:12.5px; font-weight:700; color:var(--sun); background:#fff6e6; border:1px solid #f0d9a8; border-radius:10px; padding:4px 10px;}
+  .hw-add:active{transform:scale(.96);}
+  .hw-chips{display:flex; flex-wrap:wrap; gap:8px;}
+  .hw-chip{display:inline-flex; align-items:center; gap:3px; background:#f4efe4; border:1px solid var(--line); border-radius:999px; padding:6px 8px 6px 12px; font-size:13.5px; color:var(--ink); font-weight:600; cursor:pointer;}
+  .hw-chip:active{transform:scale(.97);}
+  .hw-edit,.hw-del{font-style:normal; font-size:11px; width:18px; height:18px; line-height:18px; text-align:center; border-radius:50%; cursor:pointer;}
+  .hw-edit{color:#8a7d5a; background:#efe7d2;}
+  .hw-del{color:#fff; background:#c97b7b; margin-left:2px;}
+  .hw-empty{font-size:12px; color:var(--muted);}
 
   /* ===== 待办事项 ===== */
   .task-add{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
@@ -1002,15 +1015,34 @@ function renderList(){
   SUBJECTS.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${s}" onclick="pickAddSubj(this)">${s}</button>`);
   html += `</div>
     <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><button class="plus" onclick="doAdd()">+</button></div>
+    <div id="hwWrap" class="hw-wrap">
+      <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span><button class="hw-add" onclick="addHW()">＋ 添加</button></div>
+      <div id="hwChips" class="hw-chips"></div>
+    </div>
   </div>`;
 
   $("listContent").innerHTML = html;
+  renderHWChips();
 }
 
 let addSubj = "语文";
-function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); }
-/* 高频词/常用词功能已移除：recomputeHot 留作空操作，避免其它调用点报错 */
+function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
+/* 高频词/常用词功能（按科目分组，仅存本机，不进云端） */
 function recomputeHot(){}
+const HW_KEY = "wb_hwdsk_hw_v1";
+function loadHW(){ try{ return JSON.parse(localStorage.getItem(HW_KEY))||{}; }catch(e){ return {}; } }
+function saveHW(o){ try{ localStorage.setItem(HW_KEY, JSON.stringify(o)); }catch(e){} }
+function renderHWChips(){
+  const box=$("hwChips"); if(!box) return;
+  const arr=loadHW()[addSubj]||[];
+  const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
+  if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
+  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w)}<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i></span>`).join("");
+}
+function fillHW(i){ const arr=loadHW()[addSubj]||[]; const el=$("addInput"); if(el){ el.value=arr[i]||""; el.focus(); } }
+function addHW(){ const v=prompt("为【"+addSubj+"】添加常用词：",""); if(v==null) return; const t=v.trim(); if(!t) return; const hw=loadHW(); (hw[addSubj]||(hw[addSubj]=[])).push(t); saveHW(hw); renderHWChips(); }
+function editHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; const nv=prompt("修改常用词：",arr[i]||""); if(nv==null) return; const t=nv.trim(); if(!t) return; arr[i]=t; saveHW(hw); renderHWChips(); }
+function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   addTodo(addSubj, v); $("addInput").value=""; toast("已添加 · "+addSubj); renderList();
@@ -1591,8 +1623,8 @@ let syncReady    = false;   // 初始化完成前不触发自动上传
 let syncPushT    = null;
 
 /* ============ 账号系统（本地登录 + 自动云端同步）============
-   无后端：账号存本机 localStorage；所有账号共用用户自己填写的云端 Token 向各自私密 Gist 同步。
-   登录/注册时由用户填写一次 Token（仅存本机浏览器，永不上传源码）。 */
+   无后端：账号存本机 localStorage；所有账号共用 MASTER_TOKEN 向各自私密 Gist 同步。
+   登录即把该账号的 Token+Gist 写入 SYNC_KEY，复用下方合并式同步，无需手动填云端配置。 */
 const TOKEN_KEY = "wb_hwdsk_token_v1";
 let MASTER_TOKEN = (function(){ try{ return localStorage.getItem(TOKEN_KEY)||""; }catch(e){ return ""; } })();
 const LVCHENG_GIST = "c7160b8d4af6819ee036789e26fa02d0";
