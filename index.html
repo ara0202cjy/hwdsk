@@ -1083,16 +1083,16 @@ function expoFields(t){
   return `
       <div class="field">
         <label>具体内容</label>
-        <textarea onchange="editField('${t.id}','detail',this.value)" placeholder="点此填写">${esc(t.detail)}</textarea>
+        <textarea onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','detail',this.value)" placeholder="点此填写">${esc(t.detail)}</textarea>
       </div>
       <div class="field-row">
         <div class="field">
           <label>预估时间</label>
-          <div class="est-row"><input type="number" min="0" value="${t.estMin||''}" onchange="editField('${t.id}','estMin',this.value)"><span class="u">分</span></div>
+          <div class="est-row"><input type="number" min="0" value="${t.estMin||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','estMin',this.value)"><span class="u">分</span></div>
         </div>
         <div class="field">
           <label>错题数量</label>
-          <div class="est-row"><input type="number" min="0" value="${t.wrong||''}" onchange="editField('${t.id}','wrong',this.value)"><span class="u">道</span></div>
+          <div class="est-row"><input type="number" min="0" value="${t.wrong||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','wrong',this.value)"><span class="u">道</span></div>
         </div>
       </div>`;
 }
@@ -1737,6 +1737,10 @@ const SYNC_KEY   = "hwdsk_sync_v1";
 const SYNC_FILE  = "hwdsk.json";
 let syncReady    = false;   // 初始化完成前不触发自动上传
 let syncPushT    = null;
+const SYNC_DEBOUNCE_MS = 6000;    // 本地改动后静默 6 秒再上传（合并连击，杜绝刷屏式同步）
+const SYNC_INTERVAL_MS = 120000;  // 后台自动拉取周期 2 分钟（原 45 秒，过于频繁）
+let editingId    = null;          // 正在编辑的条目：同步时不被远端覆盖，避免打字被打断
+let lastCloudSig = "";            // 上次云端数据指纹，无变化则跳过渲染/写入
 
 /* ============ 账号系统（本地登录 + 自动云端同步）============
    无后端：账号存本机 localStorage；所有账号共用 MASTER_TOKEN 向各自私密 Gist 同步。
@@ -2033,6 +2037,7 @@ function pruneTombstones(){
 }
 /* 云端 + 本机 → 合并结果（顺序确定，便于判断内容是否真的变化） */
 function mergeState(cloud, local){
+  cloud = cloud || {};
   const del = mergeDel(cloud._del, local._del);
   const delM = mergeDel(cloud._delM, local._delM);
   const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
@@ -2044,40 +2049,67 @@ function mergeState(cloud, local){
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
 }
-/* 一轮完整同步：合并后写回云端 */
+/* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
+async function readCloud(){
+  const cfg=syncCfg();
+  const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), { headers: syncHeaders(cfg) });
+  if(!r.ok) throw { status:r.status };
+  const j = await r.json();
+  const f = j && j.files && j.files[SYNC_FILE];
+  if(!f) return null;
+  try{ return JSON.parse(f.content); }catch(e){ return null; }
+}
+/* 仅在数据指纹变化时才写回云端，避免无意义的写入与 _syncedAt 空转 */
+async function writeCloud(obj){
+  const cfg=syncCfg();
+  obj._syncedAt = Date.now();
+  const content = JSON.stringify(obj);
+  const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
+    method:"PATCH",
+    headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
+    body: JSON.stringify({ files:{ [SYNC_FILE]:{ content } } })
+  });
+  if(!r.ok) throw { status:r.status };
+}
+/* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据 */
+function dataSig(s){
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s._del)||{}, (s&&s._delM)||{} ]);
+}
+/* 某条目正在本机编辑时，保留本机版本，不被云端覆盖 */
+function protectEditing(merged){
+  if(!editingId || !merged.todos) return merged;
+  const local = state.todos.find(x=>x.id===editingId);
+  if(local) merged.todos = merged.todos.map(it=> (it && it.id===editingId) ? local : it);
+  return merged;
+}
+function applyMerged(merged){
+  const before = dataSig(state);
+  state = merged; saveLocal();
+  if(dataSig(state) !== before){ pruneTombstones(); recomputeHot(); refreshAll(); renderTasks(); }
+}
+/* 一轮完整同步：取云端 → 与本机合并 → 写回；写后复核消除并发写丢失 */
 async function syncCycle(silent){
   if(syncBusy || !syncEnabled()) return false;
+  if(document.hidden) return false;            // 后台不抢同步，回到前台再同步
   syncBusy = true; setSyncUI("syncing");
   try{
-    const cfg=syncCfg();
-    const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), { headers: syncHeaders(cfg) });
-    if(!r.ok) throw { status:r.status };
-    const j = await r.json();
-    const f = j && j.files && j.files[SYNC_FILE];
-    let cloud=null;
-    if(f){ try{ cloud=JSON.parse(f.content); }catch(e){ cloud=null; } }
-    if(!cloud || typeof cloud!=="object" || !Array.isArray(cloud.todos)){
-      const okd = await syncPush(silent);        // 云端无效/为空 → 直接上传本机
-      setSyncUI(okd?"ok":"err");
-      return okd;
+    const cloud = await readCloud();
+    const cloudOk = cloud && typeof cloud==="object" && Array.isArray(cloud.todos);
+    let merged = mergeState(cloudOk ? cloud : {}, state);
+    protectEditing(merged);
+    const cloudSig = cloudOk ? dataSig(cloud) : "";
+    if(dataSig(merged) !== cloudSig){
+      await writeCloud(merged);
+      // 写后复核：若期间另一设备已写入，把对方数据并回后再写一次，杜绝「后写覆盖」丢数据
+      const cloud2 = await readCloud();
+      if(cloud2 && dataSig(cloud2) !== dataSig(merged)){
+        merged = mergeState(cloud2, merged);
+        protectEditing(merged);
+        await writeCloud(merged);
+      }
     }
-    const merged = mergeState(cloud, state);
-    let content = JSON.stringify(merged);
-    if(content !== f.content){                   // 内容一致则无需写入，避免空转
-      merged._syncedAt = Date.now();
-      content = JSON.stringify(merged);
-      const rr = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
-        method:"PATCH",
-        headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
-        body: JSON.stringify({ files:{ [SYNC_FILE]:{ content: content } } })
-      });
-      if(!rr.ok) throw { status: rr.status };
-    }
-    // 只有数据真的变了才重渲染，避免定时同步打断正在输入的内容
-    const dataOf = s => JSON.stringify([(s.todos||[]), (s.tasks||[]), (s.masters||[])]);
-    const changed = dataOf(merged) !== dataOf(state);
-    state = merged; saveLocal();
-    if(changed){ pruneTombstones(); recomputeHot(); refreshAll(); renderTasks(); }
+    lastCloudSig = dataSig(merged);
+    applyMerged(merged);
     setSyncUI("ok");
     return true;
   }catch(e){
@@ -2087,11 +2119,11 @@ async function syncCycle(silent){
   }finally{ syncBusy=false; }
 }
 
-/* 数据变更后自动同步（合并连续操作，避免频繁请求） */
+/* 数据变更后自动同步：静默 6 秒无操作才上传，合并连击避免刷屏式请求 */
 function syncSchedule(){
-  if(!syncReady || !syncEnabled()) return;
+  if(!syncReady || !syncEnabled() || document.hidden) return;
   clearTimeout(syncPushT);
-  syncPushT = setTimeout(()=>syncCycle(true), 800);
+  syncPushT = setTimeout(()=>{ if(!document.hidden && !syncBusy) syncCycle(true); }, SYNC_DEBOUNCE_MS);
 }
 /* 离开页面前把待发的同步立刻发出，避免关掉 App 丢改动 */
 function syncFlush(){
@@ -2100,8 +2132,13 @@ function syncFlush(){
 function syncInit(){
   if(!syncEnabled()){ syncReady=true; return; }
   syncCycle(true).then(()=>{ syncReady=true; }, ()=>{ syncReady=true; });
-  setInterval(()=>{ if(!document.hidden) syncCycle(true); }, 45000);   // 使用中也定时同步
-  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncCycle(true); });
+  setInterval(()=>{ if(!document.hidden && !syncBusy) syncCycle(true); }, SYNC_INTERVAL_MS);  // 后台每 2 分钟拉取
+  let visT=null;
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.hidden) return;
+    clearTimeout(visT);
+    visT=setTimeout(()=>{ if(!syncBusy) syncCycle(true); }, 2000);   // 回到前台 2 秒后再同步，避免与编辑/定时堆叠
+  });
   window.addEventListener("pagehide", syncFlush);
 }
 /* 顶部云朵图标状态：syncing / ok / err */
@@ -2138,7 +2175,7 @@ function openSettings(){
   let html=`<div class="sheet-h">设置<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="sync-box">
       <div class="sync-h"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.6A4 4 0 0 1 17 18" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 12v6M12 18l-2.5-2.5M12 18l2.5-2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>云同步（已登录账号 <b>${esc(u)}</b>）</div>
-      <p class="sync-note">数据改动后自动上传；在页面顶部<b>下拉</b>或点右上角云朵可立即同步；打开页面 / 回到前台 / 使用中每 45 秒自动同步。多端按「最后修改时间」逐条合并，新数据不会被旧数据覆盖。</p>
+      <p class="sync-note">数据改动后约 6 秒自动上传；回到前台或每 2 分钟自动拉取；点右上角云朵可立即同步。多端按「最后修改时间」逐条合并，且<b>写后复核</b>杜绝并发写丢失，正在输入的条目不会被云端覆盖。</p>
       <div class="btns">
         <button class="sbtn" onclick="syncCycle(false)">立即同步</button>
         <button class="sbtn alt" onclick="syncPull()">以云端为准</button>
@@ -2286,7 +2323,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.4";
+const APP_VERSION = "2026.09.10.5";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
