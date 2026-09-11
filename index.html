@@ -695,8 +695,18 @@ function load(){
   if(!state._del){ state._del = {}; }        // 删除墓碑：防止已删条目被云端“复活”
   if(!Array.isArray(state.masters)) state.masters = [];   // 循环锁定母版（每日/每周）
   if(!state._delM) state._delM = {};          // 母版删除墓碑：跨端同步停止循环
-  /* 彻底移除常用词/高频词功能：删除旧数据字段，不再存储、不再同步 */
-  delete state.chips; delete state.hot; delete state.hotBlock;
+  if(!state.hw) state.hw = {};                // 常用词（按科目分组）：随作业清单一起多端同步
+  if(!state._delHW) state._delHW = {};        // 常用词删除墓碑：跨端同步删除
+  /* 迁移：旧版常用词存于独立 localStorage 键 wb_hwdsk_hw_v1，并入 state.hw 一并同步 */
+  try{
+    const oldHW = JSON.parse(localStorage.getItem(HW_KEY)||"null");
+    if(oldHW && typeof oldHW==="object"){
+      Object.keys(oldHW).forEach(s=>{
+        (oldHW[s]||[]).forEach(x=>{ const it=hwItem(x); (state.hw[s]=state.hw[s]||[]).push({id:uid(), t:it.t, e:it.e, _u:0}); });
+      });
+      localStorage.removeItem(HW_KEY); saveLocal();
+    }
+  }catch(e){}
   pruneTombstones();
   /* 自愈：示例/演示数据（sample:true）一律清除；清掉后写回并同步，顺带把云端也洗清 */
   const n0=(state.todos||[]).length+(state.tasks||[]).length;
@@ -717,7 +727,7 @@ function rint(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
 
 function seed(){
   /* 正式使用：不再生成任何示例/演示数据，全新安装从空开始（避免示例混入统计与云端） */
-  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, _syncedAt:0 };
   const todos = [];
   const today = new Date(); today.setHours(0,0,0,0);
   const pool = {
@@ -1069,11 +1079,11 @@ let addSubj = "语文";
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名 / "__done__"），用于显示各项的修改/删除/固定按钮
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
 function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
-/* 高频词/常用词功能（按科目分组，仅存本机，不进云端） */
+/* 常用词功能（按科目分组，存于 state.hw，随作业清单一起多端同步） */
 function recomputeHot(){}
-const HW_KEY = "wb_hwdsk_hw_v1";
-function loadHW(){ try{ return JSON.parse(localStorage.getItem(HW_KEY))||{}; }catch(e){ return {}; } }
-function saveHW(o){ try{ localStorage.setItem(HW_KEY, JSON.stringify(o)); }catch(e){} }
+const HW_KEY = "wb_hwdsk_hw_v1";   // 仅用于旧版本数据迁移
+function loadHW(){ return (state && state.hw) || {}; }
+function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发延迟自动同步
 /* 常用词统一为 {t:标题, e:预估分钟}；旧数据仅存字符串，读取时兼容 */function hwItem(x){ if(typeof x==="string") return {t:x, e:0}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0)}; }
 function renderHWChips(){
   const box=$("hwChips"); if(!box) return;
@@ -1086,15 +1096,15 @@ function fillHW(i){ const arr=(loadHW()[addSubj]||[]).map(hwItem); const w=arr[i
 function addHW(){
   const v=prompt("为【"+addSubj+"】添加常用词（作业内容）：",""); if(v==null) return; const t=v.trim(); if(!t) return;
   const e=prompt("预估时长（分钟，留空=不填）：",""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
-  const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]); arr.push({t:t, e:est}); saveHW(hw); renderHWChips();
+  const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]); arr.push({id:uid(), t:t, e:est, _u:Date.now()}); saveHW(hw); renderHWChips();
 }
 function editHW(i){
   const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
   const v=prompt("修改常用词（作业内容）：",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
   const e=prompt("预估时长（分钟）：",cur.e?String(cur.e):""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
-  arr[i]={t:t, e:est}; saveHW(hw); renderHWChips();
+  const raw=arr[i]||{}; arr[i]={id:raw.id||uid(), t:t, e:est, _u:Date.now()}; saveHW(hw); renderHWChips();
 }
-function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; arr.splice(i,1); saveHW(hw); renderHWChips(); }
+function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const gone=arr[i]; if(gone&&gone.id){ state._delHW=state._delHW||{}; state._delHW[gone.id]=Date.now(); } arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
@@ -1627,13 +1637,12 @@ function setTaskDue(id, ds){ const t=getTask(id); if(!t) return; t.due=ds; save(
 function onCmpInput(){ cmpQuery = $("cmpInput") ? $("cmpInput").value : ""; renderCompare(); }
 function renderCompare(){
   const q=(cmpQuery||"").trim().toLowerCase();
-  // 文字筛选：作业内容 / 科目 / 备注
-  let recs = state.todos.filter(t=>{
-    if(!q) return true;
-    return (t.title||"").toLowerCase().includes(q)
+  // 仅显示已完成的作业（未完成的在横向比较中不展示）
+  let recs = state.todos.filter(t=> t.done && (
+    !q || (t.title||"").toLowerCase().includes(q)
         || (t.detail||"").toLowerCase().includes(q)
-        || (t.subject||"").toLowerCase().includes(q);
-  });
+        || (t.subject||"").toLowerCase().includes(q)
+  ));
   // 按时间从新到旧
   recs.sort((a,b)=> a.date<b.date ? 1 : a.date>b.date ? -1 : (a.id<b.id?1:-1));
   // 列表（可滚动）
@@ -1970,8 +1979,9 @@ async function syncPull(mode){
     if(!state.tasks)    state.tasks    = [];
     if(!Array.isArray(state.masters)) state.masters = [];
     if(!state._delM) state._delM = {};
+    if(!state.hw) state.hw = {};                 // 常用词：随作业清单一起同步
+    if(!state._delHW) state._delHW = {};         // 常用词删除墓碑
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
-    delete state.chips; delete state.hot; delete state.hotBlock;   // 常用词功能已移除
     if(Array.isArray(state.todos)) state.todos = state.todos.filter(t=>!t.sample);  // 自愈：剔除云端残留示例数据
     if(Array.isArray(state.tasks)) state.tasks = state.tasks.filter(t=>!t.sample);
     saveLocal(); recomputeHot(); refreshAll(); renderTasks();
@@ -2000,7 +2010,7 @@ async function syncPush(silent){
     const up = JSON.parse(JSON.stringify(state));
     if(Array.isArray(up.todos)) up.todos = up.todos.filter(t=>!t.sample);
     if(Array.isArray(up.tasks)) up.tasks = up.tasks.filter(t=>!t.sample);
-    delete up.chips; delete up.hot; delete up.hotBlock;   // 常用词功能已移除，永不进云端
+    /* 常用词随 state.hw 一并同步，样本已在上行剔除，无需单独剔除 */
     const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
       method:"PATCH",
       headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
@@ -2073,11 +2083,15 @@ function mergeState(cloud, local){
   cloud = cloud || {};
   const del = mergeDel(cloud._del, local._del);
   const delM = mergeDel(cloud._delM, local._delM);
+  const delHW = mergeDel(cloud._delHW, local._delHW);
   const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
+  const hw = mergeGroups(cloud.hw, local.hw);
+  SUBJECTS.forEach(s=>{ if(Array.isArray(hw[s])) hw[s]=hw[s].filter(c=>c&&c.id&&!delHW[c.id]); });
   return {
     todos: mergeItems(cloud.todos, local.todos, del),
     tasks: mergeItems(cloud.tasks, local.tasks, del),
     masters,
+    hw, _delHW: delHW,
     _del: del, _delM: delM,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
@@ -2106,7 +2120,7 @@ async function writeCloud(obj){
 }
 /* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据 */
 function dataSig(s){
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s._del)||{}, (s&&s._delM)||{} ]);
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{} ]);
 }
 /* 某条目正在本机编辑时，保留本机版本，不被云端覆盖 */
 function protectEditing(merged){
@@ -2356,7 +2370,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.14";
+const APP_VERSION = "2026.09.10.15";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
