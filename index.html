@@ -708,84 +708,22 @@ function load(){
     }
   }catch(e){}
   pruneTombstones();
-  /* 自愈：示例/演示数据（sample:true）一律清除；清掉后写回并同步，顺带把云端也洗清 */
-  const n0=(state.todos||[]).length+(state.tasks||[]).length;
-  state.todos=(state.todos||[]).filter(t=>!t.sample);
-  state.tasks=(state.tasks||[]).filter(t=>!t.sample);
-  if(state.todos.length+(state.tasks||[]).length !== n0){ save(); }
-  recomputeHot();
 }
 /* 仅写本机，不触发云同步（供同步流程内部使用，避免递归） */
 function saveLocal(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
 /* 正常保存：写本机 + 若已配置云同步则延迟自动上传 */
 function save(){ saveLocal(); syncSchedule(); }
 
-/* 确定性随机，保证示例可复现 */
-let _s = 987654321;
-function rnd(){ _s = (_s*1103515245 + 12345) & 0x7fffffff; return _s/0x7fffffff; }
-function rint(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
-
 function seed(){
-  /* 正式使用：不再生成任何示例/演示数据，全新安装从空开始（避免示例混入统计与云端） */
+  // 全新安装从空开始（不再生成示例数据，避免混入统计与云端）
   return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, _syncedAt:0 };
-  const todos = [];
-  const today = new Date(); today.setHours(0,0,0,0);
-  const pool = {
-    "语文":["阅读名著《朝花夕拾》","背诵古诗三首","单元测试卷订正","记叙文写作练习"],
-    "数学":["练习册 P45-48","错题本订正","应用题专项训练","口算每日一练"],
-    "英语":["Unit3 单词听写","课文跟读录音","语法填空练习","绘本阅读"],
-    "其他":["科学实验记录","美术手抄报","体育锻炼打卡","整理书包书桌"]
-  };
-  // 今天：演示各种状态（含「暂停后分段」的起止时间展示）
-  const now = Date.now();
-  todos.push(mkTodo(today,"语文","阅读名著《朝花夕拾》第2章",{estMin:30,detail:"读完并批注精彩段落",done:true,wrong:1,startClock:"16:00",endClock:"17:30",accum:70*60000,sample:true,segments:[{s:"16:00",e:"16:40"},{s:"17:00",e:"17:30"}]}));
-  todos.push(mkTodo(today,"数学","练习册 P45-48",{estMin:18,detail:"完成 1-12 题",wrong:2,done:true,startClock:"16:20",endClock:"16:38",accum:18*60000,sample:true}));
-  todos.push(mkTodo(today,"英语","Unit3 单词听写",{estMin:20,detail:"背诵黑体词 15 个",sample:true}));
-  todos.push(mkTodo(today,"其他","科学实验记录",{estMin:15,detail:"记录种子发芽观察",wrong:0,done:true,startClock:"18:00",endClock:"18:15",accum:15*60000,sample:true}));
-
-  // 过去 30 天历史
-  for(let d=30; d>=1; d--){
-    const dt = new Date(today); dt.setDate(today.getDate()-d);
-    const n = rint(2,4);
-    const used = {};
-    for(let i=0;i<n;i++){
-      const subj = SUBJECTS[rint(0,3)];
-      const title = pool[subj][rint(0,pool[subj].length-1)];
-      const key = subj+title; if(used[key]) continue; used[key]=1;
-      const est = rint(15,45);
-      const done = rnd() > 0.18;
-      const wrong = done ? rint(0,8) : 0;
-      const startH = rint(16,19), startM = [0,15,30,45][rint(0,3)];
-      const startMin = startH*60+startM;
-      const endMin = startMin + est + rint(0,10);
-      const t = mkTodo(dt, subj, title, {
-        estMin:est, wrong:wrong,
-        done:done,
-        startClock: done?minToClock(startMin):null,
-        endClock: done?minToClock(endMin):null,
-        accum: done? (endMin-startMin)*60000 : 0,
-        sample:true
-      });
-      todos.push(t);
-    }
-  }
-  // 待办事项示例（与作业数据完全隔离，不进任何统计）
-  const tasks = [];
-  const t_tomorrow = new Date(today); t_tomorrow.setDate(today.getDate()+1);
-  tasks.push(mkTask("买美术课手工材料", ymd(t_tomorrow), 1, true));
-  tasks.push(mkTask("给花盆浇水", null, 3, true));
-  tasks.push(mkTask("整理下周错题本", null, 2, true));
-  const doneLow = mkTask("还图书馆绘本", null, 3, true);
-  doneLow.done=true; doneLow.doneAt=Date.now()-3600000; tasks.push(doneLow);
-
-  return { todos, tasks };
 }
 function mkTodo(date, subject, title, o={}){
   return Object.assign({
     id:uid(), date:ymd(date), subject, title,
     detail:"", estMin:0, wrong:0, done:false,
     accum:0, timerRunning:false, startedAt:null,
-    startClock:null, endClock:null, sample:false,
+    startClock:null, endClock:null,
     segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
     masterId:null,         // 循环锁定：指向 state.masters 的母版 id；空=一次性作业
     lock:null,             // 本条目循环类型：'daily' | 'weekly' | null
@@ -829,7 +767,7 @@ function segText(t){
 }
 function addTodo(subject, title, opts={}){
   const t = mkTodo(viewDate, subject, title, opts);
-  state.todos.push(t); recomputeHot(); save(); syncDerived(); return t;
+  state.todos.push(t); save(); syncDerived(); return t;
 }
 function getTodo(id){ return state.todos.find(t=>t.id===id); }
 
@@ -837,8 +775,8 @@ function getTodo(id){ return state.todos.find(t=>t.id===id); }
 const PRI = {1:{label:"高",cls:"pri-1"},2:{label:"中",cls:"pri-2"},3:{label:"低",cls:"pri-3"}};
 const TASK_KEEP = 10;                 // 已完成最多保留
 let addPri = 2, addDue = null;        // 添加卡草稿
-function mkTask(title, due, priority, sample){
-  return { id:uid(), title, due: due||null, priority: priority||2, done:false, doneAt:null, createdAt:Date.now(), sample:!!sample, _u: Date.now() };
+function mkTask(title, due, priority){
+  return { id:uid(), title, due: due||null, priority: priority||2, done:false, doneAt:null, createdAt:Date.now(), _u: Date.now() };
 }
 function addTask(title, due, priority){
   title=(title||"").trim(); if(!title) return null;
@@ -1084,7 +1022,6 @@ let editBooks = new Set();   // 当前处于“设置”状态的作业本（科
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
 function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
 /* 常用词功能（按科目分组，存于 state.hw，随作业清单一起多端同步） */
-function recomputeHot(){}
 const HW_KEY = "wb_hwdsk_hw_v1";   // 仅用于旧版本数据迁移
 function loadHW(){ return (state && state.hw) || {}; }
 function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发延迟自动同步
@@ -1128,8 +1065,8 @@ function expoFields(t){
           <div class="est-row"><input type="number" min="0" value="${t.estMin||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','estMin',this.value)"><span class="u">分</span></div>
         </div>
         <div class="field">
-          <label>实际用时（手动）</label>
-          <div class="est-row"><input type="number" min="0" value="${t.manualMin||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="setManual('${t.id}',this.value)" placeholder="忘计时时填"><span class="u">分</span></div>
+          <label>实际用时</label>
+          <div class="est-row"><input type="number" min="0" value="${t.manualMin||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="setManual('${t.id}',this.value)" placeholder="忘计时"><span class="u">分</span></div>
         </div>
         <div class="field">
           <label>错题数量</label>
@@ -1189,7 +1126,7 @@ function todoRow(t){
 function editField(id,key,val){
   const t=getTodo(id); if(!t) return;
   if(key==="estMin"||key==="wrong") t[key]=Math.max(0,parseInt(val||"0",10)||0);
-  else { t[key]=val; if(key==="title") recomputeHot(); }
+  else { t[key]=val; }
   // 循环作业：把 标题/内容/预估 同步回母版与同组未开始实例
   if(t.masterId && (key==="title"||key==="detail"||key==="estMin")){
     const m=getMaster(t.masterId);
@@ -1253,7 +1190,7 @@ function delTodo(id){
   state.todos=state.todos.filter(x=>x.id!==id);
   if(openExpo===id) openExpo=null;
   if(ganttHL===id) ganttHL=null;
-  recomputeHot(); save(); renderList(); syncDerived();
+  save(); renderList(); syncDerived();
   toast("已删除作业");
 }
 /* ============ 循环锁定（每日 / 每周）============
@@ -1966,21 +1903,18 @@ async function syncPull(mode){
     const data = JSON.parse(f.content);
     if(!data || typeof data!=="object") throw { status:-3 };
 
-    /* ---- 覆盖决策：安全优先，绝不让“空/只有示例”的云端吞掉本机真实数据 ---- */
+    /* ---- 覆盖决策：安全优先，绝不让“空”的云端吞掉本机真实数据 ---- */
     const cTodos    = Array.isArray(data.todos) ? data.todos : [];
     const cloudN    = cTodos.length;                                  // 云端总条数
-    const cloudReal = cTodos.filter(x=>!x.sample).length;             // 云端真实条数（不含示例）
     const cloudAt   = data._syncedAt || 0;
     const lTodos    = (state.todos||[]);
     const localN    = lTodos.length;
-    const localReal = lTodos.filter(x=>!x.sample).length;
     const localAt   = state._syncedAt || 0;
 
     if(mode==="auto"){
       if(cloudN===0){ syncStatus("云端暂无数据，保留本机"); return false; }          // → 随后上传本机
-      if(localReal>0 && cloudReal===0){ syncStatus("云端只有示例数据，保留本机"); return false; }
-      if(localReal>0 && cloudAt<=localAt){ syncStatus("本机数据已是最新"); return true; }
-      // 其余情况（本机只有示例 / 云端明显更新）→ 采用云端
+      if(localN>0 && cloudAt<=localAt){ syncStatus("本机数据已是最新"); return true; }
+      // 其余情况（云端明显更新）→ 采用云端
     }else{
       // 手动下载会覆盖本机，先二次确认
       if(localN>0){
@@ -1999,9 +1933,7 @@ async function syncPull(mode){
     if(!state.hw) state.hw = {};                 // 常用词：随作业清单一起同步
     if(!state._delHW) state._delHW = {};         // 常用词删除墓碑
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
-    if(Array.isArray(state.todos)) state.todos = state.todos.filter(t=>!t.sample);  // 自愈：剔除云端残留示例数据
-    if(Array.isArray(state.tasks)) state.tasks = state.tasks.filter(t=>!t.sample);
-    saveLocal(); recomputeHot(); refreshAll(); renderTasks();
+    saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
     syncStatus("已同步云端 "+n+" 条作业","ok");
     if(mode!=="auto") toast("已下载云端数据 "+n+" 条");
@@ -2023,11 +1955,7 @@ async function syncPush(silent){
   if(!silent) syncStatus("正在上传到云端…");
   try{
     state._syncedAt = Date.now();
-    /* 只上传真实数据：示例（sample:true）永不进云端，避免污染 */
     const up = JSON.parse(JSON.stringify(state));
-    if(Array.isArray(up.todos)) up.todos = up.todos.filter(t=>!t.sample);
-    if(Array.isArray(up.tasks)) up.tasks = up.tasks.filter(t=>!t.sample);
-    /* 常用词随 state.hw 一并同步，样本已在上行剔除，无需单独剔除 */
     const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
       method:"PATCH",
       headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
@@ -2065,7 +1993,7 @@ function mergeItems(cloudArr, localArr, del){
   });
   return Array.from(map.values());
 }
-/* 关键词类（chips / hot）：按 id 取较新的一方 */
+/* 常用词（按科目）：按 id 取较新的一方 */
 function mergeGroups(cloudG, localG){
   const out={};
   SUBJECTS.forEach(s=>{
@@ -2077,11 +2005,6 @@ function mergeGroups(cloudG, localG){
     });
     out[s]=Array.from(map.values());
   });
-  return out;
-}
-function mergeBlock(cloudB, localB){
-  const out={};
-  SUBJECTS.forEach(s=>{ out[s]=Array.from(new Set([].concat((cloudB&&cloudB[s])||[], (localB&&localB[s])||[]))); });
   return out;
 }
 function mergeDel(cloudD, localD){
@@ -2149,7 +2072,7 @@ function protectEditing(merged){
 function applyMerged(merged){
   const before = dataSig(state);
   state = merged; saveLocal();
-  if(dataSig(state) !== before){ pruneTombstones(); recomputeHot(); refreshAll(); renderTasks(); }
+  if(dataSig(state) !== before){ pruneTombstones(); refreshAll(); renderTasks(); }
 }
 /* 一轮完整同步：取云端 → 与本机合并 → 写回；写后复核消除并发写丢失 */
 async function syncCycle(silent){
@@ -2249,7 +2172,6 @@ function openSettings(){
     </div>
     <div class="opt" onclick="exportExcel()"><span>导出 Excel 数据</span><span class="sub">CSV · 可用 Excel 打开</span></div>
     <div class="opt" onclick="importExcel()"><span>导入 Excel 数据</span><span class="sub">选择 .csv 文件</span></div>
-    <div class="opt" onclick="clearSample()"><span>只清除示例数据</span><span class="sub">保留我的录入</span></div>
     <div class="opt danger" id="holdOpt"><div class="hold" id="holdBtn"><div class="fill" id="holdFill"></div>长按 3 秒清空全部数据</div></div>`;
   openSheet(html);
   bindHold();
@@ -2304,16 +2226,10 @@ function importExcel(){
         todos.push(t);
       }
       if(todos.length===0) throw 0;
-      state.todos=todos; recomputeHot(); save(); refreshAll(); toast("已导入 "+todos.length+" 条"); closeSheet();
+      state.todos=todos; save(); refreshAll(); toast("已导入 "+todos.length+" 条"); closeSheet();
     }catch(e){ toast("Excel 解析失败，请检查格式"); } };
     r.readAsText(f,"utf-8"); };
   inp.click();
-}
-function clearSample(){
-  const before=state.todos.length+state.tasks.length;
-  state.todos=state.todos.filter(t=>!t.sample);
-  state.tasks=state.tasks.filter(t=>!t.sample);
-  recomputeHot(); save(); refreshAll(); renderTasks(); toast("已清除示例 "+ (before-(state.todos.length+state.tasks.length)) +" 条"); closeSheet();
 }
 function bindHold(){
   const btn=$("holdBtn"), fill=$("holdFill"), opt=$("holdOpt");
@@ -2387,7 +2303,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.17";
+const APP_VERSION = "2026.09.10.18";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
