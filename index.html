@@ -369,6 +369,11 @@
   .cmpt{background:var(--card); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; margin-top:6px;}
   .cmpt-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; font-size:12px; color:var(--muted); font-weight:700; border-bottom:1px solid #efe9dc;}
   .cmpt-head .cnt{color:var(--ink);}
+  .cmpt-colhead{display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:5px 12px 4px; border-bottom:1px solid #f2efe6; background:#fbf9f4;}
+  .cmpt-colhead .ch{font-size:10.5px; color:var(--muted); text-align:center; cursor:pointer; user-select:none; padding:3px 2px; border-radius:8px; transition:background .12s;}
+  .cmpt-colhead .ch:hover{background:#f0ece2;}
+  .cmpt-colhead .ch.on{color:var(--ink); font-weight:800; background:#ece5d6;}
+  .cmpt-colhead .ch .ar{font-size:8.5px; margin-left:1px;}
   .cmpt-row{padding:7px 11px; border-bottom:1px solid #f2efe6;}
   .cmpt-row:last-child{border-bottom:none;}
   .cmpt-row .top{display:flex; align-items:center; gap:6px;}
@@ -1599,6 +1604,7 @@ let sumYear = (new Date()).getFullYear();                       // 全年模式�
 let sumMonth = new Date();             // 全月模式导航（仅年月）
 let sumWeekStart = (function(){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-t.getDay()); return ymd(d); })(); // 周模式所选周日(ymd)
 let sumCalCollapsed = false;          // 日历卡是否折叠
+let sumSort = {key:null, dir:1};       // 比较栏排序：key∈doneN|undoneN|avgMin|avgWrong；dir 1升序/-1降序；null=默认(语数英其他+完成率)
 
 const SUBJ_ORDER = {"语文":0,"数学":1,"英语":2,"其他":3};
 function subjIdx(s){ return SUBJ_ORDER.hasOwnProperty(s) ? SUBJ_ORDER[s] : 99; }
@@ -1719,15 +1725,40 @@ function renderSummary(){
     const avgWrong = dones.length ? dones.reduce((s,t)=>s+(t.wrong||0),0)/dones.length : null;  // 平均错误按已完成实例取
     return { key, subject:g.subject, title:g.title, total, doneN, undoneN, rate, avgMin, avgWrong };
   });
-  // 排序：先按 语→数→英→其他，再按完成率从低到高（问题项在前）
-  rows.sort((a,b)=> (subjIdx(a.subject)-subjIdx(b.subject)) || (a.rate-b.rate) || a.title.localeCompare(b.title,"zh"));
+  // 排序
+  if(sumSort.key){
+    const k=sumSort.key, dir=sumSort.dir;
+    rows.sort((a,b)=>{
+      const av=a[k], bv=b[k], an=av==null, bn=bv==null;
+      if(an && bn) return a.title.localeCompare(b.title,"zh");
+      if(an) return 1;          // 无数据项始终排最后
+      if(bn) return -1;
+      if(av!==bv) return (av-bv)*dir;
+      return a.title.localeCompare(b.title,"zh");
+    });
+  } else {
+    // 默认：先按 语→数→英→其他，再按完成率从低到高（问题项在前）
+    rows.sort((a,b)=> (subjIdx(a.subject)-subjIdx(b.subject)) || (a.rate-b.rate) || a.title.localeCompare(b.title,"zh"));
+  }
 
   const allTotal = rows.reduce((s,r)=>s+r.total,0);
   const allDone = rows.reduce((s,r)=>s+r.doneN,0);
   const allRate = allTotal ? Math.round(allDone/allTotal*100) : 0;
 
+  const SORT_LABEL = {"doneN":"完成次数","undoneN":"未完成次数","avgMin":"平均用时","avgWrong":"平均错误"};
+  const sortTip = sumSort.key ? `按 ${SORT_LABEL[sumSort.key]}${sumSort.dir>0?"升序":"降序"}（点表头切换）` : "点表头可排序";
+
   let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次</div></div>`;
-  html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">按 语→数→英→其他</span></div>`;
+  html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">${sortTip}</span></div>`;
+  // 可点击排序的表头（与下方四格对齐）
+  const cols=[["doneN","完成次数"],["undoneN","未完"],["avgMin","平均用时"],["avgWrong","平均错误"]];
+  let ch="";
+  cols.forEach(([k,lab])=>{
+    const on = sumSort.key===k;
+    const ar = on ? (sumSort.dir>0?"▲":"▼") : "";
+    ch += `<div class="ch${on?" on":""}" onclick="setSumSort('${k}')">${lab}<span class="ar">${ar}</span></div>`;
+  });
+  html += `<div class="cmpt-colhead">${ch}</div>`;
   rows.forEach(r=>{
     const col = SUBJ_COLOR[r.subject] || "#6B8E5A";
     const minTxt = r.avgMin==null ? "—" : (r.avgMin<1 ? "<1" : r.avgMin);
@@ -1746,6 +1777,11 @@ function renderSummary(){
   });
   html += `</div>`;
   $("summaryContent").innerHTML = html;
+}
+function setSumSort(k){
+  if(sumSort.key===k){ sumSort.dir = -sumSort.dir; }   // 再次点击同列 → 切换升/降序
+  else { sumSort.key = k; sumSort.dir = 1; }            // 新列 → 升序
+  renderSummary();
 }
 function setSumRange(r){ sumRange = r; sumCalCollapsed = false; renderSummary(); }
 function shiftSum(delta){
@@ -2415,7 +2451,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.24";
+const APP_VERSION = "2026.09.10.25";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
