@@ -369,16 +369,16 @@
   .cmpt{background:var(--card); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; margin-top:6px;}
   .cmpt-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; font-size:12px; color:var(--muted); font-weight:700; border-bottom:1px solid #efe9dc;}
   .cmpt-head .cnt{color:var(--ink);}
-  .cmpt-row{padding:10px 12px; border-bottom:1px solid #f2efe6;}
+  .cmpt-row{padding:7px 11px; border-bottom:1px solid #f2efe6;}
   .cmpt-row:last-child{border-bottom:none;}
-  .cmpt-row .top{display:flex; align-items:center; gap:8px;}
-  .cmpt-row .sb{font-size:11px; color:#fff; border-radius:7px; padding:1px 7px; flex:0 0 auto; max-width:66px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .cmpt-row .tt{flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .cmpt-row .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:9px;}
-  .cmpt-row .stat{text-align:center; background:#f6f2e9; border-radius:10px; padding:7px 2px;}
-  .cmpt-row .stat .v{font-size:16px; font-weight:800; color:var(--ink); line-height:1.1;}
-  .cmpt-row .stat .v i{font-size:10px; font-style:normal; color:var(--muted); font-weight:600; margin-left:1px;}
-  .cmpt-row .stat .k{font-size:10px; color:var(--muted); margin-top:3px;}
+  .cmpt-row .top{display:flex; align-items:center; gap:6px;}
+  .cmpt-row .sb{font-size:10.5px; color:#fff; border-radius:7px; padding:1px 6px; flex:0 0 auto; max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .tt{flex:1; min-width:0; font-size:13px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:5px;}
+  .cmpt-row .stat{text-align:center; background:#f6f2e9; border-radius:8px; padding:4px 2px;}
+  .cmpt-row .stat .v{font-size:14px; font-weight:800; color:var(--ink); line-height:1.05;}
+  .cmpt-row .stat .v i{font-size:9.5px; font-style:normal; color:var(--muted); font-weight:600; margin-left:1px;}
+  .cmpt-row .stat .k{font-size:9.5px; color:var(--muted); margin-top:2px;}
   .mode-pc #page-summary .rate-big,
   .mode-pc #page-summary .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
   .mode-pc #page-summary .rate-big{margin-bottom:12px;}
@@ -1597,7 +1597,7 @@ function setTaskDue(id, ds){ const t=getTask(id); if(!t) return; t.due=ds; save(
 let sumRange = "week";                 // year | month | week
 let sumYear = (new Date()).getFullYear();                       // 全年模式年份
 let sumMonth = new Date();             // 全月模式导航（仅年月）
-let sumWeekStart = (function(){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-((t.getDay()+6)%7)); return ymd(d); })(); // 周模式所选周一(ymd)
+let sumWeekStart = (function(){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-t.getDay()); return ymd(d); })(); // 周模式所选周日(ymd)
 let sumCalCollapsed = false;          // 日历卡是否折叠
 
 const SUBJ_ORDER = {"语文":0,"数学":1,"英语":2,"其他":3};
@@ -1614,10 +1614,10 @@ function sumRangeDays(){
     const y=sumMonth.getFullYear(), m=sumMonth.getMonth();
     const end=new Date(y,m+1,0); if(end>today) end.setTime(today.getTime());
     for(let d=new Date(y,m,1); d<=end; d.setDate(d.getDate()+1)) out.push(ymd(d));
-  } else { // week
-    const mon=parseDS(sumWeekStart);
-    const sun=new Date(mon); sun.setDate(mon.getDate()+6);
-    for(let d=new Date(mon); d<=sun; d.setDate(d.getDate()+1)){ if(d>today) break; out.push(ymd(d)); }
+  } else { // week（周日~周六）
+    const ws=parseDS(sumWeekStart);
+    const sat=new Date(ws); sat.setDate(ws.getDate()+6);
+    for(let d=new Date(ws); d<=sat; d.setDate(d.getDate()+1)){ if(d>today) break; out.push(ymd(d)); }
   }
   return out;
 }
@@ -1625,15 +1625,15 @@ function sumRangeDays(){
 function sumNavLabel(){
   if(sumRange==="year") return sumYear+"年";
   if(sumRange==="month") return sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
-  const mo=parseDS(sumWeekStart), sun=new Date(mo); sun.setDate(mo.getDate()+6);
-  return (mo.getMonth()+1)+"/"+mo.getDate()+"–"+(sun.getMonth()+1)+"/"+sun.getDate()+" 周";
+  const ws=parseDS(sumWeekStart), sat=new Date(ws); sat.setDate(ws.getDate()+6);
+  return (ws.getMonth()+1)+"/"+ws.getDate()+"–"+(sat.getMonth()+1)+"/"+sat.getDate()+" 周";
 }
 function calToggleLabel(){
   if(sumRange==="year") return sumYear+"年 · 全年统计";
   if(sumRange==="month") return sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月 · 全月统计";
-  const mo=parseDS(sumWeekStart), sun=new Date(mo); sun.setDate(mo.getDate()+6);
-  const today=new Date(); today.setHours(0,0,0,0); const ed=sun>today?today:sun;
-  return "所选周："+mo.getMonth()+1+"月"+mo.getDate()+"日 – "+ed.getMonth()+1+"月"+ed.getDate()+"日（周）";
+  const ws=parseDS(sumWeekStart), sat=new Date(ws); sat.setDate(ws.getDate()+6);
+  const today=new Date(); today.setHours(0,0,0,0); const ed=sat>today?today:sat;
+  return "所选周："+(ws.getMonth()+1)+"月"+ws.getDate()+"日 – "+(ed.getMonth()+1)+"月"+ed.getDate()+"日（周）";
 }
 function toggleSumCal(){ sumCalCollapsed=!sumCalCollapsed; renderSummary(); }
 
@@ -1672,12 +1672,12 @@ function renderSumCal(){
     html += `<div class="sum-hint">点选日期可查看该周明细</div>`;
     wrap.innerHTML=html; return;
   }
-  // week：单行显示所选周（周日~周六）
-  const mon=parseDS(sumWeekStart);
+  // week：单行显示所选周（周日~周六，与表头 日一二三四五六 对齐）
+  const sun=parseDS(sumWeekStart);
   html+=`<div class="cal cal-week"><div class="cal-grid">`;
   WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
   for(let i=0;i<7;i++){
-    const dt=new Date(mon); dt.setDate(mon.getDate()+i);
+    const dt=new Date(sun); dt.setDate(sun.getDate()+i);
     const d=dt.getDate(), ds=ymd(dt);
     const isToday=sameDay(dt,today);
     const isFuture=dt>today;
@@ -1703,8 +1703,8 @@ function renderSummary(){
   let label;
   if(sumRange==="year") label = sumYear+"年全年";
   else if(sumRange==="month") label = sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
-  else { const mon=parseDS(sumWeekStart), sun=new Date(mon); sun.setDate(mon.getDate()+6); const ed = sun>today? today: sun;
-         label = `${mon.getFullYear()}年${mon.getMonth()+1}月${mon.getDate()}日 ~ ${ed.getFullYear()}年${ed.getMonth()+1}月${ed.getDate()}日（周）`; }
+  else { const ws=parseDS(sumWeekStart), sat=new Date(ws); sat.setDate(ws.getDate()+6); const ed = sat>today? today: sat;
+         label = `${ws.getFullYear()}年${ws.getMonth()+1}月${ws.getDate()}日 ~ ${ed.getFullYear()}年${ed.getMonth()+1}月${ed.getDate()}日（周）`; }
 
   // 收集范围内的所有作业实例，按「小项」合并（同 科目+名称 视为同一项，跨母版/一次性合并统计）
   const groups = {};
@@ -1768,9 +1768,9 @@ function shiftSum(delta){
   renderSummary();
 }
 function pickSumDay(y,m,d){
-  const dt=new Date(y,m,d); const dow=dt.getDay();
-  const mon=new Date(dt); mon.setDate(dt.getDate()-((dow+6)%7));
-  sumWeekStart = ymd(mon); sumRange="week"; sumCalCollapsed=true;
+  const dt=new Date(y,m,d);
+  const sun=new Date(dt); sun.setDate(dt.getDate()-dt.getDay());   // 取该日所在周日
+  sumWeekStart = ymd(sun); sumRange="week"; sumCalCollapsed=true;
   renderSummary();
 }
 
@@ -2428,7 +2428,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.22";
+const APP_VERSION = "2026.09.10.23";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
