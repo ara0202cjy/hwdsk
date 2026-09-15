@@ -400,6 +400,11 @@
   .cal-cell.empty{background:transparent;}
   .cal-cell .stars{font-size:9px; color:var(--sun); margin-top:1px; line-height:1; letter-spacing:1px;}
   .cal-cell .s0{color:var(--muted);}
+  .cal-cell.future{opacity:.4; cursor:default;}
+  .cal-toggle{display:flex; align-items:center; justify-content:space-between; background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 14px; margin-top:8px; cursor:pointer; user-select:none;}
+  .cal-toggle .t{font-size:14px; font-weight:700; color:var(--ink);}
+  .cal-toggle .caret{color:var(--muted); font-size:13px; transition:transform .15s;}
+  .mode-pc #page-summary .cal-toggle{max-width:1080px; margin-left:auto; margin-right:auto;}
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
@@ -1593,10 +1598,10 @@ let sumRange = "week";                 // year | month | week
 let sumYear = (new Date()).getFullYear();                       // 全年模式年份
 let sumMonth = new Date();             // 全月模式导航（仅年月）
 let sumWeekStart = (function(){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-((t.getDay()+6)%7)); return ymd(d); })(); // 周模式所选周一(ymd)
+let sumCalCollapsed = false;          // 日历卡是否折叠
 
 const SUBJ_ORDER = {"语文":0,"数学":1,"英语":2,"其他":3};
 function subjIdx(s){ return SUBJ_ORDER.hasOwnProperty(s) ? SUBJ_ORDER[s] : 99; }
-function firstMonday(y,m){ const d=new Date(y,m,1); const off=(d.getDay()+6)%7; d.setDate(1-off); return ymd(d); }
 
 function sumRangeDays(){
   const today=new Date(); today.setHours(0,0,0,0);
@@ -1620,42 +1625,69 @@ function sumRangeDays(){
 function sumNavLabel(){
   if(sumRange==="year") return sumYear+"年";
   if(sumRange==="month") return sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
-  const mo=parseDS(sumWeekStart); return mo.getFullYear()+"年"+(mo.getMonth()+1)+"月";
+  const mo=parseDS(sumWeekStart), sun=new Date(mo); sun.setDate(mo.getDate()+6);
+  return (mo.getMonth()+1)+"/"+mo.getDate()+"–"+(sun.getMonth()+1)+"/"+sun.getDate()+" 周";
 }
+function calToggleLabel(){
+  if(sumRange==="year") return sumYear+"年 · 全年统计";
+  if(sumRange==="month") return sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月 · 全月统计";
+  const mo=parseDS(sumWeekStart), sun=new Date(mo); sun.setDate(mo.getDate()+6);
+  const today=new Date(); today.setHours(0,0,0,0); const ed=sun>today?today:sun;
+  return "所选周："+mo.getMonth()+1+"月"+mo.getDate()+"日 – "+ed.getMonth()+1+"月"+ed.getDate()+"日（周）";
+}
+function toggleSumCal(){ sumCalCollapsed=!sumCalCollapsed; renderSummary(); }
 
 function renderSumCal(){
   const wrap=$("sumCalWrap");
   const today=new Date(); today.setHours(0,0,0,0);
+  // 折叠切换条（始终显示）
+  let html = `<div class="cal-toggle" onclick="toggleSumCal()"><span class="t">${calToggleLabel()}</span><span class="caret">${sumCalCollapsed?"▸":"▾"}</span></div>`;
+  if(sumCalCollapsed){
+    wrap.innerHTML = html + `<div class="sum-hint">点击上方条展开日历</div>`;
+    return;
+  }
   if(sumRange==="year"){
     const y=sumYear; const end=new Date(y,11,31); if(end>today) end.setTime(today.getTime());
     const n=Math.round((end-new Date(y,0,1))/86400000)+1;
-    wrap.innerHTML = `<div class="sum-year-note">统计 ${y} 年全年 · 共 ${n} 天（截止今天）</div>`;
+    wrap.innerHTML = html + `<div class="sum-year-note">统计 ${y} 年全年 · 共 ${n} 天（截止今天）</div>`;
     return;
   }
-  const mo = sumRange==="week" ? parseDS(sumWeekStart) : new Date(sumMonth.getFullYear(), sumMonth.getMonth(), 1);
-  const y=mo.getFullYear(), m=mo.getMonth();
-  const first=new Date(y,m,1), startDow=first.getDay(); const days=new Date(y,m+1,0).getDate();
-  const wkMon = sumRange==="week" ? parseDS(sumWeekStart) : null;
-  let html=`<div class="cal"><div class="cal-grid">`;
-  WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
-  for(let i=0;i<startDow;i++) html+=`<div class="cal-cell empty"></div>`;
-  for(let d=1; d<=days; d++){
-    const dt=new Date(y,m,d); const ds=ymd(dt);
-    const isToday=sameDay(dt,today);
-    let bg="", cls="cal-cell wkpick";
-    if(sumRange==="week"){
-      const inW = dt>=wkMon && dt<=new Date(wkMon.getTime()+6*86400000);
-      if(inW) bg=' style="background:var(--sun);color:#fff;"';
-    } else {
+  if(sumRange==="month"){
+    const y=sumMonth.getFullYear(), m=sumMonth.getMonth();
+    const first=new Date(y,m,1), startDow=first.getDay(); const days=new Date(y,m+1,0).getDate();
+    html+=`<div class="cal"><div class="cal-grid">`;
+    WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
+    for(let i=0;i<startDow;i++) html+=`<div class="cal-cell empty"></div>`;
+    for(let d=1; d<=days; d++){
+      const dt=new Date(y,m,d); const ds=ymd(dt);
+      const isToday=sameDay(dt,today);
+      let bg="", cls="cal-cell wkpick";
       const st=dayStars(ds);
       if(st.allDone) bg=' style="background:#eaf5ee;"';
       else if(st.total>0) bg=' style="background:#fdf3e3;"';
+      if(isToday) cls+=" today";
+      html+=`<div class="${cls}" onclick="pickSumDay(${y},${m},${d})"${bg}><div>${d}</div></div>`;
     }
-    if(isToday) cls+=" today";
-    html+=`<div class="${cls}" onclick="pickSumDay(${y},${m},${d})"${bg}><div>${d}</div></div>`;
+    html+=`</div></div>`;
+    html += `<div class="sum-hint">点选日期可查看该周明细</div>`;
+    wrap.innerHTML=html; return;
+  }
+  // week：单行显示所选周（周日~周六）
+  const mon=parseDS(sumWeekStart);
+  html+=`<div class="cal cal-week"><div class="cal-grid">`;
+  WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
+  for(let i=0;i<7;i++){
+    const dt=new Date(mon); dt.setDate(mon.getDate()+i);
+    const d=dt.getDate(), ds=ymd(dt);
+    const isToday=sameDay(dt,today);
+    const isFuture=dt>today;
+    let bg="", cls="cal-cell"+(isFuture?" future":" wkpick")+(isToday?" today":"");
+    if(!isFuture){ const st=dayStars(ds); if(st.allDone) bg=' style="background:#eaf5ee;"'; else if(st.total>0) bg=' style="background:#fdf3e3;"'; }
+    const click = isFuture ? "" : ` onclick="pickSumDay(${dt.getFullYear()},${dt.getMonth()},${d})"`;
+    html+=`<div class="${cls}"${click}${bg}><div>${d}</div></div>`;
   }
   html+=`</div></div>`;
-  html += sumRange==="week" ? `<div class="sum-hint">点选任意日期可切换统计所在周</div>` : `<div class="sum-hint">点选日期可查看该周明细</div>`;
+  html += `<div class="sum-hint">点选日期切换统计所在周</div>`;
   wrap.innerHTML=html;
 }
 
@@ -1728,17 +1760,17 @@ function renderSummary(){
   html += `</div>`;
   $("summaryContent").innerHTML = html;
 }
-function setSumRange(r){ sumRange = r; renderSummary(); }
+function setSumRange(r){ sumRange = r; sumCalCollapsed = false; renderSummary(); }
 function shiftSum(delta){
   if(sumRange==="year"){ sumYear += delta; }
   else if(sumRange==="month"){ sumMonth = new Date(sumMonth.getFullYear(), sumMonth.getMonth()+delta, 1); }
-  else { const mo=parseDS(sumWeekStart); sumWeekStart = firstMonday(mo.getFullYear(), mo.getMonth()+delta); }
+  else { const mo=parseDS(sumWeekStart); const nd=new Date(mo.getTime()+delta*7*86400000); sumWeekStart = ymd(nd); }
   renderSummary();
 }
 function pickSumDay(y,m,d){
   const dt=new Date(y,m,d); const dow=dt.getDay();
   const mon=new Date(dt); mon.setDate(dt.getDate()-((dow+6)%7));
-  sumWeekStart = ymd(mon); sumRange="week";
+  sumWeekStart = ymd(mon); sumRange="week"; sumCalCollapsed=true;
   renderSummary();
 }
 
@@ -2396,7 +2428,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.21";
+const APP_VERSION = "2026.09.10.22";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
