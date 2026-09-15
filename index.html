@@ -1654,23 +1654,10 @@ function renderSumCal(){
   }
   if(sumRange==="month"){
     const y=sumMonth.getFullYear(), m=sumMonth.getMonth();
-    const first=new Date(y,m,1), startDow=first.getDay(); const days=new Date(y,m+1,0).getDate();
-    html+=`<div class="cal"><div class="cal-grid">`;
-    WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
-    for(let i=0;i<startDow;i++) html+=`<div class="cal-cell empty"></div>`;
-    for(let d=1; d<=days; d++){
-      const dt=new Date(y,m,d); const ds=ymd(dt);
-      const isToday=sameDay(dt,today);
-      let bg="", cls="cal-cell wkpick";
-      const st=dayStars(ds);
-      if(st.allDone) bg=' style="background:#eaf5ee;"';
-      else if(st.total>0) bg=' style="background:#fdf3e3;"';
-      if(isToday) cls+=" today";
-      html+=`<div class="${cls}" onclick="pickSumDay(${y},${m},${d})"${bg}><div>${d}</div></div>`;
-    }
-    html+=`</div></div>`;
-    html += `<div class="sum-hint">点选日期可查看该周明细</div>`;
-    wrap.innerHTML=html; return;
+    const end=new Date(y,m+1,0); if(end>today) end.setTime(today.getTime());
+    const n=Math.round((end-new Date(y,m,1))/86400000)+1;
+    wrap.innerHTML = html + `<div class="sum-year-note">统计 ${y}年${m+1}月 · 共 ${n} 天（截止今天）</div>`;
+    return;
   }
   // week：单行显示所选周（周日~周六，与表头 日一二三四五六 对齐）
   const sun=parseDS(sumWeekStart);
@@ -2428,7 +2415,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.23";
+const APP_VERSION = "2026.09.10.24";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
