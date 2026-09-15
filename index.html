@@ -382,6 +382,10 @@
   .mode-pc #page-summary .rate-big,
   .mode-pc #page-summary .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
   .mode-pc #page-summary .rate-big{margin-bottom:12px;}
+  .sum-year-note{text-align:center; font-size:13px; color:var(--muted); padding:9px 0; background:var(--card); border-radius:14px; box-shadow:var(--shadow); margin-top:6px;}
+  .sum-hint{text-align:center; font-size:11px; color:var(--muted); margin-top:8px;}
+  .cal-cell.wkpick{cursor:pointer;}
+  .mode-pc #page-summary .cal{max-width:1080px; margin:0 auto;}
 
   /* ===== 月度统计 ===== */
   .kpi{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
@@ -593,14 +597,16 @@
             <div class="sticky">
               <div class="phead"><h1>比较</h1></div>
               <div class="sum-range">
-                <button id="sumWeekBtn" class="on" onclick="setSumRange('week')">本周</button>
-                <button id="sumMonthBtn" onclick="setSumRange('month')">本月</button>
+                <button id="sumYearBtn" onclick="setSumRange('year')">全年</button>
+                <button id="sumMonthBtn" onclick="setSumRange('month')">全月</button>
+                <button id="sumWeekBtn" class="on" onclick="setSumRange('week')">周</button>
               </div>
-              <div class="month-nav" id="sumMonthNav" style="display:none; margin-top:8px;">
-                <button class="nav" onclick="shiftSumMonth(-1)" aria-label="上个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                <span id="sumMonthLabel" style="font-size:15px;font-weight:700;color:var(--ink);">--</span>
-                <button class="nav" onclick="shiftSumMonth(1)" aria-label="下个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <div class="month-nav" id="sumNav" style="margin-top:8px;">
+                <button class="nav" id="sumPrev" onclick="shiftSum(-1)" aria-label="上一个"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <span id="sumNavLabel" style="font-size:15px;font-weight:700;color:var(--ink);">--</span>
+                <button class="nav" id="sumNext" onclick="shiftSum(1)" aria-label="下一个"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
               </div>
+              <div id="sumCalWrap"></div>
             </div>
             <div class="content" id="summaryContent"></div>
           </section>
@@ -1582,40 +1588,97 @@ function pickDue(id,y,m,d){ const ds=ymd(new Date(y,m,d)); if(id) setTaskDue(id,
 function setAddDue(id, ds){ addDue = ds; renderTasks(); closeSheet(); }
 function setTaskDue(id, ds){ const t=getTask(id); if(!t) return; t.due=ds; save(); renderTasks(); closeSheet(); }
 
-/* ===== 横向比较 ===== */
-/* ============ 合计栏（周/月 作业完成情况汇总） ============ */
-let sumRange = "week";                 // 默认显示本周
-let sumMonth = new Date();             // 本月视图（仅月模式翻月用）
+/* ============ 比较栏（按小项合并统计 + 日历选时间：全年/全月/周） ============ */
+let sumRange = "week";                 // year | month | week
+let sumYear = (new Date()).getFullYear();                       // 全年模式年份
+let sumMonth = new Date();             // 全月模式导航（仅年月）
+let sumWeekStart = (function(){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-((t.getDay()+6)%7)); return ymd(d); })(); // 周模式所选周一(ymd)
+
+const SUBJ_ORDER = {"语文":0,"数学":1,"英语":2,"其他":3};
+function subjIdx(s){ return SUBJ_ORDER.hasOwnProperty(s) ? SUBJ_ORDER[s] : 99; }
+function firstMonday(y,m){ const d=new Date(y,m,1); const off=(d.getDay()+6)%7; d.setDate(1-off); return ymd(d); }
 
 function sumRangeDays(){
-  const today = new Date(); today.setHours(0,0,0,0);
-  const out = [];
-  if(sumRange === "week"){
-    const dow = today.getDay();                        // 0=周日
-    const mon = new Date(today); mon.setDate(today.getDate() - ((dow+6)%7)); // 本周一
-    const sun = new Date(mon); sun.setDate(mon.getDate()+6);                 // 本周日
-    for(let d=new Date(mon); d<=sun; d.setDate(d.getDate()+1)){ if(d>today) break; out.push(ymd(d)); }
-  } else {
+  const today=new Date(); today.setHours(0,0,0,0);
+  const out=[];
+  if(sumRange==="year"){
+    const y=sumYear;
+    const end=new Date(y,11,31); if(end>today) end.setTime(today.getTime());
+    for(let d=new Date(y,0,1); d<=end; d.setDate(d.getDate()+1)) out.push(ymd(d));
+  } else if(sumRange==="month"){
     const y=sumMonth.getFullYear(), m=sumMonth.getMonth();
-    const days = new Date(y,m+1,0).getDate();
-    for(let i=1;i<=days;i++){ const dt=new Date(y,m,i); if(dt>today) break; out.push(ymd(dt)); }
+    const end=new Date(y,m+1,0); if(end>today) end.setTime(today.getTime());
+    for(let d=new Date(y,m,1); d<=end; d.setDate(d.getDate()+1)) out.push(ymd(d));
+  } else { // week
+    const mon=parseDS(sumWeekStart);
+    const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    for(let d=new Date(mon); d<=sun; d.setDate(d.getDate()+1)){ if(d>today) break; out.push(ymd(d)); }
   }
   return out;
 }
-function renderSummary(){
-  const wk=$("sumWeekBtn"), mb=$("sumMonthBtn");
-  if(wk) wk.classList.toggle("on", sumRange==="week");
-  if(mb) mb.classList.toggle("on", sumRange==="month");
-  $("sumMonthNav").style.display = sumRange==="month" ? "flex" : "none";
-  if(sumRange==="month") $("sumMonthLabel").textContent = sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
-  const days = sumRangeDays();
-  const label = sumRange==="week" ? "本周（周一~周日）" : (sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月");
 
-  // 收集范围内的所有作业实例，按「小项」分组（循环项按母版，一次性项按自身 id）
+function sumNavLabel(){
+  if(sumRange==="year") return sumYear+"年";
+  if(sumRange==="month") return sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
+  const mo=parseDS(sumWeekStart); return mo.getFullYear()+"年"+(mo.getMonth()+1)+"月";
+}
+
+function renderSumCal(){
+  const wrap=$("sumCalWrap");
+  const today=new Date(); today.setHours(0,0,0,0);
+  if(sumRange==="year"){
+    const y=sumYear; const end=new Date(y,11,31); if(end>today) end.setTime(today.getTime());
+    const n=Math.round((end-new Date(y,0,1))/86400000)+1;
+    wrap.innerHTML = `<div class="sum-year-note">统计 ${y} 年全年 · 共 ${n} 天（截止今天）</div>`;
+    return;
+  }
+  const mo = sumRange==="week" ? parseDS(sumWeekStart) : new Date(sumMonth.getFullYear(), sumMonth.getMonth(), 1);
+  const y=mo.getFullYear(), m=mo.getMonth();
+  const first=new Date(y,m,1), startDow=first.getDay(); const days=new Date(y,m+1,0).getDate();
+  const wkMon = sumRange==="week" ? parseDS(sumWeekStart) : null;
+  let html=`<div class="cal"><div class="cal-grid">`;
+  WEEK.forEach(w=> html+=`<div class="cal-dow">${w[1]}</div>`);
+  for(let i=0;i<startDow;i++) html+=`<div class="cal-cell empty"></div>`;
+  for(let d=1; d<=days; d++){
+    const dt=new Date(y,m,d); const ds=ymd(dt);
+    const isToday=sameDay(dt,today);
+    let bg="", cls="cal-cell wkpick";
+    if(sumRange==="week"){
+      const inW = dt>=wkMon && dt<=new Date(wkMon.getTime()+6*86400000);
+      if(inW) bg=' style="background:var(--sun);color:#fff;"';
+    } else {
+      const st=dayStars(ds);
+      if(st.allDone) bg=' style="background:#eaf5ee;"';
+      else if(st.total>0) bg=' style="background:#fdf3e3;"';
+    }
+    if(isToday) cls+=" today";
+    html+=`<div class="${cls}" onclick="pickSumDay(${y},${m},${d})"${bg}><div>${d}</div></div>`;
+  }
+  html+=`</div></div>`;
+  html += sumRange==="week" ? `<div class="sum-hint">点选任意日期可切换统计所在周</div>` : `<div class="sum-hint">点选日期可查看该周明细</div>`;
+  wrap.innerHTML=html;
+}
+
+function renderSummary(){
+  if($("sumYearBtn")) $("sumYearBtn").classList.toggle("on", sumRange==="year");
+  if($("sumMonthBtn")) $("sumMonthBtn").classList.toggle("on", sumRange==="month");
+  if($("sumWeekBtn")) $("sumWeekBtn").classList.toggle("on", sumRange==="week");
+  if($("sumNavLabel")) $("sumNavLabel").textContent = sumNavLabel();
+  renderSumCal();
+
+  const today=new Date(); today.setHours(0,0,0,0);
+  const days = sumRangeDays();
+  let label;
+  if(sumRange==="year") label = sumYear+"年全年";
+  else if(sumRange==="month") label = sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
+  else { const mon=parseDS(sumWeekStart), sun=new Date(mon); sun.setDate(mon.getDate()+6); const ed = sun>today? today: sun;
+         label = `${mon.getFullYear()}年${mon.getMonth()+1}月${mon.getDate()}日 ~ ${ed.getFullYear()}年${ed.getMonth()+1}月${ed.getDate()}日（周）`; }
+
+  // 收集范围内的所有作业实例，按「小项」合并（同 科目+名称 视为同一项，跨母版/一次性合并统计）
   const groups = {};
   days.forEach(ds=>{
     todosOf(ds).forEach(t=>{
-      const key = t.masterId ? ("M:"+t.masterId) : ("T:"+t.id);
+      const key = (t.subject||"其他")+"||"+(t.title||"(未命名)");
       let g = groups[key];
       if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
       g.items.push(t);
@@ -1637,15 +1700,15 @@ function renderSummary(){
     const avgWrong = dones.length ? dones.reduce((s,t)=>s+(t.wrong||0),0)/dones.length : null;  // 平均错误按已完成实例取
     return { key, subject:g.subject, title:g.title, total, doneN, undoneN, rate, avgMin, avgWrong };
   });
-  // 完成率从低到高（问题项在前），其次出现次数多者在前
-  rows.sort((a,b)=> (a.rate-b.rate) || (b.total-a.total) || a.title.localeCompare(b.title,"zh"));
+  // 排序：先按 语→数→英→其他，再按完成率从低到高（问题项在前）
+  rows.sort((a,b)=> (subjIdx(a.subject)-subjIdx(b.subject)) || (a.rate-b.rate) || a.title.localeCompare(b.title,"zh"));
 
   const allTotal = rows.reduce((s,r)=>s+r.total,0);
   const allDone = rows.reduce((s,r)=>s+r.doneN,0);
   const allRate = allTotal ? Math.round(allDone/allTotal*100) : 0;
 
   let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次</div></div>`;
-  html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">按完成率从低到高</span></div>`;
+  html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">按 语→数→英→其他</span></div>`;
   rows.forEach(r=>{
     const col = SUBJ_COLOR[r.subject] || "#6B8E5A";
     const minTxt = r.avgMin==null ? "—" : (r.avgMin<1 ? "<1" : r.avgMin);
@@ -1666,7 +1729,18 @@ function renderSummary(){
   $("summaryContent").innerHTML = html;
 }
 function setSumRange(r){ sumRange = r; renderSummary(); }
-function shiftSumMonth(delta){ sumMonth = new Date(sumMonth.getFullYear(), sumMonth.getMonth()+delta, 1); renderSummary(); }
+function shiftSum(delta){
+  if(sumRange==="year"){ sumYear += delta; }
+  else if(sumRange==="month"){ sumMonth = new Date(sumMonth.getFullYear(), sumMonth.getMonth()+delta, 1); }
+  else { const mo=parseDS(sumWeekStart); sumWeekStart = firstMonday(mo.getFullYear(), mo.getMonth()+delta); }
+  renderSummary();
+}
+function pickSumDay(y,m,d){
+  const dt=new Date(y,m,d); const dow=dt.getDay();
+  const mon=new Date(dt); mon.setDate(dt.getDate()-((dow+6)%7));
+  sumWeekStart = ymd(mon); sumRange="week";
+  renderSummary();
+}
 
 /* ===== 月度统计 ===== */
 function renderMonth(){
@@ -2322,7 +2396,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.20";
+const APP_VERSION = "2026.09.10.21";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
