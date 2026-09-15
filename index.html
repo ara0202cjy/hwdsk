@@ -365,20 +365,23 @@
   .rate-big .rt{font-size:38px; font-weight:800; line-height:1;}
   .rate-big .rl{font-size:13px; opacity:.9; margin-top:6px;}
   .rate-big .rsub{font-size:12.5px; opacity:.92; margin-top:8px;}
-  .subj-dist{margin-top:14px;}
-  .subj-dist .hd{font-size:13px; font-weight:700; color:var(--muted); margin:4px 2px 8px;}
-  .subj-dist .row{display:flex; align-items:center; gap:10px; padding:8px 0;}
-  .subj-dist .nm{width:42px; font-size:14px; font-weight:700; color:var(--ink); flex:0 0 42px;}
-  .subj-dist .track{flex:1; height:9px; border-radius:6px; background:#ece6d8; overflow:hidden;}
-  .subj-dist .track > i{display:block; height:100%; border-radius:6px;}
-  .subj-dist .num{width:96px; text-align:right; font-size:12.5px; color:var(--muted); flex:0 0 96px;}
-  .subj-dist .num b{color:var(--ink); font-weight:700;}
-  .sum-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px;}
-  .sum-cell{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:12px;}
-  .sum-cell .k{font-size:12px; color:var(--muted);}
-  .sum-cell .v{font-size:22px; font-weight:800; color:var(--ink); margin-top:3px;}
-  .sum-cell .v small{font-size:12px; color:var(--muted); font-weight:600;}
-  .mode-pc #page-summary .sum-grid{max-width:1080px; margin:0 auto;}
+  /* 比较：每小项作业一览 */
+  .cmpt{background:var(--card); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; margin-top:6px;}
+  .cmpt-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; font-size:12px; color:var(--muted); font-weight:700; border-bottom:1px solid #efe9dc;}
+  .cmpt-head .cnt{color:var(--ink);}
+  .cmpt-row{padding:10px 12px; border-bottom:1px solid #f2efe6;}
+  .cmpt-row:last-child{border-bottom:none;}
+  .cmpt-row .top{display:flex; align-items:center; gap:8px;}
+  .cmpt-row .sb{font-size:11px; color:#fff; border-radius:7px; padding:1px 7px; flex:0 0 auto; max-width:66px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .tt{flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:9px;}
+  .cmpt-row .stat{text-align:center; background:#f6f2e9; border-radius:10px; padding:7px 2px;}
+  .cmpt-row .stat .v{font-size:16px; font-weight:800; color:var(--ink); line-height:1.1;}
+  .cmpt-row .stat .v i{font-size:10px; font-style:normal; color:var(--muted); font-weight:600; margin-left:1px;}
+  .cmpt-row .stat .k{font-size:10px; color:var(--muted); margin-top:3px;}
+  .mode-pc #page-summary .rate-big,
+  .mode-pc #page-summary .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
+  .mode-pc #page-summary .rate-big{margin-bottom:12px;}
 
   /* ===== 月度统计 ===== */
   .kpi{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
@@ -585,10 +588,10 @@
             <div class="content" id="tasksContent"></div>
           </section>
 
-          <!-- 合计 -->
+          <!-- 比较 -->
           <section class="page" id="page-summary">
             <div class="sticky">
-              <div class="phead"><h1>合计</h1></div>
+              <div class="phead"><h1>比较</h1></div>
               <div class="sum-range">
                 <button id="sumWeekBtn" class="on" onclick="setSumRange('week')">本周</button>
                 <button id="sumMonthBtn" onclick="setSumRange('month')">本月</button>
@@ -634,7 +637,7 @@
           </button>
           <button class="tab" data-tab="summary" onclick="switchTab('summary')">
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/><path d="M3 20h18" stroke-linecap="round"/></svg></span>
-            <span class="lb">合计</span>
+            <span class="lb">比较</span>
           </button>
           <button class="tab" data-tab="month" onclick="switchTab('month')">
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4" stroke-linecap="round"/></svg></span>
@@ -1607,38 +1610,59 @@ function renderSummary(){
   if(sumRange==="month") $("sumMonthLabel").textContent = sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月";
   const days = sumRangeDays();
   const label = sumRange==="week" ? "本周（周一~周日）" : (sumMonth.getFullYear()+"年"+(sumMonth.getMonth()+1)+"月");
-  let total=0, doneN=0, wrongSum=0, totalMin=0; const bySubj={};
+
+  // 收集范围内的所有作业实例，按「小项」分组（循环项按母版，一次性项按自身 id）
+  const groups = {};
   days.forEach(ds=>{
-    const s = dayStats(ds);
-    total += s.total; doneN += s.done; wrongSum += s.wrongSum;
-    s.ts.forEach(t=>{
-      totalMin += Math.round(recMs(t)/60000);
-      const sub = t.subject||"其他";
-      const o = bySubj[sub] || (bySubj[sub]={total:0,done:0,wrong:0});
-      o.total++; if(t.done) o.done++; o.wrong += (t.wrong||0);
+    todosOf(ds).forEach(t=>{
+      const key = t.masterId ? ("M:"+t.masterId) : ("T:"+t.id);
+      let g = groups[key];
+      if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
+      g.items.push(t);
     });
   });
-  const undone = total - doneN;
-  const rate = total ? Math.round(doneN/total*100) : 0;
-  const avgW = total ? (wrongSum/total).toFixed(1) : "0";
-  if(total===0){ $("summaryContent").innerHTML = `<div class="empty-tip">${label}还没有作业记录</div>`; return; }
-  let html = `<div class="rate-big"><div class="rt">${rate}%</div><div class="rl">${label} · 作业完成率</div><div class="rsub">共 ${total} 项 · 已完成 ${doneN} · 未完成 ${undone}</div></div>`;
-  html += `<div class="sum-grid">
-    <div class="sum-cell"><div class="k">总实际用时</div><div class="v">${totalMin}<small> 分</small></div></div>
-    <div class="sum-cell"><div class="k">平均错题</div><div class="v">${avgW}<small> 道</small></div></div>
-    <div class="sum-cell"><div class="k">已完成</div><div class="v">${doneN}<small> 项</small></div></div>
-    <div class="sum-cell"><div class="k">未完成</div><div class="v">${undone}<small> 项</small></div></div>
-  </div>`;
-  const subs = Object.keys(bySubj);
-  if(subs.length){
-    html += `<div class="subj-dist"><div class="hd">各科目完成情况</div>`;
-    subs.forEach(sb=>{
-      const o=bySubj[sb]; const r = o.total ? Math.round(o.done/o.total*100) : 0;
-      const col = SUBJ_COLOR[sb] || "#6B8E5A";
-      html += `<div class="row"><span class="nm">${sb}</span><span class="track"><i style="width:${r}%;background:${col}"></i></span><span class="num">${o.done}/${o.total} · <b>${r}%</b></span></div>`;
-    });
-    html += `</div>`;
-  }
+  const keys = Object.keys(groups);
+  if(!keys.length){ $("summaryContent").innerHTML = `<div class="empty-tip">${label}还没有作业记录</div>`; return; }
+
+  // 统计每个小项
+  const rows = keys.map(key=>{
+    const g = groups[key]; const items = g.items;
+    const total = items.length;
+    const doneN = items.filter(t=>t.done).length;
+    const undoneN = total - doneN;
+    const rate = total ? Math.round(doneN/total*100) : 0;
+    const timed = items.filter(isTimed);                                   // 仅在真正计时过的实例上取平均用时
+    const avgMin = timed.length ? Math.round(timed.reduce((s,t)=>s+recMs(t)/60000,0)/timed.length) : null;
+    const dones = items.filter(t=>t.done);
+    const avgWrong = dones.length ? dones.reduce((s,t)=>s+(t.wrong||0),0)/dones.length : null;  // 平均错误按已完成实例取
+    return { key, subject:g.subject, title:g.title, total, doneN, undoneN, rate, avgMin, avgWrong };
+  });
+  // 完成率从低到高（问题项在前），其次出现次数多者在前
+  rows.sort((a,b)=> (a.rate-b.rate) || (b.total-a.total) || a.title.localeCompare(b.title,"zh"));
+
+  const allTotal = rows.reduce((s,r)=>s+r.total,0);
+  const allDone = rows.reduce((s,r)=>s+r.doneN,0);
+  const allRate = allTotal ? Math.round(allDone/allTotal*100) : 0;
+
+  let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次</div></div>`;
+  html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">按完成率从低到高</span></div>`;
+  rows.forEach(r=>{
+    const col = SUBJ_COLOR[r.subject] || "#6B8E5A";
+    const minTxt = r.avgMin==null ? "—" : (r.avgMin<1 ? "<1" : r.avgMin);
+    const minUnit = r.avgMin==null ? "" : "<i>分</i>";
+    const wrongTxt = r.avgWrong==null ? "—" : (r.avgWrong>=10 ? Math.round(r.avgWrong) : r.avgWrong.toFixed(1));
+    const wrongUnit = r.avgWrong==null ? "" : "<i>道</i>";
+    html += `<div class="cmpt-row">
+      <div class="top"><span class="sb" style="background:${col}">${esc(r.subject)}</span><span class="tt" title="${esc(r.title)}">${esc(r.title)}</span></div>
+      <div class="stats">
+        <div class="stat"><div class="v" style="color:var(--green)">${r.doneN}</div><div class="k">完成次数</div></div>
+        <div class="stat"><div class="v" style="color:var(--red)">${r.undoneN}</div><div class="k">未完成</div></div>
+        <div class="stat"><div class="v">${minTxt}${minUnit}</div><div class="k">平均用时</div></div>
+        <div class="stat"><div class="v">${wrongTxt}${wrongUnit}</div><div class="k">平均错误</div></div>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
   $("summaryContent").innerHTML = html;
 }
 function setSumRange(r){ sumRange = r; renderSummary(); }
@@ -2298,7 +2322,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.19";
+const APP_VERSION = "2026.09.10.20";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
