@@ -193,6 +193,7 @@
   .chk:active{transform:scale(.9);}
   .todo-mid{flex:1 1 auto; min-width:0;}
   .todo-title{font-size:15.5px; font-weight:600; line-height:1.35; word-break:break-word;}
+  .makeup-badge{display:inline-block; margin-left:7px; font-size:11px; font-weight:800; color:#fff; background:var(--sun); border-radius:6px; padding:1px 6px; line-height:15px; vertical-align:middle;}
   .todo-title.done{text-decoration:line-through; color:var(--muted);}
   .todo-meta{display:flex; align-items:center; gap:10px; margin-top:5px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
   .pulse{width:8px; height:8px; border-radius:50%; background:var(--sun); box-shadow:0 0 0 0 rgba(232,133,59,.6); animation:pulse 1.2s infinite;}
@@ -733,6 +734,7 @@ function mkTodo(date, subject, title, o={}){
   return Object.assign({
     id:uid(), date:ymd(date), subject, title,
     detail:"", estMin:0, wrong:0, done:false,
+    makeup:false, completedOn:null, dinged:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null,
     segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
@@ -829,8 +831,9 @@ function toggleDone(id){
     // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
     if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
     finalizeEnd(t, Date.now());
+    const td=ymd(new Date()); t.completedOn=td; t.makeup=(t.date!==td);   // 完成日≠作业日 → 补打卡
   }
-  else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; }  // 取消完成 → 清空分段重新计
+  else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
   save(); syncDerived();
 }
 function finalizeEnd(t, now){
@@ -844,11 +847,13 @@ function finalizeEnd(t, now){
 }
 function timerStart(id){
   const t=getTodo(id); if(!t) return;
-  if(t.done){ t.done=false; t.endClock=null; }
-    if(!t.timerRunning){
+  if(t.done){ t.done=false; t.endClock=null; t.makeup=false; t.completedOn=null; }
+  ensureAudio();                        // 用户点击=手势，借此解锁音频以便到点播放「叮」
+  if(!t.timerRunning){
     const c=nowClock();
     t.timerRunning=true; t.startedAt=Date.now();
     if(!t.startClock){ t.startClock=c; }
+    if(t.accum===0) t.dinged=false;     // 全新计时，重置「叮」提示标记
     segOpen(t, c);                      // 新开一段（暂停后再开始会再开一段）
   }
   touch(t);
@@ -863,7 +868,9 @@ function timerPause(id){
 function timerDone(id){
   const t=getTodo(id); if(!t) return;
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
-  t.done=true; touch(t); finalizeEnd(t, Date.now()); save();
+  t.done=true; touch(t); finalizeEnd(t, Date.now());
+  const td=ymd(new Date()); t.completedOn=td; t.makeup=(t.date!==td);   // 完成日≠作业日 → 补打卡
+  save();
   afterTimer(); toast("计时已停止");
 }
 function afterTimer(){ renderList(); syncDerived(); }
@@ -924,12 +931,20 @@ function dayStats(dateStr){
 function spentLabel(t){ const m=Math.round(recMs(t)/60000); return m>0 ? m+" 分" : "未计时"; }
 function dayStars(dateStr){
   const s = dayStats(dateStr);
-  if(s.total===0) return {stars:0, allDone:false, settled:false, pending:false};
-  if(!s.allDone) return {stars:0, allDone:false, settled:dateStr < ymd(new Date()), pending:false};
-  // 全部完成：基础 1 颗星
+  const real = s.ts.filter(t=>!t.makeup);            // 补打卡不计入当日星结算
+  const total = real.length;
+  if(total===0) return {stars:0, allDone:false, settled:false, pending:false};
+  const done = real.filter(t=>t.done).length;
+  if(done < total) return {stars:0, allDone:false, settled:dateStr < ymd(new Date()), pending:false};
+  // 全部完成（仅计非补打卡项）：基础 1 颗星
   let stars = 1;
-  if(s.wrongSum <= 5) stars++;                       // 错题 ≤5 题 → +1 星
-  if(s.maxEnd != null && s.maxEnd < 21*60) stars++;  // 晚上 9 点前完成 → +1 星
+  const wrongSum = real.reduce((a,t)=>a+(t.wrong||0),0);
+  if(wrongSum <= 5) stars++;                       // 错题 ≤5 题 → +1 星
+  let maxEnd=null; real.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
+  if(maxEnd != null && maxEnd < 21*60) stars++;    // 晚上 9 点前完成 → +1 星
+  // 当天所有项目都通过计时器计时并完成 → 整体额外 +1 星（计时打卡奖）
+  const allTimer = total>0 && real.every(t=> t.done && spentOf(t) >= MIN_STAT_MS);
+  if(allTimer) stars++;
   const isPast = dateStr < ymd(new Date());
   if(isPast) return {stars, allDone:true, settled:true, pending:false};
   return {stars:0, allDone:true, settled:false, pending:true};  // 今日全做完，次日结算
@@ -1118,7 +1133,7 @@ function todoRow(t){
     <div class="todo-top">
       <button class="chk ${t.done?'done':''}" onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
-        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}</div>
+        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补</span>':''}</div>
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
       </div>
       <div class="todo-acts">
@@ -1168,7 +1183,7 @@ function doneRow(t){
     <div class="todo-top">
       <button class="chk done" onclick="onChk('${t.id}')">${chkSvg(true)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
-        <div class="todo-title done">${esc(t.title)}</div>
+        <div class="todo-title done">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补</span>':''}</div>
         <div class="todo-meta">${meta.join("")}</div>
       </div>
       <div class="todo-acts">
@@ -2395,10 +2410,38 @@ function doClearAll(){
 }
 
 /* ============ 计时器实时刷新 ============ */
+/* ============ 提示音（Web Audio 生成，无外部资源） ============ */
+let _ac=null;                                   // AudioContext 单例
+function ensureAudio(){
+  try{
+    if(!_ac){ const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; _ac=new AC(); }
+    if(_ac.state==="suspended") _ac.resume();
+  }catch(e){}
+}
+function playDing(){
+  try{
+    if(!_ac){ const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; _ac=new AC(); }
+    if(_ac.state==="suspended") _ac.resume();
+    const ac=_ac, now=ac.currentTime;
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type="sine"; o.frequency.value=1046.5;            // C6，清亮的「叮」
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.22, now+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+0.55);
+    o.connect(g); g.connect(ac.destination);
+    o.start(now); o.stop(now+0.58);
+  }catch(e){}
+}
 function tickTimers(){
+  // 计时到达预估时间 → 播放「叮」提示（仅一次）。对所有“进行中”的计时器生效，与当前所在页无关
+  state.todos.forEach(t=>{
+    if(t.timerRunning && t.estMin>0 && !t.dinged && recMs(t) >= t.estMin*60000){ t.dinged=true; playDing(); save(); }
+  });
   // 仅更新计时数字与进行中的甘特色块，不整页重渲染
   document.querySelectorAll("[data-timer]").forEach(el=>{
-    const t=getTodo(el.dataset.timer); if(t && t.timerRunning) el.textContent="● 计时中 "+fmtDur(spentOf(t));
+    const t=getTodo(el.dataset.timer); if(t && t.timerRunning){
+      el.textContent="● 计时中 "+fmtDur(spentOf(t));
+    }
   });
   // 甘特进行块按实际工时向右延伸（不含暂停，与色块“只显示实际工作时间”一致）
   document.querySelectorAll(".gblock.g-run").forEach(b=>{
@@ -2451,7 +2494,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.25";
+const APP_VERSION = "2026.09.10.26";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
