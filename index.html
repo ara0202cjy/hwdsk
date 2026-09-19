@@ -823,8 +823,18 @@ function pruneTasks(){      // 已完成超过上限，按完成时间逐条删�
   state.tasks = state.tasks.filter(t=>!kill.has(t.id));
 }
 function setTaskPri(id, p){ const t=getTask(id); if(!t) return; t.priority=p; touch(t); save(); renderTasks(); }
+const MAKEUP_LOCK_DAYS = 7;            // 作业逾期超过该天数仍未完成 → 禁止补打卡，仅保留未完成
+/* 是否因逾期过久而锁定（不可再补打卡）：未完成 且 距作业日已超过锁定天数 */
+function makeupLocked(t){
+  if(!t || t.done) return false;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const d=parseDS(t.date); if(!d) return false; d.setHours(0,0,0,0);
+  const diff=Math.round((today-d)/86400000);
+  return diff > MAKEUP_LOCK_DAYS;
+}
 function toggleDone(id){
   const t = getTodo(id); if(!t) return;
+  if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   t.done = !t.done; touch(t);
   if(t.done){
     // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
@@ -846,6 +856,7 @@ function finalizeEnd(t, now){
 }
 function timerStart(id){
   const t=getTodo(id); if(!t) return;
+  if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   if(t.done){ t.done=false; t.endClock=null; t.makeup=false; t.completedOn=null; }
   ensureAudio();                        // 用户点击=手势，借此解锁音频以便到点播放「叮」
   if(!t.timerRunning){
@@ -866,6 +877,7 @@ function timerPause(id){
 }
 function timerDone(id){
   const t=getTodo(id); if(!t) return;
+  if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
   t.done=true; touch(t); finalizeEnd(t, Date.now());
   const td=ymd(new Date()); t.completedOn=td; t.makeup=(t.date!==td);   // 完成日≠作业日 → 补打卡
@@ -1102,7 +1114,9 @@ function expoFields(t){
 function todoRow(t){
   const open = openExpo===t.id;
   const running = t.timerRunning;
+  const locked = makeupLocked(t);     // 逾期锁定：未完成且距作业日已超过锁定天数 → 不可补打卡
   const meta = [];
+  if(locked) meta.push(`<span style="color:var(--muted)">逾期 · 不可补打卡</span>`);
   if(running) meta.push(`<span class="pulse"></span><span style="color:var(--sun);font-weight:700;" data-timer="${t.id}">● 计时中 ${fmtDur(spentOf(t))}</span>`);
   if(t.done && !running) meta.push(`<span style="color:var(--green);font-weight:600;">✓ 已完成</span>`);
   if(t.estMin) meta.push(`预估 ${t.estMin} 分`);
@@ -1119,9 +1133,9 @@ function todoRow(t){
           <span class="timer-status ${statusCls}">${statusTxt}</span>
         </div>
         <div class="timer-actions">
-          <button class="tbtn start ${running?'dis':''}" ${running?'disabled':''} onclick="timerStart('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>开始</button>
+          <button class="tbtn start ${running?'dis':''} ${locked?'dis':''}" ${running||locked?'disabled':''} onclick="timerStart('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>开始</button>
           <button class="tbtn pause ${!running?'dis':''}" ${!running?'disabled':''} onclick="timerPause('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>暂停</button>
-          <button class="tbtn done ${t.done?'dis':''}" ${t.done?'disabled':''} onclick="timerDone('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>完成</button>
+          <button class="tbtn done ${t.done?'dis':''} ${locked?'dis':''}" ${t.done||locked?'disabled':''} onclick="timerDone('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>完成</button>
         </div>
         ${ (t.accum>0 || t.done || t.timerRunning) ? `<div class="dur-hint" style="margin-top:9px;">起止时间：<b style="color:var(--ink)">${segText(t)}</b></div>` : "" }
       </div>
@@ -1129,7 +1143,7 @@ function todoRow(t){
   return `<div class="todo" id="todo-${t.id}">
     ${ t.done?'<span class="stamp" id="stamp-'+t.id+'">已完成</span>':'' }
     <div class="todo-top">
-      <button class="chk ${t.done?'done':''}" onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
+      <button class="chk ${t.done?'done':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
         <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补</span>':''}</div>
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
@@ -2556,7 +2570,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.31";
+const APP_VERSION = "2026.09.10.32";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
