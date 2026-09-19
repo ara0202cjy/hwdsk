@@ -194,6 +194,11 @@
   .todo-mid{flex:1 1 auto; min-width:0;}
   .todo-title{font-size:15.5px; font-weight:600; line-height:1.35; word-break:break-word;}
   .makeup-badge{display:inline-block; margin-left:7px; font-size:11px; font-weight:800; color:#fff; background:var(--sun); border-radius:6px; padding:1px 6px; line-height:15px; vertical-align:middle;}
+  .corr{display:inline-block; padding:1px 7px; font-size:11px; font-weight:700; border-radius:6px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent;}
+  .corr:not(.done){color:var(--sun); border:1.5px solid var(--sun); background:rgba(232,133,59,.08);}
+  .corr.done{color:#fff; background:var(--green); border:1.5px solid var(--green);}
+  .corr-toggle{width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--sun); background:rgba(232,133,59,.06); color:var(--sun); font-size:13.5px; font-weight:700; cursor:pointer; text-align:center; -webkit-tap-highlight-color:transparent;}
+  .corr-toggle.on{background:var(--green); border-color:var(--green); color:#fff;}
   .todo-title.done{text-decoration:line-through; color:var(--muted);}
   .todo-meta{display:flex; align-items:center; gap:10px; margin-top:5px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
   .pulse{width:8px; height:8px; border-radius:50%; background:var(--sun); box-shadow:0 0 0 0 rgba(232,133,59,.6); animation:pulse 1.2s infinite;}
@@ -733,7 +738,7 @@ function mkTodo(date, subject, title, o={}){
   return Object.assign({
     id:uid(), date:ymd(date), subject, title,
     detail:"", estMin:0, wrong:0, done:false,
-    makeup:false, completedOn:null, dinged:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示
+    makeup:false, completedOn:null, dinged:false, corrected:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示 / 订正是否完成
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null,
     segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
@@ -1108,7 +1113,11 @@ function expoFields(t){
           <label>错题数量</label>
           <div class="est-row"><input type="number" min="0" value="${t.wrong||''}" onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','wrong',this.value)"><span class="u">道</span></div>
         </div>
-      </div>`;
+      </div>
+      ${ t.wrong>0 ? `<div class="field" style="margin-top:10px;">
+        <label>订正完成确认（有 ${t.wrong} 道错题需订正）</label>
+        <button class="corr-toggle ${t.corrected?'on':''}" onclick="toggleCorrected('${t.id}')">${t.corrected?'✓ 已确认：错题已订正完成':'点击确认：错题已订正'}</button>
+      </div>` : "" }`;
 }
 
 function todoRow(t){
@@ -1122,6 +1131,7 @@ function todoRow(t){
   if(t.estMin) meta.push(`预估 ${t.estMin} 分`);
   if(t.manualMin>0) meta.push(`<span style="color:var(--green);font-weight:700;">实际 ${t.manualMin} 分</span>`);
   if(t.wrong>0) meta.push(`<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>`);
+  if(t.wrong>0) meta.push(`<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>`);
   const statusCls = running ? "run" : (t.done ? "stop" : "pause");
   const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
   const detail = `
@@ -1161,9 +1171,17 @@ function todoRow(t){
     ${detail}
   </div>`;
 }
+/* 订正完成确认：仅当该作业存在错题（wrong>0）时才有意义；切换 corrected 标记 */
+function toggleCorrected(id){
+  const t=getTodo(id); if(!t) return;
+  if(!(t.wrong>0)){ return; }                 // 无错题无需订正
+  t.corrected = !t.corrected;
+  touch(t); save(); renderList(); syncDerived();
+  toast(t.corrected ? "已确认：错题已订正完成" : "已取消订正确认");
+}
 function editField(id,key,val){
   const t=getTodo(id); if(!t) return;
-  if(key==="estMin"||key==="wrong") t[key]=Math.max(0,parseInt(val||"0",10)||0);
+  if(key==="estMin"||key==="wrong"){ t[key]=Math.max(0,parseInt(val||"0",10)||0); if(key==="wrong" && t.wrong===0) t.corrected=false; }  // 错题清零 → 订正标记失效
   else { t[key]=val; }
   // 循环作业：把 标题/内容/预估 同步回母版与同组未开始实例
   if(t.masterId && (key==="title"||key==="detail"||key==="estMin")){
@@ -1188,7 +1206,8 @@ function doneRow(t){
     `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
     t.estMin ? `预估 ${t.estMin} 分` : "",
     sp>0 ? `用时 ${sp} 分` : "",
-    t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : ""
+    t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
+    (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
   ].filter(Boolean);
   return `<div class="todo" id="todo-${t.id}">
     <span class="stamp" id="stamp-${t.id}">已完成</span>
@@ -1517,6 +1536,7 @@ function renderStats(){
         <span>起止 <b>${segStr}</b></span>
         <span>用时 <b style="${isT?'':`color:var(--muted);font-weight:600;`}">${isT? sp+" 分" : "未计时"}</b></span>
         <span>错题 <b style="color:${wr>=5?RED:'var(--ink)'}">${wr}</b></span>
+        ${ wr>0 ? `<span>订正 <b style="color:${t.corrected?'var(--green)':'var(--sun)'}">${t.corrected?'已订正':'待订正'}</b></span>` : "" }
       </div>
     </div>`;
   });
@@ -2388,10 +2408,10 @@ function parseCSV(text){
 }
 function exportExcel(){
   try{
-    const head=["日期","科目","作业内容","具体内容","预估(分)","错题(道)","状态","开始","结束","用时(分)"];
+    const head=["日期","科目","作业内容","具体内容","预估(分)","错题(道)","订正","状态","开始","结束","用时(分)"];
     const rows=[head];
     state.todos.forEach(t=>{
-      rows.push([t.date, t.subject, t.title, t.detail||"", t.estMin||0, t.wrong||0, t.done?"已完成":"未开始", t.startClock||"", t.endClock||"", Math.round(recMs(t)/60000)]);
+      rows.push([t.date, t.subject, t.title, t.detail||"", t.estMin||0, t.wrong||0, t.corrected?"已订正":"未订正", t.done?"已完成":"未开始", t.startClock||"", t.endClock||"", Math.round(recMs(t)/60000)]);
     });
     const csv="﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
@@ -2416,6 +2436,7 @@ function importExcel(){
         t.detail=(c[idx["具体内容"]]||"").trim();
         t.estMin=parseInt(c[idx["预估(分)"]]!=null?c[idx["预估(分)"]]:c[idx["预估"]]||"0",10)||0;
         t.wrong=parseInt(c[idx["错题(道)"]]!=null?c[idx["错题(道)"]]:c[idx["错题"]]||"0",10)||0;
+        t.corrected=((c[idx["订正"]]||"").indexOf("已订正")>=0);
         t.done=((c[idx["状态"]]||"").indexOf("完成")>=0);
         t.startClock=(c[idx["开始"]]||"").trim();
         t.endClock=(c[idx["结束"]]||"").trim();
@@ -2570,7 +2591,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.32";
+const APP_VERSION = "2026.09.10.33";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
