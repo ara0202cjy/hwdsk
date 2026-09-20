@@ -427,6 +427,7 @@
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
+  .month-note{ font-size:11.5px; color:var(--muted); margin-top:8px; padding:7px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
 
   .empty-tip{text-align:center; color:var(--muted); font-size:13px; padding:30px 0;}
 
@@ -1022,14 +1023,15 @@ function renderList(){
   ts.forEach(t=>{ (bySubj[normSubj(t.subject)]||(bySubj[normSubj(t.subject)]=[])).push(t); });
 
   let html="";
-  // 顶部紧凑统计栏：已全部完成 / 补完成 / 待订正 / 待完成（显示在一个卡片栏中）
-  const doneReal = ts.filter(t=>t.done && !t.makeup).length;     // 当日真实完成（非补打卡）
-  const doneMakeup = ts.filter(t=>t.done && t.makeup).length;    // 补打卡完成
-  const pendingCorr = ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length;  // 有错题且未确认订正
-  const pendingDone = ts.filter(t=>!t.done).length;              // 未完成
+  // 顶部紧凑统计栏：当日完成 / 补打卡 / 待订正 / 待完成（显示在一个卡片栏中）
+  // 口径（与订正状态无关：含无须订正、已订正或未订正）
+  const doneReal = ts.filter(t=>t.done && !t.makeup).length;     // 当日完成数量（真实完成、非补打卡）
+  const doneMakeup = ts.filter(t=>t.done && t.makeup).length;    // 补打卡完成数量
+  const pendingCorr = ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length;  // 待订正：有错题且未确认订正
+  const pendingDone = ts.filter(t=>!t.done).length;              // 待完成：尚未完成
   html += `<div class="top-stats">
-    <div class="ts-cell"><div class="ts-v ${doneReal?'g':''}">${doneReal}<small>项</small></div><div class="ts-k">已全部完成</div></div>
-    <div class="ts-cell"><div class="ts-v s">${doneMakeup}<small>项</small></div><div class="ts-k">补完成</div></div>
+    <div class="ts-cell"><div class="ts-v ${doneReal?'g':''}">${doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
+    <div class="ts-cell"><div class="ts-v s">${doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
     <div class="ts-cell"><div class="ts-v ${pendingCorr?'warn':'g'}">${pendingCorr}<small>项</small></div><div class="ts-k">待订正</div></div>
     <div class="ts-cell"><div class="ts-v ${pendingDone?'warn':'g'}">${pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
   </div>`;
@@ -1873,28 +1875,23 @@ function renderMonth(){
   const first=new Date(y,m,1), startDow=first.getDay();
   const days=new Date(y,m+1,0).getDate();
   // KPI（基于当前月已过的日期）
-  let stars=0, full=0, streak=0, hours=0;
+  let stars=0, full=0, hours=0, unfinished=0;
   const today=new Date(); today.setHours(0,0,0,0);
-  // 连续全勤：从今天往前
-  let cur=new Date(today); let breaking=false;
-  while(true){
-    const ds=ymd(cur); const st=dayStars(ds);
-    if(cur.getMonth()!==m || cur.getFullYear()!==y) break;
-    if(st.allDone){ if(!breaking){ streak++; } }
-    else { breaking=true; }
-    cur.setDate(cur.getDate()-1);
-    if(cur.getMonth()!==m) break;
-  }
-  // 汇总全月
+  // 汇总全月（仅统计已过的日期）
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>today) continue;
     const ds=ymd(dt); const st=dayStars(ds); const s=dayStats(ds);
     stars += st.stars; if(st.allDone) full++; hours += s.totalMin/60;
+    // 当月未完成 = 待订正(有错题未订正) + 待完成(未完成)，与订正状态无关
+    s.ts.forEach(t=>{
+      if(!t.done) unfinished++;
+      else if((t.wrong||0)>0 && !t.corrected) unfinished++;
+    });
   }
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v">${stars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v">${full}</div><div class="k">全勤天数</div></div>
-    <div class="kpi-cell"><div class="v">${streak}</div><div class="k">连续全勤</div></div>
+    <div class="kpi-cell"><div class="v">${unfinished}</div><div class="k">当月未完成</div></div>
     <div class="kpi-cell"><div class="v">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
   </div>`;
 
@@ -1912,7 +1909,8 @@ function renderMonth(){
     <span><i style="background:var(--green)"></i>错题≤5 +1</span>
     <span><i style="background:var(--ink)"></i>21:00 前 +1</span>
     <span><i style="background:var(--muted)"></i>补打卡不计星</span>
-  </div></div>`;
+  </div>
+  <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
 
   $("monthContent").innerHTML = kpi + grid;
 }
@@ -2613,7 +2611,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.35";
+const APP_VERSION = "2026.09.10.36";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
