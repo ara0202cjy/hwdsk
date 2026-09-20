@@ -380,25 +380,25 @@
   .rate-big .rt{font-size:38px; font-weight:800; line-height:1;}
   .rate-big .rl{font-size:13px; opacity:.9; margin-top:6px;}
   .rate-big .rsub{font-size:12.5px; opacity:.92; margin-top:8px;}
-  /* 比较：每小项作业一览 */
-  .cmpt{background:var(--card); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; margin-top:6px;}
-  .cmpt-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; font-size:12px; color:var(--muted); font-weight:700; border-bottom:1px solid #efe9dc;}
+  /* 比较：每小项作业一览（科目=卡片底色区分；名称与数据同一行；紧凑） */
+  .cmpt{background:var(--card); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; margin-top:6px; padding-bottom:4px;}
+  .cmpt-head{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--muted); font-weight:700; border-bottom:1px solid #efe9dc;}
   .cmpt-head .cnt{color:var(--ink);}
-  .cmpt-colhead{display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:5px 12px 4px; border-bottom:1px solid #f2efe6; background:#fbf9f4;}
+  .cmpt-colhead{display:flex; align-items:center; gap:8px; padding:5px 12px 4px; background:#fbf9f4; border-bottom:1px solid #f2efe6;}
+  .cmpt-colhead .lh{flex:1; min-width:0; font-size:10.5px; color:var(--muted); font-weight:700;}
+  .cmpt-colhead .hg{flex:0 0 204px; display:grid; grid-template-columns:repeat(4,1fr); gap:4px;}
   .cmpt-colhead .ch{font-size:10.5px; color:var(--muted); text-align:center; cursor:pointer; user-select:none; padding:3px 2px; border-radius:8px; transition:background .12s;}
   .cmpt-colhead .ch:hover{background:#f0ece2;}
   .cmpt-colhead .ch.on{color:var(--ink); font-weight:800; background:#ece5d6;}
   .cmpt-colhead .ch .ar{font-size:8.5px; margin-left:1px;}
-  .cmpt-row{padding:7px 11px; border-bottom:1px solid #f2efe6;}
-  .cmpt-row:last-child{border-bottom:none;}
-  .cmpt-row .top{display:flex; align-items:center; gap:6px;}
-  .cmpt-row .sb{font-size:10.5px; color:#fff; border-radius:7px; padding:1px 6px; flex:0 0 auto; max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .cmpt-row .tt{flex:1; min-width:0; font-size:13px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .cmpt-row .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-top:5px;}
-  .cmpt-row .stat{text-align:center; background:#f6f2e9; border-radius:8px; padding:4px 2px;}
-  .cmpt-row .stat .v{font-size:14px; font-weight:800; color:var(--ink); line-height:1.05;}
+  .cmpt-row{display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:11px; margin:4px 8px;}
+  .cmpt-row .top{display:flex; align-items:center; gap:6px; flex:1; min-width:0;}
+  .cmpt-row .sb{font-size:10.5px; font-weight:700; background:#fff; border:1px solid; border-radius:7px; padding:1px 6px; flex:0 0 auto; max-width:52px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .tt{flex:1; min-width:0; font-size:12.5px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cmpt-row .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:4px; flex:0 0 204px;}
+  .cmpt-row .stat{text-align:center;}
+  .cmpt-row .stat .v{font-size:13.5px; font-weight:800; color:var(--ink); line-height:1.05;}
   .cmpt-row .stat .v i{font-size:9.5px; font-style:normal; color:var(--muted); font-weight:600; margin-left:1px;}
-  .cmpt-row .stat .k{font-size:9.5px; color:var(--muted); margin-top:2px;}
   .mode-pc #page-summary .rate-big,
   .mode-pc #page-summary .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
   .mode-pc #page-summary .rate-big{margin-bottom:12px;}
@@ -1581,16 +1581,7 @@ function renderStats(){
   });
   html += `<div class="card${ganttHL?' has-hl':''}" style="padding:10px 12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:4px;">当日作业（按时间）</div>${rows}</div>`;
 
-  // 本日汇总
-  html += `<div class="card" style="margin-top:12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:8px;">本日汇总</div>
-    <div class="sum-grid">
-      <div class="sum-cell"><div class="k">作业项</div><div class="v">${s.total}</div></div>
-      <div class="sum-cell"><div class="k">已完成</div><div class="v">${s.done}<small> / ${s.total}</small></div></div>
-      <div class="sum-cell"><div class="k">总用时</div><div class="v">${s.totalMin}<small> 分</small></div></div>
-      <div class="sum-cell"><div class="k">错题合计</div><div class="v" style="color:${s.wrongSum>=5?RED:'var(--ink)'}">${s.wrongSum}<small> 道</small></div></div>
-    </div>
-    ${ (s.untimedN>0 || s.validN<s.timedN) ? `<div style="margin-top:9px;font-size:12px;color:var(--muted);line-height:1.6;">用时统计按 ${s.validN} 项有效计时计算（已剔除不足 1 分钟与明显过长）；另有 ${s.untimedN} 项不足 1 分钟（疑似当时未计时）已排除。</div>` : "" }
-    </div>`;
+  // 本日汇总：已移除（与清单栏顶部统计栏重复）
 
   $("statsContent").innerHTML = html;
   if(ganttHL){ const el=$("srow-"+ganttHL); if(el && el.scrollIntoView) el.scrollIntoView({block:"center",behavior:"smooth"}); }
@@ -1844,20 +1835,20 @@ function renderSummary(){
     const ar = on ? (sumSort.dir>0?"▲":"▼") : "";
     ch += `<div class="ch${on?" on":""}" onclick="setSumSort('${k}')">${lab}<span class="ar">${ar}</span></div>`;
   });
-  html += `<div class="cmpt-colhead">${ch}</div>`;
+  html += `<div class="cmpt-colhead"><span class="lh">科目 / 名称</span><div class="hg">${ch}</div></div>`;
   rows.forEach(r=>{
     const col = SUBJ_COLOR[r.subject] || "#6B8E5A";
     const minTxt = r.avgMin==null ? "—" : (r.avgMin<1 ? "<1" : r.avgMin);
     const minUnit = r.avgMin==null ? "" : "<i>分</i>";
     const wrongTxt = r.avgWrong==null ? "—" : (r.avgWrong>=10 ? Math.round(r.avgWrong) : r.avgWrong.toFixed(1));
     const wrongUnit = r.avgWrong==null ? "" : "<i>道</i>";
-    html += `<div class="cmpt-row">
-      <div class="top"><span class="sb" style="background:${col}">${esc(r.subject)}</span><span class="tt" title="${esc(r.title)}">${esc(r.title)}</span></div>
+    html += `<div class="cmpt-row" style="background:${col}80">
+      <div class="top"><span class="sb" style="color:${col};border-color:${col}">${esc(r.subject)}</span><span class="tt" title="${esc(r.title)}">${esc(r.title)}</span></div>
       <div class="stats">
-        <div class="stat"><div class="v" style="color:var(--green)">${r.doneN}</div><div class="k">完成次数</div></div>
-        <div class="stat"><div class="v" style="color:var(--red)">${r.undoneN}</div><div class="k">未完成</div></div>
-        <div class="stat"><div class="v">${minTxt}${minUnit}</div><div class="k">平均用时</div></div>
-        <div class="stat"><div class="v">${wrongTxt}${wrongUnit}</div><div class="k">平均错误</div></div>
+        <div class="stat"><div class="v" style="color:var(--green)">${r.doneN}</div></div>
+        <div class="stat"><div class="v" style="color:var(--red)">${r.undoneN}</div></div>
+        <div class="stat"><div class="v">${minTxt}${minUnit}</div></div>
+        <div class="stat"><div class="v">${wrongTxt}${wrongUnit}</div></div>
       </div>
     </div>`;
   });
@@ -2627,7 +2618,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.39";
+const APP_VERSION = "2026.09.10.40";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
