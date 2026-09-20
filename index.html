@@ -859,6 +859,10 @@ function deleteLocked(t){
   const diff=Math.round((today-d)/86400000);
   return diff > DELETE_LOCK_DAYS;
 }
+/* 「补打卡」判定：仅当完成日晚于作业日才算补打卡；
+   当日完成 或 提前完成（提前打卡）均视为「按时完成」，不计补打卡。
+   参数为 ISO 日期串（YYYY-MM-DD），可直接字符串比较。 */
+function calcMakeup(dateStr, compStr){ return !!compStr && compStr > dateStr; }
 function toggleDone(id){
   const t = getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
@@ -867,7 +871,7 @@ function toggleDone(id){
     // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
     if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
     finalizeEnd(t, Date.now());
-    const td=ymd(new Date()); t.completedOn=td; t.makeup=(t.date!==td);   // 完成日≠作业日 → 补打卡
+    const td=ymd(new Date()); t.completedOn=td; t.makeup=calcMakeup(t.date, td);   // 提前/当日完成=按时；晚于作业日才算补打卡
   }
   else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
   save(); syncDerived();
@@ -907,7 +911,7 @@ function timerDone(id){
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
   t.done=true; touch(t); finalizeEnd(t, Date.now());
-  const td=ymd(new Date()); t.completedOn=td; t.makeup=(t.date!==td);   // 完成日≠作业日 → 补打卡
+  const td=ymd(new Date()); t.completedOn=td; t.makeup=calcMakeup(t.date, td);   // 提前/当日完成=按时；晚于作业日才算补打卡
   save();
   afterTimer(); toast("计时已停止");
 }
@@ -2618,7 +2622,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.41";
+const APP_VERSION = "2026.09.10.42";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
