@@ -1842,7 +1842,7 @@ function renderSummary(){
     const minUnit = r.avgMin==null ? "" : "<i>分</i>";
     const wrongTxt = r.avgWrong==null ? "—" : (r.avgWrong>=10 ? Math.round(r.avgWrong) : r.avgWrong.toFixed(1));
     const wrongUnit = r.avgWrong==null ? "" : "<i>道</i>";
-    html += `<div class="cmpt-row" style="background:${col}80">
+    html += `<div class="cmpt-row" style="background:${col}4d">
       <div class="top"><span class="sb" style="color:${col};border-color:${col}">${esc(r.subject)}</span><span class="tt" title="${esc(r.title)}">${esc(r.title)}</span></div>
       <div class="stats">
         <div class="stat"><div class="v" style="color:var(--green)">${r.doneN}</div></div>
@@ -2618,7 +2618,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.40";
+const APP_VERSION = "2026.09.10.41";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
