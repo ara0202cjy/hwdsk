@@ -411,6 +411,8 @@
   .kpi{display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px;}
   .kpi-cell{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 6px; text-align:center;}
   .kpi-cell .v{font-size:20px; font-weight:800; color:var(--ink); line-height:1.1;}
+  .kpi-cell .v.g{color:var(--green);}
+  .kpi-cell .v.warn{color:var(--sun);}
   .kpi-cell .k{font-size:10.5px; color:var(--muted); margin-top:4px;}
   .cal{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px;}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
@@ -1040,10 +1042,10 @@ function renderList(){
   const pendingCorr = ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length;  // 待订正：有错题且未确认订正
   const pendingDone = ts.filter(t=>!t.done).length;              // 待完成：尚未完成
   html += `<div class="top-stats">
-    <div class="ts-cell"><div class="ts-v ${doneReal?'g':''}">${doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
-    <div class="ts-cell"><div class="ts-v s">${doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
-    <div class="ts-cell"><div class="ts-v ${pendingCorr?'warn':'g'}">${pendingCorr}<small>项</small></div><div class="ts-k">待订正</div></div>
-    <div class="ts-cell"><div class="ts-v ${pendingDone?'warn':'g'}">${pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
+    <div class="ts-cell"><div class="ts-v g">${doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
+    <div class="ts-cell"><div class="ts-v g">${doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
+    <div class="ts-cell"><div class="ts-v warn">${pendingCorr}<small>项</small></div><div class="ts-k">待订正</div></div>
+    <div class="ts-cell"><div class="ts-v warn">${pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
   </div>`;
   const totalEst = ts.reduce((a,t)=>a+(t.estMin||0),0);
   // 已做时长 = 已完成且实际计时过的作业，按实际记录时长（recMs：手动优先，否则计时器）汇总，非预估
@@ -1903,11 +1905,11 @@ function renderMonth(){
     });
   }
   let kpi = `<div class="kpi">
-    <div class="kpi-cell"><div class="v">${stars}</div><div class="k">本月星星</div></div>
-    <div class="kpi-cell"><div class="v">${full}</div><div class="k">全勤天数</div></div>
-    <div class="kpi-cell"><div class="v">${unfinished}</div><div class="k">当月未完成</div></div>
-    <div class="kpi-cell"><div class="v">${uncorr}</div><div class="k">当月未订正</div></div>
-    <div class="kpi-cell"><div class="v">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
+    <div class="kpi-cell"><div class="v g">${stars}</div><div class="k">本月星星</div></div>
+    <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
+    <div class="kpi-cell"><div class="v warn">${unfinished}</div><div class="k">当月未完成</div></div>
+    <div class="kpi-cell"><div class="v warn">${uncorr}</div><div class="k">当月未订正</div></div>
+    <div class="kpi-cell"><div class="v g">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
   </div>`;
 
   let grid = `<div class="cal"><div class="cal-grid">`;
@@ -2626,7 +2628,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.37";
+const APP_VERSION = "2026.09.10.38";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
