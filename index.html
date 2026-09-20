@@ -209,6 +209,7 @@
   .mini-btn{width:30px; height:30px; flex:0 0 30px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5;}
   .mini-btn:active{background:var(--ink-soft);}
   .mini-btn.del{color:var(--red); border-color:#f0d3cf;}
+  .mini-btn.dis{opacity:.45; pointer-events:none; filter:grayscale(.3);}
   .mini-btn.lock{font-size:13px; font-weight:800; color:var(--muted);}
   .mini-btn.lock.on{color:#fff; background:var(--sun); border-color:var(--sun);}
   .mini-btn.lock.week.on{background:#7a8cff; border-color:#7a8cff;}
@@ -407,7 +408,7 @@
   .mode-pc #page-summary .cal{max-width:1080px; margin:0 auto;}
 
   /* ===== 月度统计 ===== */
-  .kpi{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
+  .kpi{display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px;}
   .kpi-cell{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 6px; text-align:center;}
   .kpi-cell .v{font-size:20px; font-weight:800; color:var(--ink); line-height:1.1;}
   .kpi-cell .k{font-size:10.5px; color:var(--muted); margin-top:4px;}
@@ -847,6 +848,15 @@ function makeupLocked(t){
   const diff=Math.round((today-d)/86400000);
   return diff > MAKEUP_LOCK_DAYS;
 }
+const DELETE_LOCK_DAYS = 3;            // 作业日超过该天数后，禁止删除具体条目（仍可编辑状态/补打卡/改错题/订正）
+/* 具体条目是否已超过删除时限：距作业日超过该天数 → 不可删除（仅限制删除，不影响其他编辑） */
+function deleteLocked(t){
+  if(!t) return false;
+  const d=parseDS(t.date); if(!d) return false;
+  const today=new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  const diff=Math.round((today-d)/86400000);
+  return diff > DELETE_LOCK_DAYS;
+}
 function toggleDone(id){
   const t = getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
@@ -1148,6 +1158,7 @@ function todoRow(t){
   const open = openExpo===t.id;
   const running = t.timerRunning;
   const locked = makeupLocked(t);     // 逾期锁定：未完成且距作业日已超过锁定天数 → 不可补打卡
+  const delLocked = deleteLocked(t);  // 删除锁定：作业日超过 DELETE_LOCK_DAYS 天后禁止删除具体条目
   const meta = [];
   if(locked) meta.push(`<span style="color:var(--muted)">逾期 · 不可补打卡</span>`);
   if(running) meta.push(`<span class="pulse"></span><span style="color:var(--sun);font-weight:700;" data-timer="${t.id}">● 计时中 ${fmtDur(spentOf(t))}</span>`);
@@ -1187,7 +1198,7 @@ function todoRow(t){
           <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
           <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
           <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
-          <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
+          <button class="mini-btn del ${delLocked?'dis':''}" title="${delLocked?'已超过'+DELETE_LOCK_DAYS+'天，不可删除（仍可编辑状态/补打卡/改错题/订正）':'删除'}" ${delLocked?'disabled':''} onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         </span>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
       </div>
@@ -1226,6 +1237,7 @@ function setManual(id,val){
 function doneRow(t){
   const open = openExpo===t.id;
   const sp = Math.round(recMs(t)/60000);
+  const delLocked = deleteLocked(t);
   const meta = [
     `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
     t.estMin ? `预估 ${t.estMin} 分` : "",
@@ -1246,7 +1258,7 @@ function doneRow(t){
           <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
           <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
           <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
-          <button class="mini-btn del" title="删除" onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
+          <button class="mini-btn del ${delLocked?'dis':''}" title="${delLocked?'已超过'+DELETE_LOCK_DAYS+'天，不可删除（仍可编辑状态/补打卡/改错题/订正）':'删除'}" ${delLocked?'disabled':''} onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         </span>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
       </div>
@@ -1259,6 +1271,7 @@ function doneRow(t){
 }
 function delTodo(id){
   const t=getTodo(id); if(!t) return;
+  if(deleteLocked(t)){ toast("该作业已超过 "+DELETE_LOCK_DAYS+" 天，无法删除；仍可编辑状态、补打卡、改错题、订正"); return; }
   const m = t.masterId ? getMaster(t.masterId) : null;
   if(m){
     // 循环作业单天删除：仅跳过该天，循环继续
@@ -1875,23 +1888,25 @@ function renderMonth(){
   const first=new Date(y,m,1), startDow=first.getDay();
   const days=new Date(y,m+1,0).getDate();
   // KPI（基于当前月已过的日期）
-  let stars=0, full=0, hours=0, unfinished=0;
+  let stars=0, full=0, hours=0, unfinished=0, uncorr=0;
   const today=new Date(); today.setHours(0,0,0,0);
-  // 汇总全月（仅统计已过的日期）
+  // 汇总全月（仅统计今日以前的日期，不含今日）
   for(let d=1; d<=days; d++){
-    const dt=new Date(y,m,d); if(dt>today) continue;
+    const dt=new Date(y,m,d); if(dt>=today) continue;   // 不含今日：今日数据仍在变动，不计入月度统计
     const ds=ymd(dt); const st=dayStars(ds); const s=dayStats(ds);
     stars += st.stars; if(st.allDone) full++; hours += s.totalMin/60;
-    // 当月未完成 = 待订正(有错题未订正) + 待完成(未完成)，与订正状态无关
+    // 当月未完成 = 待完成(未完成) + 待订正(有错题未订正)，与订正状态无关
     s.ts.forEach(t=>{
       if(!t.done) unfinished++;
       else if((t.wrong||0)>0 && !t.corrected) unfinished++;
+      if((t.wrong||0)>0 && !t.corrected) uncorr++;     // 当月未订正：有错题且未确认订正（不含今日）
     });
   }
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v">${stars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v">${full}</div><div class="k">全勤天数</div></div>
     <div class="kpi-cell"><div class="v">${unfinished}</div><div class="k">当月未完成</div></div>
+    <div class="kpi-cell"><div class="v">${uncorr}</div><div class="k">当月未订正</div></div>
     <div class="kpi-cell"><div class="v">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
   </div>`;
 
@@ -2611,7 +2626,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.36";
+const APP_VERSION = "2026.09.10.37";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
