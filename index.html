@@ -431,6 +431,17 @@
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
   .month-note{ font-size:11.5px; color:var(--muted); margin-top:8px; padding:7px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  /* 本月未完成清单（日历下方，点击跳转去完成） */
+  .mu{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
+  .mu-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
+  .mu-h .mu-n{color:var(--sun); font-weight:800; margin-left:4px;}
+  .mu-row{display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f2efe6; cursor:pointer;}
+  .mu-row:last-child{border-bottom:none;}
+  .mu-dot{width:9px; height:9px; border-radius:3px; flex:0 0 auto;}
+  .mu-date{font-size:11px; color:var(--muted); font-weight:700; flex:0 0 auto; min-width:36px;}
+  .mu-title{flex:1; min-width:0; font-size:12.5px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .mu-go{font-size:11px; color:var(--sun); font-weight:700; flex:0 0 auto;}
+  .mu-empty{font-size:12px; color:var(--muted); text-align:center; padding:8px 0;}
 
   .empty-tip{text-align:center; color:var(--muted); font-size:13px; padding:30px 0;}
 
@@ -1923,6 +1934,29 @@ function renderMonth(){
   </div>
   <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
 
+  // 本月未完成清单（不含今日及以后）：点击某条 → 跳转到那天去完成
+  const unf = [];
+  for(let d=1; d<=days; d++){
+    const dt=new Date(y,m,d); if(dt>=today) break;      // 仅统计今天以前的日期
+    (dayStats(ymd(dt)).ts||[]).forEach(t=>{ if(!t.done) unf.push({d:d, t:t}); });
+  }
+  let mu = `<div class="mu"><div class="mu-h">本月未完成（不含今日及以后）<span class="mu-n">${unf.length} 项</span></div>`;
+  if(unf.length){
+    unf.forEach(x=>{
+      const col = SUBJ_COLOR[x.t.subject] || "#6B8E5A";
+      mu += `<div class="mu-row" onclick="gotoDate(${y},${m},${x.d})">
+        <span class="mu-dot" style="background:${col}"></span>
+        <span class="mu-date">${m+1}/${x.d}</span>
+        <span class="mu-title">${esc(x.t.title)}</span>
+        <span class="mu-go">去完成 ›</span>
+      </div>`;
+    });
+  } else {
+    mu += `<div class="mu-empty">本月暂无未完成项 🎉</div>`;
+  }
+  mu += `</div>`;
+  grid += mu;
+
   $("monthContent").innerHTML = kpi + grid;
 }
 
@@ -2622,7 +2656,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.42";
+const APP_VERSION = "2026.09.10.43";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
