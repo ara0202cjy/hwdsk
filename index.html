@@ -430,7 +430,7 @@
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
-  .month-note{ font-size:11.5px; color:var(--muted); margin-top:8px; padding:7px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  .month-note{ font-size:14px; font-weight:700; color:var(--sun); margin-top:8px; padding:10px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
   /* 本月未完成清单（日历下方，点击跳转去完成） */
   .mu{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
   .mu-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
@@ -441,6 +441,15 @@
   .mu-date{font-size:11px; color:var(--muted); font-weight:700; flex:0 0 auto; min-width:36px;}
   .mu-title{flex:1; min-width:0; font-size:12.5px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .mu-go{font-size:11px; color:var(--sun); font-weight:700; flex:0 0 auto;}
+  /* 剩余补打卡天数 */
+  .mu-left{font-size:11px; color:var(--sun); font-weight:700; flex:0 0 auto; white-space:nowrap;}
+  .mu-row.hot .mu-left{color:var(--red);}                 /* 今天最后一天 → 红色提示 */
+  /* 已逾期、不可补打卡：整行置灰并沉底 */
+  .mu-row.locked{opacity:.6; cursor:default;}
+  .mu-row.locked .mu-title,.mu-row.locked .mu-date,.mu-row.locked .mu-go{color:var(--muted);}
+  .mu-row.locked .mu-title{font-weight:500;}
+  .mu-row.locked .mu-dot{background:var(--gray) !important;}
+  .mu-row.locked .mu-go{font-weight:600;}
   .mu-empty{font-size:12px; color:var(--muted); text-align:center; padding:8px 0;}
 
   .empty-tip{text-align:center; color:var(--muted); font-size:13px; padding:30px 0;}
@@ -862,6 +871,15 @@ function makeupLocked(t){
   return diff > MAKEUP_LOCK_DAYS;
 }
 const DELETE_LOCK_DAYS = 3;            // 作业日超过该天数后，禁止删除具体条目（仍可编辑状态/补打卡/改错题/订正）
+/* 剩余可补打卡天数：MAKEUP_LOCK_DAYS - 已过天数。
+   >0 还剩几天；=0 今天就是最后一天；<0 已逾期、不可补打卡（与 makeupLocked 判定一致）。 */
+function makeupDaysLeft(t){
+  if(!t) return 0;
+  const d=parseDS(t.date); if(!d) return MAKEUP_LOCK_DAYS;
+  const today=new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  const diff=Math.round((today-d)/86400000);
+  return MAKEUP_LOCK_DAYS - diff;
+}
 /* 具体条目是否已超过删除时限：距作业日超过该天数 → 不可删除（仅限制删除，不影响其他编辑） */
 function deleteLocked(t){
   if(!t) return false;
@@ -1950,25 +1968,39 @@ function renderMonth(){
     <span><i style="background:var(--sun)"></i>当天完成 2 星</span>
     <span><i style="background:var(--ink)"></i>21:30 前 +1</span>
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
-    <span><i style="background:var(--muted)"></i>D+2 内 1 星 · 超 D+2 无星</span>
+    <span><i style="background:var(--muted)"></i>D+2 内 1 星</span>
   </div>
-  <div class="month-note">全完成才有星：当天完成 2 星 ｜ 21:30 前完成再 +1 ｜ 错题少于 5 题再 +1 ｜ D+1~D+2 完成 1 星 ｜ 超 D+2 无星<br>月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
+  <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
 
-  // 本月未完成清单（不含今日及以后）：点击某条 → 跳转到那天去完成
+  // 本月未完成清单（不含今日及以后）：显示剩余补打卡天数，按剩余天数升序；
+  // 已逾期、不可补打卡的沉底并置灰
   const unf = [];
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>=today) break;      // 仅统计今天以前的日期
-    (dayStats(ymd(dt)).ts||[]).forEach(t=>{ if(!t.done) unf.push({d:d, t:t}); });
+    (dayStats(ymd(dt)).ts||[]).forEach(t=>{
+      if(!t.done) unf.push({d:d, t:t, left:makeupDaysLeft(t)});
+    });
   }
+  unf.sort((a,b)=>{
+    const al=a.left<0, bl=b.left<0;
+    if(al!==bl) return al?1:-1;                         // 不可补打卡的一律沉底
+    if(al) return (a.d-b.d) || 0;                       // 已逾期组：按作业日先后
+    return (a.left-b.left) || (a.d-b.d);                // 可补打卡组：剩余天数升序（越急越靠前）
+  });
   let mu = `<div class="mu"><div class="mu-h">本月未完成（不含今日及以后）<span class="mu-n">${unf.length} 项</span></div>`;
   if(unf.length){
     unf.forEach(x=>{
       const col = SUBJ_COLOR[x.t.subject] || "#6B8E5A";
-      mu += `<div class="mu-row" onclick="gotoDate(${y},${m},${x.d})">
+      const locked = x.left < 0;
+      const cls = locked ? "mu-row locked" : ("mu-row" + (x.left===0 ? " hot" : ""));
+      const right = locked
+        ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
+        : `<span class="mu-left">${x.left===0 ? "今天截止" : "剩 "+x.left+" 天"}</span><span class="mu-go">去完成 ›</span>`;
+      mu += `<div class="${cls}" onclick="gotoDate(${y},${m},${x.d})">
         <span class="mu-dot" style="background:${col}"></span>
         <span class="mu-date">${m+1}/${x.d}</span>
         <span class="mu-title">${esc(x.t.title)}</span>
-        <span class="mu-go">去完成 ›</span>
+        ${right}
       </div>`;
     });
   } else {
@@ -2676,7 +2708,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.44";
+const APP_VERSION = "2026.09.10.45";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
