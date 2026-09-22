@@ -421,6 +421,13 @@
   .cal-cell.today{outline:2px solid var(--ink); outline-offset:-2px;}
   .cal-cell.empty{background:transparent;}
   .cal-cell .stars{font-size:9px; color:var(--sun); margin-top:1px; line-height:1; letter-spacing:1px;}
+  /* 星星分色：颜色 = 获得原因（与图例色点一一对应） */
+  .cal-cell .stars .st{letter-spacing:1px;}
+  .cal-cell .stars .st+ .st{margin-left:1px;}
+  .cal-cell .stars .st-onday{color:var(--sun);}     /* 当天完成 2 星 */
+  .cal-cell .stars .st-early{color:var(--ink);}     /* 21:00 前 +1 */
+  .cal-cell .stars .st-wrong{color:var(--green);}   /* 错题<5 +1 */
+  .cal-cell .stars .st-late{color:var(--muted);}    /* D+2 内 1 星 */
   .cal-cell .s0{color:var(--muted);}
   .cal-cell.future{opacity:.4; cursor:default;}
   .cal-toggle{display:flex; align-items:center; justify-content:space-between; background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 14px; margin-top:8px; cursor:pointer; user-select:none;}
@@ -1002,24 +1009,26 @@ function dayStats(dateStr){
 }
 /* 用时展示：不足 1 分钟显示「未计时」，避免把 0 分当成真实成绩 */
 function spentLabel(t){ const m=Math.round(recMs(t)/60000); return m>0 ? m+" 分" : "未计时"; }
-/* ===== 星星规则（v.44 起）=====
+/* ===== 星星规则（v.44 起；v.47 把截止时间由 21:30 提前到 21:00）=====
    前提：该日作业必须「全部完成」，否则 0 星（当日/未来日期次日结算）。
    1) 当天完成（含提前完成）              → 2 星
-   2) 在「当天完成」基础上，21:30 前结束   → 再 +1 星
+   2) 在「当天完成」基础上，21:00 前结束   → 再 +1 星
    3) D+2 天内完成（即 D+1、D+2 才做完）  → 1 星；超过 D+2 完成 → 0 星
    4) 全部完成 且 当日错题少于 5 题       → 再 +1 星
-   档位按「最晚完成日」判定（多项作业中最后一项的完成日）。 */
+   档位按「最晚完成日」判定（多项作业中最后一项的完成日）。
+   parts 记录每一颗星的来源，供日历按原因分色显示：
+   onday=当天完成(金) / early=21:00 前(墨绿) / wrong=错题<5(绿) / late=D+2 内完成(灰)。 */
 const STAR_ONDAY      = 2;              // 当天完成基础星
 const STAR_LATE_DAYS  = 2;              // D+2 天内完成 → 1 星
-const STAR_DEADLINE_MIN = 21*60 + 30;   // 21:30 前结束 → +1 星
+const STAR_DEADLINE_MIN = 21*60;        // 21:00 前结束 → +1 星
 const STAR_WRONG_LT   = 5;              // 错题少于 5 题 → +1 星
 function dayStars(dateStr){
   const s = dayStats(dateStr);
   const ts = s.ts || [];
   const total = ts.length;
   const settled = dateStr < ymd(new Date());
-  if(total===0) return {stars:0, allDone:false, settled:false, pending:false, total:0};
-  if(s.done < total) return {stars:0, allDone:false, settled:settled, pending:!settled, total:total};
+  if(total===0) return {stars:0, parts:[], allDone:false, settled:false, pending:false, total:0};
+  if(s.done < total) return {stars:0, parts:[], allDone:false, settled:settled, pending:!settled, total:total};
   // —— 全部完成：按「最晚完成日」分档 ——
   const base = parseDS(dateStr);
   let delay = 0;                                   // 最晚完成日相对作业日的天数；提前完成按 0 计
@@ -1029,20 +1038,21 @@ function dayStars(dateStr){
     const dd = Math.round((cd - base)/86400000);
     if(dd > delay) delay = dd;
   });
+  const parts = [];
   let stars;
-  if(delay <= 0) stars = STAR_ONDAY;                            // 当天完成 → 2 星
-  else if(delay <= STAR_LATE_DAYS) stars = 1;                   // D+2 天内完成 → 1 星
-  else stars = 0;                                              // 超过 D+2 → 0 星
-  // 当天完成 且 21:30 前全部结束 → +1 星
+  if(delay <= 0){ stars = STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }        // 当天完成 → 2 星
+  else if(delay <= STAR_LATE_DAYS){ stars = 1; parts.push({k:"late", n:1}); }         // D+2 天内完成 → 1 星
+  else stars = 0;                                                                    // 超过 D+2 → 0 星
+  // 当天完成 且 21:00 前全部结束 → +1 星
   if(delay <= 0){
     let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
-    if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN) stars++;
+    if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
   }
   // 全部完成 且 错题少于 5 题 → +1 星
   const wrongSum = ts.reduce((a,t)=>a+(t.wrong||0),0);
-  if(wrongSum < STAR_WRONG_LT) stars++;
-  if(!settled) return {stars:0, allDone:true, settled:false, pending:true, total:total};  // 今日/未来：次日结算，先显示「待」
-  return {stars:stars, allDone:true, settled:true, pending:false, total:total};
+  if(wrongSum < STAR_WRONG_LT){ stars++; parts.push({k:"wrong", n:1}); }
+  if(!settled) return {stars:0, parts:[], allDone:true, settled:false, pending:true, total:total};  // 今日/未来：次日结算，先显示「待」
+  return {stars:stars, parts:parts, allDone:true, settled:true, pending:false, total:total};
 }
 
 /* ============ 渲染层 ============ */
@@ -1963,12 +1973,15 @@ function renderMonth(){
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); const ds=ymd(dt); const st=dayStars(ds);
     const isToday = sameDay(dt, today);
-    const starTxt = st.stars>0 ? "★".repeat(st.stars) : (st.pending ? '<span class="s0">待</span>' : '<span class="s0">·</span>');
+    // 星星按「获得原因」分色：当天完成(金) / 21:00 前(墨绿) / 错题<5(绿) / D+2 内完成(灰)
+    const starTxt = st.stars>0
+      ? (st.parts||[]).map(p=>`<span class="st st-${p.k}">${"★".repeat(p.n)}</span>`).join("")
+      : (st.pending ? '<span class="s0">待</span>' : '<span class="s0">·</span>');
     grid += `<div class="cal-cell ${isToday?'today':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div><div class="stars">${starTxt}</div></div>`;
   }
   grid += `</div><div class="legend-row">
     <span><i style="background:var(--sun)"></i>当天完成 2 星</span>
-    <span><i style="background:var(--ink)"></i>21:30 前 +1</span>
+    <span><i style="background:var(--ink)"></i>21:00 前 +1</span>
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
     <span><i style="background:var(--muted)"></i>D+2 内 1 星</span>
   </div>
@@ -2724,7 +2737,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.46";
+const APP_VERSION = "2026.09.10.47";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
