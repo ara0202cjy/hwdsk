@@ -496,9 +496,9 @@
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
-  .month-note{ font-size:14px; font-weight:700; color:var(--sun); margin-top:8px; padding:10px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  .month-note{ font-size:12.5px; font-weight:700; color:var(--sun); margin-top:8px; padding:9px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
   /* 本月合格状态：合格=绿 / 不合格=橙 / 未结束=灰 */
-  .month-qual{ font-size:16px; font-weight:800; letter-spacing:.5px; margin-top:8px; padding:11px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  .month-qual{ font-size:13.5px; font-weight:800; letter-spacing:.5px; margin-top:8px; padding:10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
   .month-qual.qual-ok{ color:var(--green); }
   .month-qual.qual-fail{ color:var(--sun); }
   .month-qual.qual-pending{ color:var(--muted); }
@@ -2100,7 +2100,7 @@ function renderMonth(){
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
     <span><i style="background:var(--sun-light)"></i>D+2 内 1 星</span>
   </div>
-  <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div>
+  <div class="month-note">月度合格标准：未完成 + 未订正 ≤ 10 项</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡奖励 + 目标奖励 + 劳动奖励 − 额外惩罚 = 本月星星
@@ -3013,7 +3013,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.56";
+const APP_VERSION = "2026.09.10.57";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
