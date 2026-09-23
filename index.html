@@ -400,13 +400,15 @@
   .cmpt-row .stat{text-align:center;}
   .cmpt-row .stat .v{font-size:13.5px; font-weight:800; color:var(--ink); line-height:1.05;}
   .cmpt-row .stat .v i{font-size:9.5px; font-style:normal; color:var(--muted); font-weight:600; margin-left:1px;}
-  .mode-pc #page-summary .rate-big,
-  .mode-pc #page-summary .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
-  .mode-pc #page-summary .rate-big{margin-bottom:12px;}
+  .mode-pc #page-stats .rate-big,
+  .mode-pc #page-stats .cmpt{max-width:1080px; margin-left:auto; margin-right:auto;}
+  .mode-pc #page-stats .rate-big{margin-bottom:12px;}
   .sum-year-note{text-align:center; font-size:13px; color:var(--muted); padding:9px 0; background:var(--card); border-radius:14px; box-shadow:var(--shadow); margin-top:6px;}
   .sum-hint{text-align:center; font-size:11px; color:var(--muted); margin-top:8px;}
   .cal-cell.wkpick{cursor:pointer;}
-  .mode-pc #page-summary .cal{max-width:1080px; margin:0 auto;}
+  .mode-pc #page-stats .cal{max-width:1080px; margin:0 auto;}
+  /* 统计页内的区块分隔标题（今日作业时段 / 比较） */
+  .sec-divider{margin:18px 2px 8px; padding-top:14px; border-top:1.5px dashed var(--line); font-size:15px; font-weight:800; color:var(--ink); letter-spacing:.5px;}
 
   /* ===== 奖励栏 ===== */
   .rw-card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px; margin-bottom:12px;}
@@ -487,7 +489,7 @@
   .cal-toggle{display:flex; align-items:center; justify-content:space-between; background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:11px 14px; margin-top:8px; cursor:pointer; user-select:none;}
   .cal-toggle .t{font-size:14px; font-weight:700; color:var(--ink);}
   .cal-toggle .caret{color:var(--muted); font-size:13px; transition:transform .15s;}
-  .mode-pc #page-summary .cal-toggle{max-width:1080px; margin-left:auto; margin-right:auto;}
+  .mode-pc #page-stats .cal-toggle{max-width:1080px; margin-left:auto; margin-right:auto;}
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
@@ -683,7 +685,7 @@
           <!-- 作业统计 -->
           <section class="page" id="page-stats">
             <div class="sticky">
-              <div class="phead"><h1>作业统计</h1></div>
+              <div class="phead"><h1>统计</h1></div>
               <div class="datebar">
                 <span style="font-size:13px;color:var(--muted);" id="statsDate">--</span>
                 <div style="display:flex;gap:8px;">
@@ -691,22 +693,6 @@
                   <button class="nav" onclick="shiftDate(1)" aria-label="后一天"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 </div>
               </div>
-            </div>
-            <div class="content" id="statsContent"></div>
-          </section>
-
-          <!-- 待办事项 -->
-          <section class="page" id="page-tasks">
-            <div class="sticky">
-              <div class="phead"><h1>待办事项</h1></div>
-            </div>
-            <div class="content" id="tasksContent"></div>
-          </section>
-
-          <!-- 比较 -->
-          <section class="page" id="page-summary">
-            <div class="sticky">
-              <div class="phead"><h1>比较</h1></div>
               <div class="sum-range">
                 <button id="sumYearBtn" onclick="setSumRange('year')">全年</button>
                 <button id="sumMonthBtn" onclick="setSumRange('month')">全月</button>
@@ -719,7 +705,17 @@
               </div>
               <div id="sumCalWrap"></div>
             </div>
+            <div class="content" id="statsContent"></div>
+            <div class="sec-divider">比较（周期作业达成）</div>
             <div class="content" id="summaryContent"></div>
+          </section>
+
+          <!-- 待办事项 -->
+          <section class="page" id="page-tasks">
+            <div class="sticky">
+              <div class="phead"><h1>待办事项</h1></div>
+            </div>
+            <div class="content" id="tasksContent"></div>
           </section>
 
           <!-- 月度统计 -->
@@ -768,10 +764,6 @@
           <button class="tab" data-tab="stats" onclick="switchTab('stats')">
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
             <span class="lb">统计</span>
-          </button>
-          <button class="tab" data-tab="summary" onclick="switchTab('summary')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 7-8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7h4v4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="lb">比较</span>
           </button>
           <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
@@ -1137,9 +1129,8 @@ function switchTab(tab){
   $("page-"+tab).classList.add("active");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.tab===tab));
   if(tab==="list") renderList();
-  if(tab==="stats") renderStats();
+  if(tab==="stats"){ renderStats(); renderSummary(); }
   if(tab==="tasks") renderTasks();
-  if(tab==="summary") renderSummary();
   if(tab==="month") renderMonth();
   if(tab==="reward") renderReward();
 }
@@ -2985,7 +2976,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.53";
+const APP_VERSION = "2026.09.10.54";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
