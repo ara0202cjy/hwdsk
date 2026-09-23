@@ -422,11 +422,20 @@
   .rw-total{font-size:12px; color:var(--muted); margin:8px 0 4px;}
   .rw-total .rs-g{color:var(--green); font-weight:800;}
   .rw-total .rs-pen{color:var(--red); font-weight:800;}
+  .rw-total .rs-muted{color:#c8761f; font-weight:800;}
   .rw-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid #eee5d6;}
   .rw-row .rw-main{flex:1; min-width:0;}
   .rw-title{font-size:14px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .rw-row.on .rw-title{color:var(--ink);}
-  .rw-row:not(.on) .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-row.goal.active .rw-title{color:var(--ink);}
+  .rw-row.goal.done{opacity:.55;}
+  .rw-row.goal.done .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-row.goal.overdue{opacity:.55;}
+  .rw-row.goal.overdue .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-row.done-auto .rw-title{color:var(--ink);}
+  .rw-status{font-size:11px; font-weight:700; border-radius:6px; padding:1px 6px; white-space:nowrap;}
+  .rw-status.st-done{color:var(--green); background:#eaf6ef;}
+  .rw-status.st-pend{color:#c8761f; background:#fdf0e4;}
+  .rw-status.st-ov{color:var(--red); background:#fbeae8;}
   .rw-meta{display:flex; gap:8px; align-items:center; margin-top:3px;}
   .rw-tag{font-size:11px; color:var(--muted); background:#f6f2e9; border-radius:6px; padding:1px 6px;}
   .rw-stars{font-size:12px; font-weight:700; color:var(--green);}
@@ -727,6 +736,11 @@
           <section class="page" id="page-reward">
             <div class="sticky">
               <div class="phead"><h1>奖励</h1></div>
+              <div class="month-nav" style="margin-top:8px;">
+                <button class="nav" onclick="shiftRewardMonth(-1)" aria-label="上个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <span id="rewardMonthLabel" style="font-size:15px;font-weight:700;color:var(--ink);">--</span>
+                <button class="nav" onclick="shiftRewardMonth(1)" aria-label="下个月"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              </div>
             </div>
             <div class="content" id="rewardContent"></div>
           </section>
@@ -740,25 +754,25 @@
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h4" stroke-linecap="round"/></svg></span>
             <span class="lb">清单</span>
           </button>
-          <button class="tab" data-tab="stats" onclick="switchTab('stats')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
-            <span class="lb">统计</span>
-          </button>
-          <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
-            <span class="lb">待办</span>
-          </button>
-          <button class="tab" data-tab="summary" onclick="switchTab('summary')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/><path d="M3 20h18" stroke-linecap="round"/></svg></span>
-            <span class="lb">比较</span>
+          <button class="tab" data-tab="reward" onclick="switchTab('reward')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.6 5.6 6 .7-4.4 4.1 1.2 6L12 16.9 6.6 19.4l1.2-6L3.4 8.3l6-.7z" stroke-linejoin="round"/></svg></span>
+            <span class="lb">奖励</span>
           </button>
           <button class="tab" data-tab="month" onclick="switchTab('month')">
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4" stroke-linecap="round"/></svg></span>
             <span class="lb">月度</span>
           </button>
-          <button class="tab" data-tab="reward" onclick="switchTab('reward')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.6 5.6 6 .7-4.4 4.1 1.2 6L12 16.9 6.6 19.4l1.2-6L3.4 8.3l6-.7z" stroke-linejoin="round"/></svg></span>
-            <span class="lb">奖励</span>
+          <button class="tab" data-tab="stats" onclick="switchTab('stats')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
+            <span class="lb">统计</span>
+          </button>
+          <button class="tab" data-tab="summary" onclick="switchTab('summary')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 7-8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7h4v4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="lb">比较</span>
+          </button>
+          <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
+            <span class="lb">待办</span>
           </button>
         </div>
 
@@ -795,6 +809,7 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 let state = null;
 let viewDate = new Date(); viewDate.setHours(0,0,0,0);
 let monthView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+let rewardView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);   // 奖励页当前查看月份
 let cmpTitle = null;
 let openExpo = null;      // 当前展开的 todoId（手风琴：同时只展开一个）
 let ganttHL = null;      // 高亮 todoId
@@ -811,6 +826,8 @@ function load(){
   if(!state._delHW) state._delHW = {};        // 常用词删除墓碑：跨端同步删除
   if(!Array.isArray(state.rewards)) state.rewards = [];   // 奖励（目标/劳动/惩罚），随作业一起多端同步
   if(!state._delR) state._delR = {};          // 奖励删除墓碑：跨端同步删除
+  // 兼容旧数据：补齐 done 字段（目标默认未完成；劳动/惩罚默认已完成）
+  (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
   /* 迁移：旧版常用词存于独立 localStorage 键 wb_hwdsk_hw_v1，并入 state.hw 一并同步 */
   try{
     const oldHW = JSON.parse(localStorage.getItem(HW_KEY)||"null");
@@ -2016,12 +2033,12 @@ function renderMonth(){
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
     });
   }
-  // 额外奖励汇总（本月）：目标奖励 + 劳动奖励 − 额外惩罚（仅计入「本月」且已勾选的项）
+  // 额外奖励汇总（本月）：目标奖励(仅已完成结算) + 劳动奖励 − 额外惩罚（劳动/惩罚默认完成实时结算）
   const ym = y+"-"+pad2(m+1);
   let goalStars=0, laborStars=0, penStars=0;
   (state.rewards||[]).forEach(r=>{
-    if(!r.on) return;                          // 未勾选「计入」不统计
     if(rewardMonth(r)!==ym) return;            // 仅统计归属本月
+    if(!rewardDone(r)) return;                 // 目标未完成不结算；劳动/惩罚默认完成
     if(r.type==="goal") goalStars += (r.stars||0);
     else if(r.type==="labor") laborStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
@@ -2128,14 +2145,17 @@ function renderMonth(){
    删除走墓碑 state._delR[id]，多端合并时不复活。 */
 function getReward(id){ return (state.rewards||[]).find(r=>r.id===id); }
 function rewardMonth(r){ if(r.type==="goal" && r.deadline) return r.deadline.slice(0,7); return r.month || ymd(new Date()).slice(0,7); }
+// 劳动/惩罚默认完成并实时结算；目标需手动标记完成
+function rewardDone(r){ if(r.type==="goal") return !!r.done; return true; }
 function addReward(type, content, stars, o={}){
   const r = { id:uid(), type, content:(content||"").trim(), stars:Math.max(1, stars|0||1),
-              on:true, month:(o.month||ymd(new Date()).slice(0,7)), deadline:(o.deadline||null), _u:Date.now() };
+              done:(type!=="goal"), month:(o.month||ymd(new Date()).slice(0,7)), deadline:(o.deadline||null), _u:Date.now() };
   state.rewards = state.rewards || [];
   state.rewards.push(r); save(); renderReward(); renderMonth(); toast("已添加奖励");
 }
-function toggleReward(id){ const r=getReward(id); if(!r) return; r.on=!r.on; touch(r); save(); renderReward(); renderMonth(); }
+function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
+function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
 function openRewardAdd(type){
   window.rwAddType = type;
   const curYM = ymd(new Date()).slice(0,7);
@@ -2151,7 +2171,7 @@ function openRewardAdd(type){
       <div class="fld"><label>归属月份</label><input type="month" id="rwMonth" value="${curYM}"></div>
       <div class="fld"><label>${starsLabel}</label><input type="number" min="1" id="rwStars" value="1"></div>
       <button class="lbtn" onclick="commitReward()">保存</button>
-      <div class="rw-hint">「归属月份」决定该奖励计入哪个月的星星统计；目标奖励默认按「完成期限」所在月份。</div>
+      <div class="rw-hint">劳动/惩罚添加即结算；目标奖励请填「完成期限」——它决定目标归属哪个月，添加后请在卡片内点 ✔ 标记是否完成（逾期未完成显示「已逾期」，星星不结算）。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitReward(); };
@@ -2167,38 +2187,94 @@ function commitReward(){
   closeSheet();
 }
 function renderReward(){
-  const types = [
-    {k:"goal",    name:"月度目标奖励", desc:"设定本月目标，达成后计入额外奖励星", stars:"var(--sun)"},
-    {k:"labor",   name:"劳动奖励",     desc:"完成额外劳动，计入奖励星",           stars:"var(--green)"},
-    {k:"penalty", name:"额外惩罚",     desc:"违规或未达标，扣除星星",             stars:"var(--red)"}
-  ];
-  const curYM = ymd(new Date()).slice(0,7);
-  let html="";
-  types.forEach(tp=>{
-    const list = (state.rewards||[]).filter(r=>r.type===tp.k);
-    const monthStars = list.filter(r=>r.on && rewardMonth(r)===curYM).reduce((a,r)=>a + (tp.k==="penalty" ? -(r.stars||0) : (r.stars||0)), 0);
-    const sign = monthStars<0 ? "−" : "+";
-    html += `<div class="rw-card ${tp.k}">
-      <div class="rw-head">
-        <div class="rw-h-left"><span class="rw-ic" style="color:${tp.stars}">${tp.k==="penalty"?"!":"★"}</span><div><div class="rw-name">${tp.name}</div><div class="rw-desc">${tp.desc}</div></div></div>
-        <div class="rw-add" onclick="openRewardAdd('${tp.k}')">＋</div>
-      </div>
-      <div class="rw-total">本月 <span class="${tp.k==="penalty"?"rs-pen":"rs-g"}">${sign}${Math.abs(monthStars)}</span> 星</div>`;
-    if(list.length===0) html += `<div class="empty-tip">暂无记录</div>`;
-    else html += list.map(r=>rwRow(r, tp.k)).join("");
-    html += `</div>`;
+  const ym = rewardView.getFullYear()+"-"+pad2(rewardView.getMonth()+1);
+  const y = rewardView.getFullYear(), m = rewardView.getMonth();
+  const label = y+"年"+(m+1)+"月";
+  const el = $("rewardMonthLabel"); if(el) el.textContent = label;
+  const today = ymd(new Date());
+
+  // —— 月度目标：仅显示 deadline 归属该月的目标，并按完成状态分桶 ——
+  const goals = (state.rewards||[]).filter(r=>r.type==="goal" && rewardMonth(r)===ym);
+  const active=[], overdue=[], done=[];
+  goals.forEach(r=>{
+    const dl = r.deadline || null;
+    if(r.done) done.push(r);
+    else if(dl && dl < today) overdue.push(r);          // 截止日期已过且未完成
+    else active.push(r);                                 // 进行中（未到截止日）
   });
+  active.sort((a,b)=> (a.deadline||"9999").localeCompare(b.deadline||"9999"));   // 临近截止靠前
+  overdue.sort((a,b)=> (b.deadline||"").localeCompare(a.deadline||""));
+  done.sort((a,b)=> (b.deadline||"").localeCompare(a.deadline||""));
+  const goalSettled = done.reduce((a,r)=>a+(r.stars||0),0);
+  const goalPending = active.concat(overdue).reduce((a,r)=>a+(r.stars||0),0);
+
+  // —— 劳动 / 惩罚：按归属月份，默认完成实时结算 ——
+  const labors = (state.rewards||[]).filter(r=>r.type==="labor" && r.month===ym);
+  const pens   = (state.rewards||[]).filter(r=>r.type==="penalty" && r.month===ym);
+  const laborStars = labors.reduce((a,r)=>a+(r.stars||0),0);
+  const penStars   = pens.reduce((a,r)=>a+(r.stars||0),0);
+
+  let html="";
+  // 月度目标奖励卡片
+  html += `<div class="rw-card goal">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun)">★</span><div><div class="rw-name">月度目标奖励</div><div class="rw-desc">截止至${label}的目标</div></div></div>
+      <div class="rw-add" onclick="openRewardAdd('goal')">＋</div>
+    </div>
+    <div class="rw-total">本月结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
+  if(goals.length===0) html += `<div class="empty-tip">本月暂无目标</div>`;
+  else html += active.concat(overdue, done).map(r=>goalRow(r)).join("");
+  html += `</div>`;
+
+  // 劳动奖励卡片
+  html += `<div class="rw-card labor">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--green)">★</span><div><div class="rw-name">劳动奖励</div><div class="rw-desc">完成即结算，默认完成</div></div></div>
+      <div class="rw-add" onclick="openRewardAdd('labor')">＋</div>
+    </div>
+    <div class="rw-total">本月结算 <span class="rs-g">+${laborStars}</span> 星</div>`;
+  if(labors.length===0) html += `<div class="empty-tip">暂无记录</div>`;
+  else html += labors.map(r=>rwRow(r,"labor")).join("");
+  html += `</div>`;
+
+  // 额外惩罚卡片
+  html += `<div class="rw-card penalty">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--red)">!</span><div><div class="rw-name">额外惩罚</div><div class="rw-desc">违规即扣星，默认完成</div></div></div>
+      <div class="rw-add" onclick="openRewardAdd('penalty')">＋</div>
+    </div>
+    <div class="rw-total">本月结算 <span class="rs-pen">−${penStars}</span> 星</div>`;
+  if(pens.length===0) html += `<div class="empty-tip">暂无记录</div>`;
+  else html += pens.map(r=>rwRow(r,"penalty")).join("");
+  html += `</div>`;
+
   $("rewardContent").innerHTML = html;
+}
+// 目标行：带「完成」勾选，按完成状态显示 进行中/已逾期/已完成
+function goalRow(r){
+  const starsTxt = "+" + (r.stars||0) + " 星";
+  const dl = r.deadline ? ("期限 "+r.deadline.slice(5)) : "无期限";
+  let cls="", statusTag="", statusCls="";
+  if(r.done){ cls="done"; statusTag="已完成"; statusCls="st-done"; }
+  else if(r.deadline && r.deadline < ymd(new Date())){ cls="overdue"; statusTag="已逾期"; statusCls="st-ov"; }
+  else { cls="active"; statusTag="待结算"; statusCls="st-pend"; }
+  return `<div class="rw-row goal ${cls}">
+    <button class="chk ${r.done?"done":""}" onclick="toggleRewardDone('${r.id}')">${chkSvg(r.done)}</button>
+    <div class="rw-main">
+      <div class="rw-title">${esc(r.content)}</div>
+      <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
+    </div>
+    <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
+  </div>`;
 }
 function rwRow(r, type){
   const pen = type==="penalty";
   const starsTxt = (pen?"−":"+") + (r.stars||0) + " 星";
-  const tag = (type==="goal" && r.deadline) ? ("期限 "+r.deadline.slice(5)) : ("归属 "+r.month);
-  return `<div class="rw-row ${r.on?"on":""}">
-    <button class="chk ${r.on?"done":""}" onclick="toggleReward('${r.id}')">${chkSvg(r.on)}</button>
+  const tag = "归属 "+r.month;
+  return `<div class="rw-row ${type} done-auto">
     <div class="rw-main">
       <div class="rw-title">${esc(r.content)}</div>
-      <div class="rw-meta"><span class="rw-tag">${tag}</span><span class="rw-stars ${pen?"pen":""}">${starsTxt}</span></div>
+      <div class="rw-meta"><span class="rw-tag">${tag}</span><span class="rw-stars ${pen?"pen":""}">${starsTxt}</span><span class="rw-status st-done">已结算</span></div>
     </div>
     <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
   </div>`;
@@ -2438,6 +2514,7 @@ async function syncPull(mode){
     if(!state._delHW) state._delHW = {};         // 常用词删除墓碑
     if(!Array.isArray(state.rewards)) state.rewards = [];   // 奖励：随作业一起同步
     if(!state._delR) state._delR = {};           // 奖励删除墓碑
+    (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
     saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
@@ -2904,7 +2981,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.49";
+const APP_VERSION = "2026.09.10.50";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
