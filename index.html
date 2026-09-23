@@ -2076,7 +2076,8 @@ function renderMonth(){
   <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
 
   // 额外奖励统计（本月）：打卡奖励 + 目标奖励 + 劳动奖励 − 额外惩罚 = 本月星星
-  grid += `<div class="reward-stat">
+  // （先构建成 rewardBlock，排在「本月未完成&未订正」清单之后——用户要求未完成/未订正在额外奖励统计之上）
+  let rewardBlock = `<div class="reward-stat">
     <div class="rs-h">额外奖励统计（本月）</div>
     <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${stars}</b></div>
     <div class="rs-row"><span>目标奖励</span><b class="rs-g">+${goalStars}</b></div>
@@ -2134,7 +2135,7 @@ function renderMonth(){
     mu += `<div class="mu-empty">本月暂无未订正项 🎉</div>`;
   }
   mu += `</div>`;
-  grid += mu;
+  grid += mu + rewardBlock;   // 未完成&未订正（mu）排在未额外奖励统计（rewardBlock）之上
 
   $("monthContent").innerHTML = kpi + grid;
 }
@@ -2984,7 +2985,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.52";
+const APP_VERSION = "2026.09.10.53";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
