@@ -497,6 +497,11 @@
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
   .month-note{ font-size:14px; font-weight:700; color:var(--sun); margin-top:8px; padding:10px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  /* 本月合格状态：合格=绿 / 不合格=橙 / 未结束=灰 */
+  .month-qual{ font-size:16px; font-weight:800; letter-spacing:.5px; margin-top:8px; padding:11px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  .month-qual.qual-ok{ color:var(--green); }
+  .month-qual.qual-fail{ color:var(--sun); }
+  .month-qual.qual-pending{ color:var(--muted); }
   /* 本月未完成清单（日历下方，点击跳转去完成） */
   .mu{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
   .mu-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
@@ -688,7 +693,9 @@
           <!-- 作业统计 -->
           <section class="page" id="page-stats">
             <div class="sticky">
-              <div class="phead"><h1>统计</h1></div>
+              <div class="phead"><h1>统计</h1>
+                <button class="today-btn" id="statTodayBtn" onclick="gotoStatToday()">今天</button>
+              </div>
               <div class="sum-range">
                 <button id="sumYearBtn"  onclick="setStatMode('year')">年</button>
                 <button id="sumMonthBtn" onclick="setStatMode('month')">月</button>
@@ -1899,7 +1906,14 @@ function applyStatMode(){
   const sc=$("statsContent"), mc=$("summaryContent");
   if(sc) sc.style.display = (statMode==="day") ? "" : "none";
   if(mc) mc.style.display = (statMode==="day") ? "none" : "";
+  const tb=$("statTodayBtn");                       // 快速回到今日（已在「日+今天」时隐藏）
+  if(tb) tb.classList.toggle("show", !(statMode==="day" && sameDay(viewDate,new Date())));
   renderSumCal();
+}
+function gotoStatToday(){                            // 统计栏：一键回到今天（切「日」视图）
+  viewDate = new Date(); viewDate.setHours(0,0,0,0);
+  statMode = "day"; sumCalCollapsed = true;
+  refreshHeader(); renderStats();
 }
 function setStatMode(m){
   statMode = m;
@@ -2059,6 +2073,15 @@ function renderMonth(){
     <div class="kpi-cell"><div class="v g">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
   </div>`;
 
+  // 月度合格状态：未完成 + 未订正 > 10 → 不合格；本月未结束（当月或未来月）→ 待结算
+  const badTotal = unfinished + uncorr;
+  const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const isPastMonth = new Date(y,m,1) < curMonthStart;
+  let qualCls, qualTxt;
+  if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
+  else if(badTotal > 10){ qualCls="qual-fail"; qualTxt="本月不合格"; }
+  else { qualCls="qual-ok"; qualTxt="本月合格"; }
+
   let grid = `<div class="cal"><div class="cal-grid">`;
   WEEK.forEach(w=> grid+=`<div class="cal-dow">${w[1]}</div>`);
   for(let i=0;i<startDow;i++) grid+=`<div class="cal-cell empty"></div>`;
@@ -2077,7 +2100,8 @@ function renderMonth(){
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
     <span><i style="background:var(--sun-light)"></i>D+2 内 1 星</span>
   </div>
-  <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div></div>`;
+  <div class="month-note">月度合格标准：未完成项目个数 ≤ 10 项</div>
+  <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡奖励 + 目标奖励 + 劳动奖励 − 额外惩罚 = 本月星星
   // （先构建成 rewardBlock，排在「本月未完成&未订正」清单之后——用户要求未完成/未订正在额外奖励统计之上）
@@ -2989,7 +3013,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.55";
+const APP_VERSION = "2026.09.10.56";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
