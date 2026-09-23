@@ -2193,8 +2193,8 @@ function renderReward(){
   const el = $("rewardMonthLabel"); if(el) el.textContent = label;
   const today = ymd(new Date());
 
-  // —— 月度目标：仅显示 deadline 归属该月的目标，并按完成状态分桶 ——
-  const goals = (state.rewards||[]).filter(r=>r.type==="goal" && rewardMonth(r)===ym);
+  // —— 月度目标：累计显示 deadline 归属 ≤ 查看月的所有历史目标（尚未删除的），并按完成状态分桶 ——
+  const goals = (state.rewards||[]).filter(r=>r.type==="goal" && rewardMonth(r) <= ym);
   const active=[], overdue=[], done=[];
   goals.forEach(r=>{
     const dl = r.deadline || null;
@@ -2218,11 +2218,11 @@ function renderReward(){
   // 月度目标奖励卡片
   html += `<div class="rw-card goal">
     <div class="rw-head">
-      <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun)">★</span><div><div class="rw-name">月度目标奖励</div><div class="rw-desc">截止至${label}的目标</div></div></div>
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun)">★</span><div><div class="rw-name">月度目标奖励</div><div class="rw-desc">累计至${label}的目标（含历史）</div></div></div>
       <div class="rw-add" onclick="openRewardAdd('goal')">＋</div>
     </div>
-    <div class="rw-total">本月结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
-  if(goals.length===0) html += `<div class="empty-tip">本月暂无目标</div>`;
+    <div class="rw-total">累计结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
+  if(goals.length===0) html += `<div class="empty-tip">暂无目标</div>`;
   else html += active.concat(overdue, done).map(r=>goalRow(r)).join("");
   html += `</div>`;
 
@@ -2981,7 +2981,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.50";
+const APP_VERSION = "2026.09.10.51";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
