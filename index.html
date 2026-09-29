@@ -2058,7 +2058,7 @@ function renderMonth(){
   const ym = y+"-"+pad2(m+1);
   let goalStars=0, laborStars=0, penStars=0;
   (state.rewards||[]).forEach(r=>{
-    if(rewardMonth(r)!==ym) return;            // 仅统计归属本月
+    if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标：完成之月；劳动/惩罚：归属月）
     if(!rewardDone(r)) return;                 // 目标未完成不结算；劳动/惩罚默认完成
     if(r.type==="goal") goalStars += (r.stars||0);
     else if(r.type==="labor") laborStars += (r.stars||0);
@@ -2169,23 +2169,29 @@ function renderMonth(){
 }
 
 /* ============ 奖励栏（目标奖励 / 劳动奖励 / 额外惩罚） ============
-   数据：state.rewards = [{id, type:'goal'|'labor'|'penalty', content, stars, on, month, deadline, _u}]
+   数据：state.rewards = [{id, type:'goal'|'labor'|'penalty', content, stars, on, month, added, deadline, doneMonth, _u}]
    · type=goal  → 月度目标奖励（有 完成期限 deadline）；labor/penalty 无 deadline
-   · month     → 归属月份(YYYY-MM)，决定计入哪个月度统计；goal 优先用 deadline 的月份
+   · month     → 归属/结算月份(YYYY-MM)；goal 优先用 deadline 的月份；劳动/惩罚决定计入哪个月
+   · added     → 目标添加之月(YYYY-MM)，目标显示窗口下界（缺省回落 month）
+   · doneMonth → 目标完成之月(YYYY-MM)，目标显示窗口上界（完成时写入），星星结算到该月
+   · 目标显示窗口：[added, done?doneMonth:deadlineMonth]，窗口之外不显示；未完成不结算
    · on        → 是否「计入本月星星」（勾选才生效）
    · stars     → 奖励星数（penalty 为正值，统计时作减法）
    删除走墓碑 state._delR[id]，多端合并时不复活。 */
 function getReward(id){ return (state.rewards||[]).find(r=>r.id===id); }
 function rewardMonth(r){ if(r.type==="goal" && r.deadline) return r.deadline.slice(0,7); return r.month || ymd(new Date()).slice(0,7); }
+// 目标显示窗口：添加之月 → 结算完成之月(已完成) / 截止之月(未完成)；窗口之外不显示
+function rewardAddMonth(r){ return r.added || r.month || rewardMonth(r); }
+function rewardSettleMonth(r){ if(r.type==="goal"){ if(r.done) return r.doneMonth || rewardMonth(r); return rewardMonth(r); } return r.month; }
 // 劳动/惩罚默认完成并实时结算；目标需手动标记完成
 function rewardDone(r){ if(r.type==="goal") return !!r.done; return true; }
 function addReward(type, content, stars, o={}){
   const r = { id:uid(), type, content:(content||"").trim(), stars:Math.max(1, stars|0||1),
-              done:(type!=="goal"), month:(o.month||ymd(new Date()).slice(0,7)), deadline:(o.deadline||null), _u:Date.now() };
+              done:(type!=="goal"), month:(o.month||ymd(new Date()).slice(0,7)), added:(o.month||ymd(new Date()).slice(0,7)), deadline:(o.deadline||null), _u:Date.now() };
   state.rewards = state.rewards || [];
   state.rewards.push(r); save(); renderReward(); renderMonth(); toast("已添加奖励");
 }
-function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; touch(r); save(); renderReward(); renderMonth(); }
+function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
 function openRewardAdd(type){
@@ -2194,16 +2200,17 @@ function openRewardAdd(type){
   const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外惩罚");
   const title = type==="goal" ? "完成内容" : "内容";
   const starsLabel = type==="penalty" ? "额外扣星数量" : "额外奖励额度";
+  const monthLabel = type==="goal" ? "起始月份（添加之月）" : "归属月份（结算月）";
   const deadlineField = type==="goal"
     ? `<div class="fld"><label>完成期限</label><input type="date" id="rwDeadline"></div>` : "";
   const html = `<div class="sheet-h">添加${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
       <div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…"></div>
       ${deadlineField}
-      <div class="fld"><label>归属月份</label><input type="month" id="rwMonth" value="${curYM}"></div>
+      <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${curYM}"></div>
       <div class="fld"><label>${starsLabel}</label><input type="number" min="1" id="rwStars" value="1"></div>
       <button class="lbtn" onclick="commitReward()">确认添加</button>
-      <div class="rw-hint">劳动/惩罚添加即结算；目标奖励请填「完成期限」——它决定目标归属哪个月，添加后请在卡片内点 ✔ 标记是否完成（逾期未完成显示「已逾期」，星星不结算）。</div>
+      <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月（卡片内点 ✔ 标记）或截止之月为止；逾期未完成显示「已逾期」且星星不结算。劳动/惩罚添加即结算，归属月份即结算月。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitReward(); };
@@ -2225,8 +2232,8 @@ function renderReward(){
   const el = $("rewardMonthLabel"); if(el) el.textContent = label;
   const today = ymd(new Date());
 
-  // —— 月度目标：累计显示 deadline 归属 ≤ 查看月的所有历史目标（尚未删除的），并按完成状态分桶 ——
-  const goals = (state.rewards||[]).filter(r=>r.type==="goal" && rewardMonth(r) <= ym);
+  // —— 月度目标：按时间窗口[添加之月, 结算/截止之月]显示（窗口之外不显示），并按完成状态分桶 ——
+  const goals = (state.rewards||[]).filter(r=>r.type==="goal" && rewardAddMonth(r) <= ym && ym <= rewardSettleMonth(r));
   const active=[], overdue=[], done=[];
   goals.forEach(r=>{
     const dl = r.deadline || null;
@@ -2253,7 +2260,7 @@ function renderReward(){
       <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun)">★</span><div><div class="rw-name">月度目标奖励</div><div class="rw-desc">累计至${label}的目标（含历史）</div></div></div>
       <div class="rw-add" onclick="openRewardAdd('goal')">＋</div>
     </div>
-    <div class="rw-total">累计结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
+    <div class="rw-total">已结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
   if(goals.length===0) html += `<div class="empty-tip">暂无目标</div>`;
   else html += active.concat(overdue, done).map(r=>goalRow(r)).join("");
   html += `</div>`;
@@ -3013,7 +3020,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.57";
+const APP_VERSION = "2026.09.10.58";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
