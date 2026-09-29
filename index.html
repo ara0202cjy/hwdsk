@@ -444,6 +444,8 @@
   .rw-stars.pen{color:var(--red);}
   .rw-del{flex:0 0 auto; width:30px; height:30px; border-radius:8px; background:#f6f2e9; color:#b08; display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .rw-del svg{stroke:#c0392b;}
+  .rw-edit{flex:0 0 auto; width:30px; height:30px; border-radius:8px; background:#eef3f1; color:var(--ink-2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .rw-edit svg{stroke:var(--ink-2);}
   .rw-row .chk{width:24px; height:24px; border-radius:50%; border:2px solid #cfc6b4; background:#fff; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .rw-row .chk.done{background:var(--green); border-color:var(--green);}
   .rw-form .fld{margin-bottom:12px;}
@@ -2194,26 +2196,55 @@ function addReward(type, content, stars, o={}){
 function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
-function openRewardAdd(type){
-  window.rwAddType = type;
+function rewardFormHTML(type, r){
   const curYM = ymd(new Date()).slice(0,7);
-  const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外惩罚");
   const title = type==="goal" ? "完成内容" : "内容";
   const starsLabel = type==="penalty" ? "额外扣星数量" : "额外奖励额度";
   const monthLabel = type==="goal" ? "起始月份（添加之月）" : "归属月份（结算月）";
   const deadlineField = type==="goal"
-    ? `<div class="fld"><label>完成期限</label><input type="date" id="rwDeadline"></div>` : "";
+    ? `<div class="fld"><label>完成期限</label><input type="date" id="rwDeadline" value="${r&&r.deadline?r.deadline:""}"></div>` : "";
+  const contentVal = r ? esc(r.content) : "";
+  const monthVal = r ? (r.added||r.month||curYM) : curYM;
+  const starsVal = r ? (r.stars||1) : 1;
+  return `<div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…" value="${contentVal}"></div>
+    ${deadlineField}
+    <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${monthVal}"></div>
+    <div class="fld"><label>${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>`;
+}
+function openRewardAdd(type){
+  window.rwEditId = null; window.rwAddType = type;
+  const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外惩罚");
   const html = `<div class="sheet-h">添加${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
-      <div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…"></div>
-      ${deadlineField}
-      <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${curYM}"></div>
-      <div class="fld"><label>${starsLabel}</label><input type="number" min="1" id="rwStars" value="1"></div>
+      ${rewardFormHTML(type, null)}
       <button class="lbtn" onclick="commitReward()">确认添加</button>
       <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月（卡片内点 ✔ 标记）或截止之月为止；逾期未完成显示「已逾期」且星星不结算。劳动/惩罚添加即结算，归属月份即结算月。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitReward(); };
+}
+// 设定后的「再次编辑」窗口：预填当前数据，可改 内容 / 起始月份 / 完成期限 / 星数
+function openRewardEdit(id){
+  const r = getReward(id); if(!r) return;
+  window.rwEditId = id; window.rwAddType = r.type;
+  const name = r.type==="goal" ? "月度目标奖励" : (r.type==="labor" ? "劳动奖励" : "额外惩罚");
+  const html = `<div class="sheet-h">编辑${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+    <div class="rw-form">
+      ${rewardFormHTML(r.type, r)}
+      <button class="lbtn" onclick="commitRewardEdit()">保存修改</button>
+      <div class="rw-hint">修改「起始月份 / 完成期限」会改变目标在哪些月份显示；星星结算月=完成之月（已完成）或截止之月。完成状态请在卡片上用 ✔ 切换。</div>
+    </div>`;
+  openSheet(html);
+  const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitRewardEdit(); };
+}
+function commitRewardEdit(){
+  const id = window.rwEditId; const r = getReward(id); if(!r) return;
+  const content = ($("rwContent").value||"").trim(); if(!content){ toast("请输入内容"); return; }
+  const stars = Math.max(1, parseInt($("rwStars").value||"1",10)||1);
+  const added = ($("rwMonth").value||"").slice(0,7) || ymd(new Date()).slice(0,7);
+  const deadline = r.type==="goal" ? ($("rwDeadline").value||"") : "";
+  r.content = content; r.stars = stars; r.added = added; r.month = added; r.deadline = deadline;
+  touch(r); save(); renderReward(); renderMonth(); closeSheet();
 }
 function commitReward(){
   const type = window.rwAddType;
@@ -2303,6 +2334,7 @@ function goalRow(r){
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
     </div>
+    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
     <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
   </div>`;
 }
@@ -2315,6 +2347,7 @@ function rwRow(r, type){
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${tag}</span><span class="rw-stars ${pen?"pen":""}">${starsTxt}</span><span class="rw-status st-done">已结算</span></div>
     </div>
+    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
     <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
   </div>`;
 }
@@ -3020,7 +3053,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.58";
+const APP_VERSION = "2026.09.10.59";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
