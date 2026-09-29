@@ -446,6 +446,11 @@
   .rw-del svg{stroke:#c0392b;}
   .rw-edit{flex:0 0 auto; width:30px; height:30px; border-radius:8px; background:#eef3f1; color:var(--ink-2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .rw-edit svg{stroke:var(--ink-2);}
+  /* 额外奖惩弹层：奖励(+)/惩罚(−) 切换 */
+  .rw-sign{display:flex; gap:8px; margin-bottom:12px;}
+  .rw-sign .sg{flex:1; padding:11px; border:1px solid #e3dccb; border-radius:10px; background:#fff; font-size:15px; font-weight:700; color:var(--muted); cursor:pointer;}
+  .rw-sign .sg.on[data-t="bonus"]{background:var(--green); border-color:var(--green); color:#fff;}
+  .rw-sign .sg.on[data-t="penalty"]{background:var(--red); border-color:var(--red); color:#fff;}
   .rw-row .chk{width:24px; height:24px; border-radius:50%; border:2px solid #cfc6b4; background:#fff; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .rw-row .chk.done{background:var(--green); border-color:var(--green);}
   .rw-form .fld{margin-bottom:12px;}
@@ -2056,17 +2061,18 @@ function renderMonth(){
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
     });
   }
-  // 额外奖励汇总（本月）：目标奖励(仅已完成结算) + 劳动奖励 − 额外惩罚（劳动/惩罚默认完成实时结算）
+  // 额外奖励汇总（本月）：目标奖励(仅已完成结算) + 劳动奖励 + 额外奖励(正) − 额外惩罚(负)（劳动/奖惩默认完成实时结算）
   const ym = y+"-"+pad2(m+1);
-  let goalStars=0, laborStars=0, penStars=0;
+  let goalStars=0, laborStars=0, bonusStars=0, penStars=0;
   (state.rewards||[]).forEach(r=>{
-    if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标：完成之月；劳动/惩罚：归属月）
-    if(!rewardDone(r)) return;                 // 目标未完成不结算；劳动/惩罚默认完成
+    if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标：完成之月；劳动/奖惩：归属月）
+    if(!rewardDone(r)) return;                 // 目标未完成不结算；劳动/奖惩默认完成
     if(r.type==="goal") goalStars += (r.stars||0);
     else if(r.type==="labor") laborStars += (r.stars||0);
+    else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + laborStars - penStars;   // 本月星星 = 打卡奖励 + 目标奖励 + 劳动奖励 − 额外惩罚
+  const monthStars = stars + goalStars + laborStars + bonusStars - penStars;   // 本月星星 = 打卡 + 目标 + 劳动 + 额外奖励(正) − 额外惩罚(负)
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
@@ -2105,15 +2111,16 @@ function renderMonth(){
   <div class="month-note">月度合格标准：未完成 + 未订正 ≤ 10 项</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
-  // 额外奖励统计（本月）：打卡奖励 + 目标奖励 + 劳动奖励 − 额外惩罚 = 本月星星
+  // 额外奖励统计（本月）：打卡 + 目标 + 劳动 + 额外奖励(正) − 额外惩罚(负) = 本月星星
   // （先构建成 rewardBlock，排在「本月未完成&未订正」清单之后——用户要求未完成/未订正在额外奖励统计之上）
   let rewardBlock = `<div class="reward-stat">
     <div class="rs-h">额外奖励统计（本月）</div>
     <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${stars}</b></div>
     <div class="rs-row"><span>目标奖励</span><b class="rs-g">+${goalStars}</b></div>
     <div class="rs-row"><span>劳动奖励</span><b class="rs-g">+${laborStars}</b></div>
+    <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${laborStars} − ${penStars} = <b>${monthStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${laborStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
@@ -2198,6 +2205,7 @@ function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state.
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
 function rewardFormHTML(type, r){
   const curYM = ymd(new Date()).slice(0,7);
+  const isExtra = (type==="bonus" || type==="penalty");
   const title = type==="goal" ? "完成内容" : "内容";
   const starsLabel = type==="penalty" ? "额外扣星数量" : "额外奖励额度";
   const monthLabel = type==="goal" ? "起始月份（添加之月）" : "归属月份（结算月）";
@@ -2206,14 +2214,27 @@ function rewardFormHTML(type, r){
   const contentVal = r ? esc(r.content) : "";
   const monthVal = r ? (r.added||r.month||curYM) : curYM;
   const starsVal = r ? (r.stars||1) : 1;
-  return `<div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…" value="${contentVal}"></div>
+  const signToggle = isExtra ? `<div class="rw-sign">
+      <button type="button" class="sg ${type!=="penalty"?"on":""}" data-t="bonus" onclick="setRwSign('bonus')">奖励 +</button>
+      <button type="button" class="sg ${type==="penalty"?"on":""}" data-t="penalty" onclick="setRwSign('penalty')">惩罚 −</button>
+    </div>` : "";
+  return `${signToggle}
+    <div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…" value="${contentVal}"></div>
     ${deadlineField}
     <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${monthVal}"></div>
-    <div class="fld"><label>${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>`;
+    <div class="fld"><label class="rw-stars-label">${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>`;
+}
+// 额外奖惩弹层：切换 奖励(+)/惩罚(−)，同步类型与星数标签
+function setRwSign(t){
+  window.rwAddType = t;
+  const sg = document.querySelectorAll("#sheet .rw-sign .sg");
+  for(let i=0;i<sg.length;i++) sg[i].classList.toggle("on", sg[i].getAttribute("data-t")===t);
+  const lbl = document.querySelector("#sheet .rw-stars-label");
+  if(lbl) lbl.textContent = (t==="penalty" ? "额外扣星数量" : "额外奖励额度");
 }
 function openRewardAdd(type){
   window.rwEditId = null; window.rwAddType = type;
-  const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外惩罚");
+  const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外奖惩");
   const html = `<div class="sheet-h">添加${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
       ${rewardFormHTML(type, null)}
@@ -2227,7 +2248,7 @@ function openRewardAdd(type){
 function openRewardEdit(id){
   const r = getReward(id); if(!r) return;
   window.rwEditId = id; window.rwAddType = r.type;
-  const name = r.type==="goal" ? "月度目标奖励" : (r.type==="labor" ? "劳动奖励" : "额外惩罚");
+  const name = r.type==="goal" ? "月度目标奖励" : (r.type==="labor" ? "劳动奖励" : "额外奖惩");
   const html = `<div class="sheet-h">编辑${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
       ${rewardFormHTML(r.type, r)}
@@ -2243,6 +2264,7 @@ function commitRewardEdit(){
   const stars = Math.max(1, parseInt($("rwStars").value||"1",10)||1);
   const added = ($("rwMonth").value||"").slice(0,7) || ymd(new Date()).slice(0,7);
   const deadline = r.type==="goal" ? ($("rwDeadline").value||"") : "";
+  r.type = window.rwAddType;   // 额外奖惩可借弹层切换 奖励(+)/惩罚(−)
   r.content = content; r.stars = stars; r.added = added; r.month = added; r.deadline = deadline;
   touch(r); save(); renderReward(); renderMonth(); closeSheet();
 }
@@ -2278,11 +2300,13 @@ function renderReward(){
   const goalSettled = done.reduce((a,r)=>a+(r.stars||0),0);
   const goalPending = active.concat(overdue).reduce((a,r)=>a+(r.stars||0),0);
 
-  // —— 劳动 / 惩罚：按归属月份，默认完成实时结算 ——
+  // —— 劳动：按归属月份，默认完成实时结算 ——
   const labors = (state.rewards||[]).filter(r=>r.type==="labor" && r.month===ym);
-  const pens   = (state.rewards||[]).filter(r=>r.type==="penalty" && r.month===ym);
   const laborStars = labors.reduce((a,r)=>a+(r.stars||0),0);
-  const penStars   = pens.reduce((a,r)=>a+(r.stars||0),0);
+  // —— 额外奖惩：奖励(正)+惩罚(负)，按归属月份，默认完成实时结算 ——
+  const extras = (state.rewards||[]).filter(r=> (r.type==="bonus"||r.type==="penalty") && r.month===ym);
+  const extraBonusStars = extras.filter(r=>r.type==="bonus").reduce((a,r)=>a+(r.stars||0),0);
+  const extraPenStars   = extras.filter(r=>r.type==="penalty").reduce((a,r)=>a+(r.stars||0),0);
 
   let html="";
   // 月度目标奖励卡片
@@ -2307,15 +2331,15 @@ function renderReward(){
   else html += labors.map(r=>rwRow(r,"labor")).join("");
   html += `</div>`;
 
-  // 额外惩罚卡片
+  // 额外奖惩卡片（奖励为正、惩罚为负，均计入本月星星）
   html += `<div class="rw-card penalty">
     <div class="rw-head">
-      <div class="rw-h-left"><span class="rw-ic" style="color:var(--red)">!</span><div><div class="rw-name">额外惩罚</div><div class="rw-desc">违规即扣星，默认完成</div></div></div>
-      <div class="rw-add" onclick="openRewardAdd('penalty')">＋</div>
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--red)">!</span><div><div class="rw-name">额外奖惩</div><div class="rw-desc">奖励为正、惩罚为负，均计入本月星星</div></div></div>
+      <div class="rw-add" onclick="openRewardAdd('bonus')">＋</div>
     </div>
-    <div class="rw-total">本月结算 <span class="rs-pen">−${penStars}</span> 星</div>`;
-  if(pens.length===0) html += `<div class="empty-tip">暂无记录</div>`;
-  else html += pens.map(r=>rwRow(r,"penalty")).join("");
+    <div class="rw-total">本月结算 <span class="rs-g">+${extraBonusStars}</span> · <span class="rs-pen">−${extraPenStars}</span> 星</div>`;
+  if(extras.length===0) html += `<div class="empty-tip">暂无记录</div>`;
+  else html += extras.map(r=>rwRow(r, r.type)).join("");
   html += `</div>`;
 
   $("rewardContent").innerHTML = html;
@@ -3053,7 +3077,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.59";
+const APP_VERSION = "2026.09.10.60";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
