@@ -415,6 +415,7 @@
   .rw-card.penalty{border-left:4px solid var(--red);}
   .rw-card.goal{border-left:4px solid var(--sun);}
   .rw-card.labor{border-left:4px solid var(--green);}
+  .rw-card.checkin{border-left:4px solid var(--sun-light);}
   .rw-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
   .rw-h-left{display:flex; align-items:center; gap:10px; min-width:0;}
   .rw-ic{font-size:22px; font-weight:800; line-height:1; flex:0 0 auto;}
@@ -446,6 +447,15 @@
   .rw-del svg{stroke:#c0392b;}
   .rw-edit{flex:0 0 auto; width:30px; height:30px; border-radius:8px; background:#eef3f1; color:var(--ink-2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .rw-edit svg{stroke:var(--ink-2);}
+  .rw-row.checkin.done{opacity:.55;}
+  .rw-row.checkin.done .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-row.checkin.overdue{opacity:.55;}
+  .rw-row.checkin.overdue .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-count{font-size:12px; font-weight:700; color:#c8761f; background:#fdf0e4; border-radius:6px; padding:1px 6px;}
+  .ck-btns{display:flex; gap:6px; flex:0 0 auto;}
+  .ck-btn{padding:7px 12px; border:1px solid var(--sun); border-radius:8px; background:#fff; color:var(--sun); font-size:13px; font-weight:800; cursor:pointer;}
+  .ck-btn.minus{border-color:#cfc6b4; color:var(--muted);}
+  .ck-btn:active{opacity:.8;}
   /* 额外奖惩弹层：奖励(+)/惩罚(−) 切换 */
   .rw-sign{display:flex; gap:8px; margin-bottom:12px;}
   .rw-sign .sg{flex:1; padding:11px; border:1px solid #e3dccb; border-radius:10px; background:#fff; font-size:15px; font-weight:700; color:var(--muted); cursor:pointer;}
@@ -1895,6 +1905,15 @@ function renderSumCal(){
     const click = isFuture ? "" : ` onclick="pickStatDay(${y},${m},${d})"`;
     html+=`<div class="${cls}"${click}${bg}><div>${d}</div></div>`;
   }
+  // 补齐最后一行：用下个月的日期填满（未来日标 future、不可点）
+  const trailing = (7 - ((startDow + daysInMonth) % 7)) % 7;
+  for(let i=1; i<=trailing; i++){
+    const dt=new Date(y,m,daysInMonth+i), dy=dt.getFullYear(), dm=dt.getMonth(), dd=dt.getDate();
+    const isFuture=dt>today, isSel=sameDay(dt,viewDate);
+    const cls="cal-cell"+(isFuture?" future":" wkpick")+(isSel?" sel":"");
+    const click = isFuture ? "" : ` onclick="pickStatDay(${dy},${dm},${dd})"`;
+    html+=`<div class="${cls}"${click}><div>${dd}</div></div>`;
+  }
   html+=`</div></div>`;
   html+=`<div class="sum-hint">点选某日 → 查看当日完成情况</div>`;
   wrap.innerHTML=html;
@@ -2061,18 +2080,19 @@ function renderMonth(){
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
     });
   }
-  // 额外奖励汇总（本月）：目标奖励(仅已完成结算) + 劳动奖励 + 额外奖励(正) − 额外惩罚(负)（劳动/奖惩默认完成实时结算）
+  // 额外奖励汇总（本月）：目标奖励 + 打卡奖励（均仅已完成结算） + 劳动奖励 + 额外奖励(正) − 额外惩罚(负)
   const ym = y+"-"+pad2(m+1);
-  let goalStars=0, laborStars=0, bonusStars=0, penStars=0;
+  let goalStars=0, checkinStars=0, laborStars=0, bonusStars=0, penStars=0;
   (state.rewards||[]).forEach(r=>{
-    if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标：完成之月；劳动/奖惩：归属月）
-    if(!rewardDone(r)) return;                 // 目标未完成不结算；劳动/奖惩默认完成
+    if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标/打卡：完成之月；劳动/奖惩：归属月）
+    if(!rewardDone(r)) return;                 // 目标/打卡未完成不结算；劳动/奖惩默认完成
     if(r.type==="goal") goalStars += (r.stars||0);
+    else if(r.type==="checkin") checkinStars += (r.stars||0);
     else if(r.type==="labor") laborStars += (r.stars||0);
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + laborStars + bonusStars - penStars;   // 本月星星 = 打卡 + 目标 + 劳动 + 额外奖励(正) − 额外惩罚(负)
+  const monthStars = stars + goalStars + checkinStars + laborStars + bonusStars - penStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 劳动 + 额外奖励(正) − 额外惩罚(负)
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
@@ -2115,12 +2135,13 @@ function renderMonth(){
   // （先构建成 rewardBlock，排在「本月未完成&未订正」清单之后——用户要求未完成/未订正在额外奖励统计之上）
   let rewardBlock = `<div class="reward-stat">
     <div class="rs-h">额外奖励统计（本月）</div>
-    <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${stars}</b></div>
+    <div class="rs-row"><span>每日作业</span><b class="rs-g">+${stars}</b></div>
     <div class="rs-row"><span>目标奖励</span><b class="rs-g">+${goalStars}</b></div>
+    <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${checkinStars}</b></div>
     <div class="rs-row"><span>劳动奖励</span><b class="rs-g">+${laborStars}</b></div>
     <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${laborStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${laborStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
@@ -2177,40 +2198,52 @@ function renderMonth(){
   $("monthContent").innerHTML = kpi + grid;
 }
 
-/* ============ 奖励栏（目标奖励 / 劳动奖励 / 额外惩罚） ============
-   数据：state.rewards = [{id, type:'goal'|'labor'|'penalty', content, stars, on, month, added, deadline, doneMonth, _u}]
-   · type=goal  → 月度目标奖励（有 完成期限 deadline）；labor/penalty 无 deadline
-   · month     → 归属/结算月份(YYYY-MM)；goal 优先用 deadline 的月份；劳动/惩罚决定计入哪个月
-   · added     → 目标添加之月(YYYY-MM)，目标显示窗口下界（缺省回落 month）
-   · doneMonth → 目标完成之月(YYYY-MM)，目标显示窗口上界（完成时写入），星星结算到该月
-   · 目标显示窗口：[added, done?doneMonth:deadlineMonth]，窗口之外不显示；未完成不结算
-   · on        → 是否「计入本月星星」（勾选才生效）
+/* ============ 奖励栏（目标奖励 / 打卡奖励 / 劳动奖励 / 额外奖惩） ============
+   数据：state.rewards = [{id, type:'goal'|'checkin'|'labor'|'bonus'|'penalty', content, stars, month, added, deadline, doneMonth, _u}]
+   · type=goal    → 月度目标奖励（有 完成期限 deadline，卡片 ✔ 标记完成）
+   · type=checkin → 打卡奖励（有 截止时间 deadline、目标打卡次数 target、当前次数 count；卡片「打卡+1」按钮，次数达 target 自动完成并结算到完成之月）
+   · type=labor   → 劳动奖励（无 deadline）
+   · type=bonus   → 额外奖励（正，无 deadline）；type=penalty → 额外惩罚（负，无 deadline）
+   · month     → 归属/结算月份(YYYY-MM)；goal/checkin 优先用 deadline 的月份；劳动/奖惩决定计入哪个月
+   · added     → 目标/打卡添加之月(YYYY-MM)，显示窗口下界（缺省回落 month）
+   · doneMonth → 目标/打卡完成之月(YYYY-MM)，显示窗口上界（完成时写入），星星结算到该月
+   · 显示窗口：[added, done?doneMonth:deadlineMonth]，窗口之外不显示；未完成不结算
    · stars     → 奖励星数（penalty 为正值，统计时作减法）
    删除走墓碑 state._delR[id]，多端合并时不复活。 */
 function getReward(id){ return (state.rewards||[]).find(r=>r.id===id); }
-function rewardMonth(r){ if(r.type==="goal" && r.deadline) return r.deadline.slice(0,7); return r.month || ymd(new Date()).slice(0,7); }
-// 目标显示窗口：添加之月 → 结算完成之月(已完成) / 截止之月(未完成)；窗口之外不显示
+function rewardMonth(r){ if((r.type==="goal"||r.type==="checkin") && r.deadline) return r.deadline.slice(0,7); return r.month || ymd(new Date()).slice(0,7); }
+// 目标/打卡显示窗口：添加之月 → 结算完成之月(已完成) / 截止之月(未完成)；窗口之外不显示
 function rewardAddMonth(r){ return r.added || r.month || rewardMonth(r); }
-function rewardSettleMonth(r){ if(r.type==="goal"){ if(r.done) return r.doneMonth || rewardMonth(r); return rewardMonth(r); } return r.month; }
-// 劳动/惩罚默认完成并实时结算；目标需手动标记完成
-function rewardDone(r){ if(r.type==="goal") return !!r.done; return true; }
+function rewardSettleMonth(r){ if(r.type==="goal"||r.type==="checkin"){ if(r.done) return r.doneMonth || rewardMonth(r); return rewardMonth(r); } return r.month; }
+// 劳动/奖惩默认完成并实时结算；目标需手动标记完成；打卡达次数自动完成
+function rewardDone(r){ if(r.type==="goal"||r.type==="checkin") return !!r.done; return true; }
 function addReward(type, content, stars, o={}){
+  const ym = o.month || ymd(new Date()).slice(0,7);
   const r = { id:uid(), type, content:(content||"").trim(), stars:Math.max(1, stars|0||1),
-              done:(type!=="goal"), month:(o.month||ymd(new Date()).slice(0,7)), added:(o.month||ymd(new Date()).slice(0,7)), deadline:(o.deadline||null), _u:Date.now() };
+              done:(type!=="goal" && type!=="checkin"), month:ym, added:ym, deadline:(o.deadline||null),
+              target:(type==="checkin" ? Math.max(1, o.target|0||1) : undefined), count:(type==="checkin" ? 0 : undefined), _u:Date.now() };
   state.rewards = state.rewards || [];
   state.rewards.push(r); save(); renderReward(); renderMonth(); toast("已添加奖励");
 }
 function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
+// 打卡奖励：卡片「打卡 +1」/「−1」；次数达 target 自动完成并结算到完成之月
+function checkinPlus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=(r.count||0)+1; if(r.count>=r.target && !r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } touch(r); save(); renderReward(); renderMonth(); }
+function checkinMinus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=Math.max(0,(r.count||0)-1); if(r.count<r.target){ r.done=false; delete r.doneMonth; } touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
 function rewardFormHTML(type, r){
   const curYM = ymd(new Date()).slice(0,7);
   const isExtra = (type==="bonus" || type==="penalty");
-  const title = type==="goal" ? "完成内容" : "内容";
+  const isCheckin = (type==="checkin");
+  const title = type==="goal" ? "完成内容" : (isCheckin ? "打卡目标" : "内容");
   const starsLabel = type==="penalty" ? "额外扣星数量" : "额外奖励额度";
-  const monthLabel = type==="goal" ? "起始月份（添加之月）" : "归属月份（结算月）";
-  const deadlineField = type==="goal"
-    ? `<div class="fld"><label>完成期限</label><input type="date" id="rwDeadline" value="${r&&r.deadline?r.deadline:""}"></div>` : "";
+  const monthLabel = (type==="goal"||isCheckin) ? "起始月份（添加之月）" : "归属月份（结算月）";
+  const deadlineField = (type==="goal"||isCheckin)
+    ? `<div class="fld"><label>截止时间</label><input type="date" id="rwDeadline" value="${r&&r.deadline?r.deadline:""}"></div>` : "";
+  const targetField = isCheckin
+    ? `<div class="fld"><label>目标打卡次数</label><input type="number" min="1" id="rwTarget" value="${r?(r.target||1):1}"></div>` : "";
+  const countField = (isCheckin && r)
+    ? `<div class="fld"><label>当前已打卡次数</label><input type="number" min="0" id="rwCount" value="${r.count||0}"></div>` : "";
   const contentVal = r ? esc(r.content) : "";
   const monthVal = r ? (r.added||r.month||curYM) : curYM;
   const starsVal = r ? (r.stars||1) : 1;
@@ -2221,6 +2254,8 @@ function rewardFormHTML(type, r){
   return `${signToggle}
     <div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…" value="${contentVal}"></div>
     ${deadlineField}
+    ${targetField}
+    ${countField}
     <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${monthVal}"></div>
     <div class="fld"><label class="rw-stars-label">${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>`;
 }
@@ -2234,12 +2269,12 @@ function setRwSign(t){
 }
 function openRewardAdd(type){
   window.rwEditId = null; window.rwAddType = type;
-  const name = type==="goal" ? "月度目标奖励" : (type==="labor" ? "劳动奖励" : "额外奖惩");
+  const name = type==="goal" ? "月度目标奖励" : (type==="checkin" ? "打卡奖励" : (type==="labor" ? "劳动奖励" : "额外奖惩"));
   const html = `<div class="sheet-h">添加${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
       ${rewardFormHTML(type, null)}
       <button class="lbtn" onclick="commitReward()">确认添加</button>
-      <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月（卡片内点 ✔ 标记）或截止之月为止；逾期未完成显示「已逾期」且星星不结算。劳动/惩罚添加即结算，归属月份即结算月。</div>
+      <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月（卡片内点 ✔ 标记）或截止之月为止；逾期未完成显示「已逾期」且星星不结算。打卡奖励：卡片内点「打卡 +1」累计次数，达到目标次数自动完成并结算到完成之月。劳动/奖惩添加即结算，归属月份即结算月。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitReward(); };
@@ -2248,7 +2283,7 @@ function openRewardAdd(type){
 function openRewardEdit(id){
   const r = getReward(id); if(!r) return;
   window.rwEditId = id; window.rwAddType = r.type;
-  const name = r.type==="goal" ? "月度目标奖励" : (r.type==="labor" ? "劳动奖励" : "额外奖惩");
+  const name = r.type==="goal" ? "月度目标奖励" : (r.type==="checkin" ? "打卡奖励" : (r.type==="labor" ? "劳动奖励" : "额外奖惩"));
   const html = `<div class="sheet-h">编辑${name}<span class="close" onclick="closeSheet()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
     <div class="rw-form">
       ${rewardFormHTML(r.type, r)}
@@ -2263,9 +2298,15 @@ function commitRewardEdit(){
   const content = ($("rwContent").value||"").trim(); if(!content){ toast("请输入内容"); return; }
   const stars = Math.max(1, parseInt($("rwStars").value||"1",10)||1);
   const added = ($("rwMonth").value||"").slice(0,7) || ymd(new Date()).slice(0,7);
-  const deadline = r.type==="goal" ? ($("rwDeadline").value||"") : "";
+  const deadline = (r.type==="goal"||r.type==="checkin") ? ($("rwDeadline").value||"") : "";
   r.type = window.rwAddType;   // 额外奖惩可借弹层切换 奖励(+)/惩罚(−)
   r.content = content; r.stars = stars; r.added = added; r.month = added; r.deadline = deadline;
+  if(r.type==="checkin"){
+    r.target = Math.max(1, parseInt(($("rwTarget")&&$("rwTarget").value)||"1",10)||1);
+    r.count = Math.max(0, parseInt(($("rwCount")&&$("rwCount").value)||"0",10)||0);
+    if(r.count>=r.target){ if(!r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } }
+    else { r.done=false; delete r.doneMonth; }
+  }
   touch(r); save(); renderReward(); renderMonth(); closeSheet();
 }
 function commitReward(){
@@ -2274,8 +2315,9 @@ function commitReward(){
   if(!content){ toast("请输入内容"); return; }
   const stars = Math.max(1, parseInt($("rwStars").value||"1",10)||1);
   const month = ($("rwMonth").value||"").slice(0,7) || ymd(new Date()).slice(0,7);
-  const deadline = type==="goal" ? ($("rwDeadline").value||"") : "";
-  addReward(type, content, stars, {month, deadline});
+  const deadline = (type==="goal"||type==="checkin") ? ($("rwDeadline").value||"") : "";
+  const target = type==="checkin" ? Math.max(1, parseInt(($("rwTarget")&&$("rwTarget").value)||"1",10)||1) : undefined;
+  addReward(type, content, stars, {month, deadline, target});
   closeSheet();
 }
 function renderReward(){
@@ -2308,6 +2350,17 @@ function renderReward(){
   const extraBonusStars = extras.filter(r=>r.type==="bonus").reduce((a,r)=>a+(r.stars||0),0);
   const extraPenStars   = extras.filter(r=>r.type==="penalty").reduce((a,r)=>a+(r.stars||0),0);
 
+  // —— 打卡奖励：按时间窗口[添加之月, 结算/截止之月]显示；达次数自动完成并结算 ——
+  const checkins = (state.rewards||[]).filter(r=>r.type==="checkin" && rewardAddMonth(r) <= ym && ym <= rewardSettleMonth(r));
+  const checkinActive=[], checkinDone=[], checkinOverdue=[];
+  checkins.forEach(r=>{
+    if(r.done) checkinDone.push(r);
+    else if(r.deadline && r.deadline < today) checkinOverdue.push(r);
+    else checkinActive.push(r);
+  });
+  const checkinSettled = checkinDone.reduce((a,r)=>a+(r.stars||0),0);
+  const checkinPending = checkinActive.concat(checkinOverdue).reduce((a,r)=>a+(r.stars||0),0);
+
   let html="";
   // 月度目标奖励卡片
   html += `<div class="rw-card goal">
@@ -2318,6 +2371,17 @@ function renderReward(){
     <div class="rw-total">已结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
   if(goals.length===0) html += `<div class="empty-tip">暂无目标</div>`;
   else html += active.concat(overdue, done).map(r=>goalRow(r)).join("");
+  html += `</div>`;
+
+  // 打卡奖励卡片（在月度目标奖励之后、劳动奖励之前）
+  html += `<div class="rw-card checkin">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun-light)">✓</span><div><div class="rw-name">打卡奖励</div><div class="rw-desc">累计至${label}的打卡目标（含历史）</div></div></div>
+      <div class="rw-add" onclick="openRewardAdd('checkin')">＋</div>
+    </div>
+    <div class="rw-total">已结算 <span class="rs-g">+${checkinSettled}</span> 星${checkinPending?` · <span class="rs-muted">待结算 ${checkinPending} 星</span>`:""}</div>`;
+  if(checkins.length===0) html += `<div class="empty-tip">暂无打卡目标</div>`;
+  else html += checkinActive.concat(checkinOverdue, checkinDone).map(r=>checkinRow(r)).join("");
   html += `</div>`;
 
   // 劳动奖励卡片
@@ -2357,6 +2421,28 @@ function goalRow(r){
     <div class="rw-main">
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
+    </div>
+    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
+    <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
+  </div>`;
+}
+// 打卡奖励行：带「打卡 +1 / −1」按钮，次数达 target 自动完成；三态 进行中/已逾期/已完成
+function checkinRow(r){
+  const cnt = r.count||0, tgt = r.target||0;
+  const starsTxt = "+" + (r.stars||0) + " 星";
+  const dl = r.deadline ? ("期限 "+r.deadline.slice(5)) : "无期限";
+  let cls="", statusTag="", statusCls="";
+  if(r.done){ cls="done"; statusTag="已完成"; statusCls="st-done"; }
+  else if(r.deadline && r.deadline < ymd(new Date())){ cls="overdue"; statusTag="已逾期"; statusCls="st-ov"; }
+  else { cls="active"; statusTag="待结算"; statusCls="st-pend"; }
+  return `<div class="rw-row checkin ${cls}">
+    <div class="rw-main">
+      <div class="rw-title">${esc(r.content)}</div>
+      <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-count">打卡 ${cnt}/${tgt}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
+    </div>
+    <div class="ck-btns">
+      <button class="ck-btn" onclick="checkinPlus('${r.id}')">打卡 +1</button>
+      <button class="ck-btn minus" onclick="checkinMinus('${r.id}')">−1</button>
     </div>
     <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
     <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
@@ -3077,7 +3163,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.60";
+const APP_VERSION = "2026.09.10.61";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
