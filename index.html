@@ -422,6 +422,9 @@
   .rw-name{font-size:15px; font-weight:800; color:var(--ink);}
   .rw-desc{font-size:11.5px; color:var(--muted); margin-top:2px;}
   .rw-add{width:30px; height:30px; border-radius:50%; background:var(--ink); color:#fff; font-size:20px; line-height:30px; text-align:center; flex:0 0 auto; cursor:pointer;}
+  .rw-actions{display:flex; align-items:center; gap:8px; flex:0 0 auto;}
+  .rw-edit-toggle{height:30px; padding:0 13px; border-radius:15px; border:1px solid #e3dccb; background:#fff; color:var(--ink-2); font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; white-space:nowrap;}
+  .rw-edit-toggle.on{background:var(--ink); color:#fff; border-color:var(--ink);}
   .rw-total{font-size:12px; color:var(--muted); margin:8px 0 4px;}
   .rw-total .rs-g{color:var(--green); font-weight:800;}
   .rw-total .rs-pen{color:var(--red); font-weight:800;}
@@ -2231,6 +2234,9 @@ function checkinPlus(id){ const r=getReward(id); if(!r || r.type!=="checkin") re
 function checkinMinus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=Math.max(0,(r.count||0)-1); if(r.count<r.target){ r.done=false; delete r.doneMonth; } touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
+// 每类奖励卡片的「编辑开关」：开启后该卡内每项才显示 编辑/删除 按钮
+let rewardEditMode = {goal:false, checkin:false, labor:false, extra:false};
+function toggleRewardEdit(k){ rewardEditMode[k]=!rewardEditMode[k]; renderReward(); }
 function rewardFormHTML(type, r){
   const curYM = ymd(new Date()).slice(0,7);
   const isExtra = (type==="bonus" || type==="penalty");
@@ -2366,50 +2372,50 @@ function renderReward(){
   html += `<div class="rw-card goal">
     <div class="rw-head">
       <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun)">★</span><div><div class="rw-name">月度目标奖励</div><div class="rw-desc">累计至${label}的目标（含历史）</div></div></div>
-      <div class="rw-add" onclick="openRewardAdd('goal')">＋</div>
+      <div class="rw-actions"><button class="rw-edit-toggle ${rewardEditMode.goal?'on':''}" onclick="toggleRewardEdit('goal')">${rewardEditMode.goal?'完成':'编辑'}</button><div class="rw-add" onclick="openRewardAdd('goal')">＋</div></div>
     </div>
     <div class="rw-total">已结算 <span class="rs-g">+${goalSettled}</span> 星${goalPending?` · <span class="rs-muted">待结算 ${goalPending} 星</span>`:""}</div>`;
   if(goals.length===0) html += `<div class="empty-tip">暂无目标</div>`;
-  else html += active.concat(overdue, done).map(r=>goalRow(r)).join("");
+  else html += active.concat(overdue, done).map(r=>goalRow(r, rewardEditMode.goal)).join("");
   html += `</div>`;
 
   // 打卡奖励卡片（在月度目标奖励之后、劳动奖励之前）
   html += `<div class="rw-card checkin">
     <div class="rw-head">
       <div class="rw-h-left"><span class="rw-ic" style="color:var(--sun-light)">✓</span><div><div class="rw-name">打卡奖励</div><div class="rw-desc">累计至${label}的打卡目标（含历史）</div></div></div>
-      <div class="rw-add" onclick="openRewardAdd('checkin')">＋</div>
+      <div class="rw-actions"><button class="rw-edit-toggle ${rewardEditMode.checkin?'on':''}" onclick="toggleRewardEdit('checkin')">${rewardEditMode.checkin?'完成':'编辑'}</button><div class="rw-add" onclick="openRewardAdd('checkin')">＋</div></div>
     </div>
     <div class="rw-total">已结算 <span class="rs-g">+${checkinSettled}</span> 星${checkinPending?` · <span class="rs-muted">待结算 ${checkinPending} 星</span>`:""}</div>`;
   if(checkins.length===0) html += `<div class="empty-tip">暂无打卡目标</div>`;
-  else html += checkinActive.concat(checkinOverdue, checkinDone).map(r=>checkinRow(r)).join("");
+  else html += checkinActive.concat(checkinOverdue, checkinDone).map(r=>checkinRow(r, rewardEditMode.checkin)).join("");
   html += `</div>`;
 
   // 劳动奖励卡片
   html += `<div class="rw-card labor">
     <div class="rw-head">
       <div class="rw-h-left"><span class="rw-ic" style="color:var(--green)">★</span><div><div class="rw-name">劳动奖励</div><div class="rw-desc">完成即结算，默认完成</div></div></div>
-      <div class="rw-add" onclick="openRewardAdd('labor')">＋</div>
+      <div class="rw-actions"><button class="rw-edit-toggle ${rewardEditMode.labor?'on':''}" onclick="toggleRewardEdit('labor')">${rewardEditMode.labor?'完成':'编辑'}</button><div class="rw-add" onclick="openRewardAdd('labor')">＋</div></div>
     </div>
     <div class="rw-total">本月结算 <span class="rs-g">+${laborStars}</span> 星</div>`;
   if(labors.length===0) html += `<div class="empty-tip">暂无记录</div>`;
-  else html += labors.map(r=>rwRow(r,"labor")).join("");
+  else html += labors.map(r=>rwRow(r,"labor", rewardEditMode.labor)).join("");
   html += `</div>`;
 
   // 额外奖惩卡片（奖励为正、惩罚为负，均计入本月星星）
   html += `<div class="rw-card penalty">
     <div class="rw-head">
       <div class="rw-h-left"><span class="rw-ic" style="color:var(--red)">!</span><div><div class="rw-name">额外奖惩</div><div class="rw-desc">奖励为正、惩罚为负，均计入本月星星</div></div></div>
-      <div class="rw-add" onclick="openRewardAdd('bonus')">＋</div>
+      <div class="rw-actions"><button class="rw-edit-toggle ${rewardEditMode.extra?'on':''}" onclick="toggleRewardEdit('extra')">${rewardEditMode.extra?'完成':'编辑'}</button><div class="rw-add" onclick="openRewardAdd('bonus')">＋</div></div>
     </div>
     <div class="rw-total">本月结算 <span class="rs-g">+${extraBonusStars}</span> · <span class="rs-pen">−${extraPenStars}</span> 星</div>`;
   if(extras.length===0) html += `<div class="empty-tip">暂无记录</div>`;
-  else html += extras.map(r=>rwRow(r, r.type)).join("");
+  else html += extras.map(r=>rwRow(r, r.type, rewardEditMode.extra)).join("");
   html += `</div>`;
 
   $("rewardContent").innerHTML = html;
 }
 // 目标行：带「完成」勾选，按完成状态显示 进行中/已逾期/已完成
-function goalRow(r){
+function goalRow(r, showEdit){
   const starsTxt = "+" + (r.stars||0) + " 星";
   const dl = r.deadline ? ("期限 "+r.deadline.slice(5)) : "无期限";
   let cls="", statusTag="", statusCls="";
@@ -2422,12 +2428,11 @@ function goalRow(r){
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
     </div>
-    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
-    <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
+    ${showEdit ? `<button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button><button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>` : ""}
   </div>`;
 }
 // 打卡奖励行：带「打卡 +1 / −1」按钮，次数达 target 自动完成；三态 进行中/已逾期/已完成
-function checkinRow(r){
+function checkinRow(r, showEdit){
   const cnt = r.count||0, tgt = r.target||0;
   const starsTxt = "+" + (r.stars||0) + " 星";
   const dl = r.deadline ? ("期限 "+r.deadline.slice(5)) : "无期限";
@@ -2444,11 +2449,10 @@ function checkinRow(r){
       <button class="ck-btn" onclick="checkinPlus('${r.id}')">打卡 +1</button>
       <button class="ck-btn minus" onclick="checkinMinus('${r.id}')">−1</button>
     </div>
-    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
-    <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
+    ${showEdit ? `<button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button><button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>` : ""}
   </div>`;
 }
-function rwRow(r, type){
+function rwRow(r, type, showEdit){
   const pen = type==="penalty";
   const starsTxt = (pen?"−":"+") + (r.stars||0) + " 星";
   const tag = "归属 "+r.month;
@@ -2457,8 +2461,7 @@ function rwRow(r, type){
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${tag}</span><span class="rw-stars ${pen?"pen":""}">${starsTxt}</span><span class="rw-status st-done">已结算</span></div>
     </div>
-    <button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button>
-    <button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>
+    ${showEdit ? `<button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button><button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>` : ""}
   </div>`;
 }
 
@@ -3163,7 +3166,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.61";
+const APP_VERSION = "2026.09.10.62";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
