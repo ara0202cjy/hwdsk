@@ -226,6 +226,7 @@
   .day-summary .ds-v3{color:#2e9e6b;}
   .day-summary .ds-v4{color:#3F6FB0;}
   .day-summary .ds-v5{color:#C2953B;}
+  .day-summary .ds-gold{font-size:11px; color:#C2953B; font-weight:600; margin-top:4px; text-align:center; letter-spacing:.2px;}
   .day-summary .ds-note{font-size:11px; color:#9a7b3a; text-align:right;}
   .day-summary .ds-n{margin-left:auto; font-size:12.5px; color:#9a7b3a; text-align:right;}
   .top-stats{display:flex; background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; margin-bottom:10px;}
@@ -1253,8 +1254,8 @@ function renderList(){
   const laterEst   = doneLater.reduce((a,t)=>a+durOf(t),0);             // 后期补做时长
   const undoneEst  = undone.reduce((a,t)=>a+durOf(t),0);                // 未做时长
   // 自检：预计时长 = 当日已做 + 后期补做 + 未做（按定义恒成立，因当日项恰好三分天下）
-  const untimedN = ts.filter(t=>!isTimed(t)).length;
-  html += `<div class="day-summary"><div class="ds-main"><div class="ds-row ds-head"><span class="ds-t">${(viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日"} 作业时间</span><span class="ds-note">${untimedN} 项作业未计时（≤1分钟）</span></div><div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>当日补做</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v4">${fmtEst(laterEst)}</b><b class="ds-v5">${fmtEst(madeUpEst)}</b><b class="ds-v2">${fmtEst(undoneEst)}</b></div></div></div>`;
+  const workEst = doneEst + madeUpEst;   // 当日作业时长 = 当日已做 + 当日补做其他日期
+  html += `<div class="day-summary"><div class="ds-main"><div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v4">${fmtEst(laterEst)}</b><b class="ds-v2">${fmtEst(undoneEst)}</b></div><div class="ds-gold">当日作业时长（${fmtEst(workEst)}）= 当日已做（${fmtEst(doneEst)}）+ 当日补做其他日期（${fmtEst(madeUpEst)}）</div></div></div>`;
   SUBJECTS.forEach(subj=>{
     const all = bySubj[subj]||[];
     const pending = all.filter(t=>!t.done);
@@ -1393,7 +1394,7 @@ function todoRow(t){
     <div class="todo-top">
       <button class="chk ${t.done?'done':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
-        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补</span>':''}</div>
+        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}</div>
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
       </div>
       <div class="todo-acts">
@@ -1445,7 +1446,6 @@ function doneRow(t){
     `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
     t.estMin ? `预估 ${t.estMin} 分` : "",
     sp>0 ? `用时 ${sp} 分` : "",
-    t.makeup && t.completedOn ? `补做 ${t.completedOn.slice(5)}` : "",
     t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
   ].filter(Boolean);
@@ -1454,7 +1454,7 @@ function doneRow(t){
     <div class="todo-top">
       <button class="chk done" onclick="onChk('${t.id}')">${chkSvg(true)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
-        <div class="todo-title done">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补</span>':''}</div>
+        <div class="todo-title done">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}</div>
         <div class="todo-meta">${meta.join("")}</div>
       </div>
       <div class="todo-acts">
@@ -3235,7 +3235,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.69";
+const APP_VERSION = "2026.09.10.70";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
