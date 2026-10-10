@@ -1239,8 +1239,8 @@ function renderList(){
     <div class="ts-cell"><div class="ts-v warn">${pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
   </div>`;
   const totalEst = ts.reduce((a,t)=>a+(t.estMin||0),0);
-  // 已做时长 = 已完成且实际计时过的作业，按实际记录时长（recMs：手动优先，否则计时器）汇总，非预估
-  const doneEst = Math.round(ts.filter(t=>t.done && isTimed(t)).reduce((a,t)=>a+recMs(t),0)/60000);
+  // 已做时长 = 当日已完成项汇总：计过时用实际记录时长(recMs)，未计时用预估分(estMin)兜底；补做项同样计入；未完成记 0
+  const doneEst = Math.round(ts.filter(t=>t.done).reduce((a,t)=>a + (isTimed(t)?recMs(t):(t.estMin||0)*60000),0)/60000);
   const remainEst = ts.filter(t=>!t.done).reduce((a,t)=>a+(t.estMin||0),0);
   // 未计时 = 当天无任何实际记录（真实计时 < 1 分钟）的作业项数，与「已做时长=实际」口径一致
   const untimedN = ts.filter(t=>!isTimed(t)).length;
@@ -1435,6 +1435,7 @@ function doneRow(t){
     `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
     t.estMin ? `预估 ${t.estMin} 分` : "",
     sp>0 ? `用时 ${sp} 分` : "",
+    t.makeup && t.completedOn ? `补做 ${t.completedOn.slice(5)}` : "",
     t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
   ].filter(Boolean);
@@ -3224,7 +3225,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.67";
+const APP_VERSION = "2026.09.10.68";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
