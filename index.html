@@ -181,9 +181,9 @@
   .todo-acts .acts-edit{display:none; align-items:center; gap:6px;}
   .card.editing .todo-acts .acts-edit{display:inline-flex;}
   .subj-dot{width:12px; height:12px; border-radius:4px;}
-  .subj-语文{background:#C25B5B;} .subj-数学{background:#3F6FB0;} .subj-英语{background:#C2953B;} .subj-其他{background:#6B8E5A;}
+  .subj-语文{background:#C25B5B;} .subj-数学{background:#3F6FB0;} .subj-英语{background:#C2953B;} .subj-其他{background:#6B8E5A;} .subj-校内{background:#7B5FA6;}
   .subj-title{font-size:15px; font-weight:800;}
-  .subj-title.语文{color:#C25B5B;} .subj-title.数学{color:#3F6FB0;} .subj-title.英语{color:#C2953B;} .subj-title.其他{color:#6B8E5A;}
+  .subj-title.语文{color:#C25B5B;} .subj-title.数学{color:#3F6FB0;} .subj-title.英语{color:#C2953B;} .subj-title.其他{color:#6B8E5A;} .subj-title.校内{color:#7B5FA6;}
 
   /* 作业条目（折叠） */
   .todo{position:relative; border-bottom:1px solid var(--line);}
@@ -278,13 +278,14 @@
 
   /* 添加作业统一卡 */
   .add-title{font-size:15px; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
-  .seg4{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px;}
+  .seg4{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:12px;}
   .seg4 button{padding:10px 0; border-radius:12px; background:#f1ece1; color:#6b655b; font-size:13.5px; font-weight:700; border:1.5px solid transparent;}
   .seg4 button.on{color:#fff; background:var(--ink);}
   .seg4 button.on[data-s="语文"]{background:#C25B5B;}
   .seg4 button.on[data-s="数学"]{background:#3F6FB0;}
   .seg4 button.on[data-s="英语"]{background:#C2953B;}
   .seg4 button.on[data-s="其他"]{background:#6B8E5A;}
+  .seg4 button.on[data-s="校内"]{background:#7B5FA6;}
   .add-row{display:flex; gap:8px;}
   .add-row input{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:#fcfaf5;}
   .add-row .plus{width:46px; height:46px; border-radius:12px; background:var(--sun); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; flex:0 0 46px;}
@@ -809,9 +810,9 @@
 "use strict";
 /* ============ 常量 ============ */
 const STORE_KEY = "wb_hwdsk_v1";
-const SUBJECTS = ["语文","数学","英语","其他"];
+const SUBJECTS = ["校内","语文","数学","英语","其他"];
 const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
-const SUBJ_COLOR = {"语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
+const SUBJ_COLOR = {"校内":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
 
 /* ============ 工具 ============ */
 const $ = id => document.getElementById(id);
@@ -857,7 +858,21 @@ function load(){
       localStorage.removeItem(HW_KEY); saveLocal();
     }
   }catch(e){}
+  if(migrateXN(state)) saveLocal();   // v.66：lvcheng「其他」栏整体迁入「校内」
   pruneTombstones();
+}
+/* 迁移 v.66：lvcheng 账号下「其他」栏整体迁入新增「校内」栏（含循环母版、常用词）。
+   门控 lvcheng + 幂等（subject 已非"其他"则跳过），挂在 load / mergeState / syncPull 三处。 */
+function migrateXN(o){
+  if(currentUser()!=="lvcheng" || !o) return 0;
+  let n=0;
+  (o.todos||[]).forEach(t=>{ if(t && t.subject==="其他"){ t.subject="校内"; touch(t); n++; } });
+  (o.masters||[]).forEach(m=>{ if(m && m.subject==="其他"){ m.subject="校内"; touch(m); n++; } });
+  if(o.hw && Array.isArray(o.hw["其他"])){
+    o.hw["校内"] = (o.hw["校内"]||[]).concat(o.hw["其他"]);
+    delete o.hw["其他"]; n++;
+  }
+  return n;
 }
 /* 仅写本机，不触发云同步（供同步流程内部使用，避免递归） */
 function saveLocal(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
@@ -1843,7 +1858,7 @@ let sumCalCollapsed = true;           // 下拉日历是否折叠（默认折叠
 let calMonth = null;                  // 下拉日历当前显示的月份（Date，1号）；null=跟随 viewDate
 let sumSort = {key:null, dir:1};       // 比较栏排序：key∈doneN|undoneN|avgMin|avgWrong；dir 1升序/-1降序；null=默认(语数英其他+完成率)
 
-const SUBJ_ORDER = {"语文":0,"数学":1,"英语":2,"其他":3};
+const SUBJ_ORDER = {"校内":0,"语文":1,"数学":2,"英语":3,"其他":4};
 function subjIdx(s){ return SUBJ_ORDER.hasOwnProperty(s) ? SUBJ_ORDER[s] : 99; }
 
 function sumRangeDays(){
@@ -2702,6 +2717,7 @@ async function syncPull(mode){
     if(!state._delR) state._delR = {};           // 奖励删除墓碑
     (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
+    migrateXN(state);   // v.66：lvcheng「其他」栏迁入「校内」
     saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
     syncStatus("已同步云端 "+n+" 条作业","ok");
@@ -2762,6 +2778,26 @@ function mergeItems(cloudArr, localArr, del){
   });
   return Array.from(map.values());
 }
+/* 折叠循环实例：同一 masterId + date 只允许一条，避免多端各自生成不同 id 导致「同日重复」
+   （例如完成一端后，另一端生成的同名未完成项残留在当天清单）。保留优先级：已完成 > 未完成，其次 _u 较新。 */
+function dedupeRecurringTodos(todos){
+  const seen = new Map();
+  const sorted = (todos||[]).slice().sort((a,b)=>{
+    const da = a && a.done ? 1:0, db = b && b.done ? 1:0;
+    if(da!==db) return db-da;
+    return ((b&&b._u)||0) - ((a&&a._u)||0);
+  });
+  const keep = [];
+  sorted.forEach(t=>{
+    if(t && t.masterId){
+      const k = t.masterId + "|" + t.date;
+      if(seen.has(k)) return;   // 同日同母版的另一份（不同 id）丢弃
+      seen.set(k, true);
+    }
+    keep.push(t);
+  });
+  return keep;
+}
 /* 常用词（按科目）：按 id 取较新的一方 */
 function mergeGroups(cloudG, localG){
   const out={};
@@ -2797,8 +2833,8 @@ function mergeState(cloud, local){
   const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
   const hw = mergeGroups(cloud.hw, local.hw);
   SUBJECTS.forEach(s=>{ if(Array.isArray(hw[s])) hw[s]=hw[s].filter(c=>c&&c.id&&!delHW[c.id]); });
-  return {
-    todos: mergeItems(cloud.todos, local.todos, del),
+  const merged = {
+    todos: dedupeRecurringTodos(mergeItems(cloud.todos, local.todos, del)),
     tasks: mergeItems(cloud.tasks, local.tasks, del),
     masters,
     hw, _delHW: delHW,
@@ -2806,6 +2842,8 @@ function mergeState(cloud, local){
     _del: del, _delM: delM, _delR: delR,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
+  migrateXN(merged);   // v.66：合并后即时把 lvcheng「其他」迁入「校内」，确保云端拉回也归位
+  return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
 async function readCloud(){
@@ -3167,7 +3205,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.64";
+const APP_VERSION = "2026.09.10.66";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
