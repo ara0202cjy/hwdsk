@@ -861,16 +861,35 @@ function load(){
   if(migrateXN(state)) saveLocal();   // v.66：lvcheng「其他」栏整体迁入「校内」
   pruneTombstones();
 }
-/* 迁移 v.66：lvcheng 账号下「其他」栏整体迁入新增「校内」栏（含循环母版、常用词）。
-   门控 lvcheng + 幂等（subject 已非"其他"则跳过），挂在 load / mergeState / syncPull 三处。 */
+/* 迁移 v.66→v.67：lvcheng 账号下的数据归类（门控 lvcheng + 幂等，挂在 load / mergeState / syncPull 三处）。
+   - 琵琶 / 阅读课 / 阅读单 / 错题复习：一律归入「其他」板块（含待办、循环母版、常用词）；
+   - 其余残留「其他」→ 校内（保留 v.66 将原"其他"整体归校内的语义）。
+   两条规则顺序执行：先 keyword→其他，再把剩余非 keyword 的"其他"→校内，互不冲突。 */
 function migrateXN(o){
   if(currentUser()!=="lvcheng" || !o) return 0;
+  const KW = ["琵琶","阅读课","阅读单","错题复习"];
+  const isXN = t => KW.some(k => (t||"").indexOf(k) >= 0);
   let n=0;
-  (o.todos||[]).forEach(t=>{ if(t && t.subject==="其他"){ t.subject="校内"; touch(t); n++; } });
-  (o.masters||[]).forEach(m=>{ if(m && m.subject==="其他"){ m.subject="校内"; touch(m); n++; } });
+  // 1) 关键字项 → 其他（处理从 校内/语文 搬回；幂等：已是其他则跳过）
+  (o.todos||[]).forEach(t=>{ if(t && isXN(t.title) && t.subject!=="其他"){ t.subject="其他"; touch(t); n++; } });
+  (o.masters||[]).forEach(m=>{ if(m && isXN(m.title) && m.subject!=="其他"){ m.subject="其他"; touch(m); n++; } });
+  if(o.hw && typeof o.hw==="object"){
+    Object.keys(o.hw).forEach(s=>{
+      if(s==="其他") return;
+      const arr=o.hw[s]; if(!Array.isArray(arr)) return;
+      const stay=[], move=[];
+      arr.forEach(c=>{ const t=(c&&c.t)||c; if(isXN(t)) move.push(c); else stay.push(c); });
+      if(move.length){ o.hw[s]=stay; o.hw["其他"]=(o.hw["其他"]||[]).concat(move); n+=move.length; }
+    });
+  }
+  // 2) 剩余非关键字的「其他」→ 校内（v.66 语义；幂等）
+  (o.todos||[]).forEach(t=>{ if(t && t.subject==="其他" && !isXN(t.title)){ t.subject="校内"; touch(t); n++; } });
+  (o.masters||[]).forEach(m=>{ if(m && m.subject==="其他" && !isXN(m.title)){ m.subject="校内"; touch(m); n++; } });
   if(o.hw && Array.isArray(o.hw["其他"])){
-    o.hw["校内"] = (o.hw["校内"]||[]).concat(o.hw["其他"]);
-    delete o.hw["其他"]; n++;
+    const keep=[], move=[];
+    o.hw["其他"].forEach(c=>{ const t=(c&&c.t)||c; if(isXN(t)) keep.push(c); else move.push(c); });
+    o.hw["其他"]=keep;
+    if(move.length){ o.hw["校内"]=(o.hw["校内"]||[]).concat(move); n+=move.length; }
   }
   return n;
 }
@@ -3205,7 +3224,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.66";
+const APP_VERSION = "2026.09.10.67";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
