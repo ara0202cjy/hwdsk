@@ -299,6 +299,9 @@
   .hw-label{font-size:12.5px; color:var(--muted); font-weight:700;}
   .hw-add{font-size:12.5px; font-weight:700; color:var(--sun); background:#fff6e6; border:1px solid #f0d9a8; border-radius:10px; padding:4px 10px;}
   .hw-add:active{transform:scale(.96);}
+  .hw-set{width:28px; height:28px; flex:0 0 28px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5; margin-left:8px; cursor:pointer;}
+  .hw-set:active{transform:scale(.96);}
+  .hw-set.on{color:#fff; background:var(--sun); border-color:var(--sun);}
   .hw-chips{display:flex; flex-wrap:wrap; gap:8px;}
   .hw-chip{display:inline-flex; align-items:center; gap:3px; background:#f4efe4; border:1px solid var(--line); border-radius:999px; padding:6px 8px 6px 12px; font-size:13.5px; color:var(--ink); font-weight:600; cursor:pointer;}
   .hw-chip:active{transform:scale(.97);}
@@ -1287,7 +1290,7 @@ function renderList(){
   html += `</div>
     <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><button class="plus" onclick="doAdd()">+</button></div>
     <div id="hwWrap" class="hw-wrap">
-      <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span><button class="hw-add" onclick="addHW()">＋ 添加</button></div>
+      <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span>${editHWOn && (loadHW()[addSubj]||[]).length<15?'<button id="hwAddBtn" class="hw-add" onclick="addHW()">＋ 添加</button>':''}<button class="hw-set${editHWOn?' on':''}" title="设置：显示常用词的添加 / 修改 / 删除" onclick="toggleEditHW()">${gearSvg()}</button></div>
       <div id="hwChips" class="hw-chips"></div>
     </div>
   </div>`;
@@ -1297,6 +1300,8 @@ function renderList(){
 }
 
 let addSubj = "语文";
+let editHWOn = false;   // 常用词「设置」开关：开启后显示添加 / 修改 / 删除
+function toggleEditHW(){ editHWOn=!editHWOn; renderList(); }
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名），用于显示各项的修改/删除/固定按钮
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
 function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
@@ -1310,13 +1315,16 @@ function renderHWChips(){
   const arr=(loadHW()[addSubj]||[]).map(hwItem);
   const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
   if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
-  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i></span>`).join("");
+  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`).join("");
+  const addBtn=$("hwAddBtn"); if(addBtn) addBtn.style.display = arr.length>=15 ? "none" : "";
 }
 function fillHW(i){ const arr=(loadHW()[addSubj]||[]).map(hwItem); const w=arr[i]; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
 function addHW(){
+  const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]);
+  if(arr.length>=15){ toast("【"+addSubj+"】常用词最多 15 个"); return; }
   const v=prompt("为【"+addSubj+"】添加常用词（作业内容）：",""); if(v==null) return; const t=v.trim(); if(!t) return;
   const e=prompt("预估时长（分钟，留空=不填）：",""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
-  const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]); arr.push({id:uid(), t:t, e:est, _u:Date.now()}); saveHW(hw); renderHWChips();
+  arr.push({id:uid(), t:t, e:est, _u:Date.now()}); saveHW(hw); renderHWChips();
 }
 function editHW(i){
   const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
@@ -3235,7 +3243,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.71";
+const APP_VERSION = "2026.09.10.72";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
