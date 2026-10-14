@@ -1002,7 +1002,7 @@ function pruneTasks(){      // 已完成超过上限，按完成时间逐条删�
   state.tasks = state.tasks.filter(t=>!kill.has(t.id));
 }
 function setTaskPri(id, p){ const t=getTask(id); if(!t) return; t.priority=p; touch(t); save(); renderTasks(); }
-const MAKEUP_LOCK_DAYS = 7;            // 作业逾期超过该天数仍未完成 → 禁止补打卡，仅保留未完成
+const MAKEUP_LOCK_DAYS = 15;           // 作业逾期超过该天数仍未完成 → 禁止补打卡，仅保留未完成
 /* 是否因逾期过久而锁定（不可再补打卡）：未完成 且 距作业日已超过锁定天数 */
 function makeupLocked(t){
   if(!t || t.done) return false;
@@ -3243,7 +3243,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.72";
+const APP_VERSION = "2026.09.10.73";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
