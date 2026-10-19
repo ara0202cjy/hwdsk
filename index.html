@@ -922,7 +922,7 @@ function mkTodo(date, subject, title, o={}){
   }, o);
 }
 /* 标记为「本机已改动」，供云端合并判定谁更新 */
-function touch(t){ if(t) t._u = Date.now(); return t; }
+function touch(t){ if(t){ t._u = Date.now(); markLocal(t.id); } return t; }
 
 /* ============ 计时分段（暂停即分段） ============ */
 function nowClock(){ const d=new Date(); return pad2(d.getHours())+":"+pad2(d.getMinutes()); }
@@ -1433,7 +1433,7 @@ function editField(id,key,val){
   // 循环作业：把 标题/内容/预估 同步回母版与同组未开始实例
   if(t.masterId && (key==="title"||key==="detail"||key==="estMin")){
     const m=getMaster(t.masterId);
-    if(m){ if(key==="estMin") m.estMin=t.estMin; else m[key]=t[key]; m._u=Date.now(); propagateMaster(m, t.date); }
+    if(m){ if(key==="estMin") m.estMin=t.estMin; else m[key]=t[key]; m._u=Date.now(); markLocal(m.id); propagateMaster(m, t.date); }
   }
   touch(t); save(); syncDerived();
 }
@@ -1488,7 +1488,7 @@ function delTodo(id){
   if(m){
     // 循环作业单天删除：仅跳过该天，循环继续
     if(!confirm("这是循环作业「"+t.title+"」。\n点【确定】＝只删除 "+t.date+" 这一天（之后仍按循环出现）；\n点【取消】＝不删除。")) return;
-    m.skip = m.skip||[]; if(!m.skip.includes(t.date)) m.skip.push(t.date); m._u=Date.now();
+    m.skip = m.skip||[]; if(!m.skip.includes(t.date)) m.skip.push(t.date); m._u=Date.now(); markLocal(m.id);
   } else {
     if(!confirm("确定删除该作业？")) return;
   }
@@ -1565,7 +1565,7 @@ function setLock(id, type){
     m = { id:uid(), subject:t.subject, title:t.title, detail:t.detail||"", estMin:t.estMin||0, lock:type, origin:ad, skip:[], _u:Date.now() };
     state.masters.push(m); t.masterId=m.id; t.lock=type;
   } else {
-    m.lock=type; m.subject=t.subject; m.title=t.title; m.detail=t.detail||""; m.estMin=t.estMin||0; m._u=Date.now();
+    m.lock=type; m.subject=t.subject; m.title=t.title; m.detail=t.detail||""; m.estMin=t.estMin||0; m._u=Date.now(); markLocal(m.id);
     t.lock=type;
     // 规则变了：删掉「ad 之后」旧规则生成的未完成实例，按新规则惰性重生（查看时生成）
     state.todos = state.todos.filter(x=> !(x.masterId===m.id && !x.done && x.date>ad) );
@@ -2555,6 +2555,9 @@ let syncPushT    = null;
 const SYNC_DEBOUNCE_MS = 15000;   // 本地改动后静默 15 秒再上传（合并连击，杜绝刷屏式同步）
 const SYNC_INTERVAL_MS = 300000;  // 后台自动拉取周期 5 分钟（只拉取合并，不写云端，降低多端写竞争）
 let editingId    = null;          // 正在编辑的条目：同步时不被远端覆盖，避免打字被打断
+let localDirty   = {};                   // 本机刚修改过的条目 id → 时间戳；同步合并时优先保留本机值
+const LOCAL_DIRTY_TTL = 10*60*1000;      // 脏标记保鲜 10 分钟（覆盖同步周期 + 余量）
+function markLocal(id){ if(id) localDirty[id] = Date.now(); }   // 记录本机修改，供合并保护
 let lastCloudSig = "";            // 上次云端数据指纹，无变化则跳过渲染/写入
 
 /* ============ 账号系统（本地登录 + 自动云端同步）============
@@ -2744,7 +2747,7 @@ async function syncPull(mode){
       }
     }
 
-    state = data; state._syncedAt = cloudAt;
+    state = data; state._syncedAt = cloudAt; state._rev = data._rev||0;
     if(!Array.isArray(state.todos)) state.todos = [];
     if(!state.tasks)    state.tasks    = [];
     if(!Array.isArray(state.masters)) state.masters = [];
@@ -2768,7 +2771,7 @@ async function syncPull(mode){
     return false;
   }
 }
-/* 把本机数据整体上传到云端 */
+/* 把本机数据整体上传到云端（复用写云端逻辑：乐观锁 + 版本号） */
 async function syncPush(silent){
   const cfg=syncCfg();
   if(!cfg.token || !cfg.gist){
@@ -2777,19 +2780,13 @@ async function syncPush(silent){
   }
   if(!silent) syncStatus("正在上传到云端…");
   try{
-    state._syncedAt = Date.now();
     const up = JSON.parse(JSON.stringify(state));
-    const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
-      method:"PATCH",
-      headers: Object.assign(syncHeaders(cfg), { "Content-Type":"application/json" }),
-      body: JSON.stringify({ files:{ [SYNC_FILE]:{ content: JSON.stringify(up) } } })
-    });
-    if(!r.ok) throw { status:r.status };
+    const ok = await writeCloud(up);
     saveLocal();
     const d=new Date();
     syncStatus("已上传 · "+pad2(d.getHours())+":"+pad2(d.getMinutes()),"ok");
     if(!silent) toast("已上传到云端");
-    return true;
+    return ok;
   }catch(e){
     const msg = syncErr(e);
     syncStatus("上传失败："+msg,"err");
@@ -2803,7 +2800,8 @@ async function syncPush(silent){
    因此任何一端的新数据都不会被另一端的旧数据覆盖。 */
 let syncBusy = false;
 
-/* 按 id 合并两组条目：同 id 取 _u 更大的一方；墓碑中的 id 直接丢弃 */
+/* 按 id 合并两组条目：以逻辑版本号 _rev 较新一方为准（根治设备时钟差），
+   _rev 相同时回退比最后修改时间 _u；墓碑中的 id 直接丢弃 */
 function mergeItems(cloudArr, localArr, del){
   const map = new Map();
   (cloudArr||[]).forEach(it=>{ if(it && it.id && !del[it.id]) map.set(it.id, it); });
@@ -2811,10 +2809,20 @@ function mergeItems(cloudArr, localArr, del){
     if(!it || !it.id) return;
     if(del[it.id]){ map.delete(it.id); return; }
     const c = map.get(it.id);
-    if(!c) map.set(it.id, it);
-    else if((it._u||0) > (c._u||0)) map.set(it.id, it);
+    if(!c){ map.set(it.id, it); return; }
+    const lr = it._rev||0, cr = c._rev||0;
+    if(lr !== cr){ if(lr > cr) map.set(it.id, it); }               // 逻辑版本新者胜
+    else if((it._u||0) > (c._u||0)) map.set(it.id, it);            // _rev 相同回退比 _u（本机较新优先）
   });
   return Array.from(map.values());
+}
+/* 给本机刚修改过的记录打上新的逻辑版本号，使其上传后在合并中稳胜 */
+function stampLocalRev(obj, rev){
+  const now = Date.now(), ids = new Set();
+  for(const id in localDirty){ if(now - localDirty[id] < LOCAL_DIRTY_TTL) ids.add(id); }
+  const stamp = (arr)=>{ (arr||[]).forEach(x=>{ if(x && x.id && ids.has(x.id)) x._rev = rev; }); };
+  stamp(obj.todos); stamp(obj.tasks); stamp(obj.masters); stamp(obj.rewards);
+  if(obj.hw) SUBJECTS.forEach(s=> stamp(obj.hw[s]));
 }
 /* 折叠循环实例：同一 masterId + date 只允许一条，避免多端各自生成不同 id 导致「同日重复」
    （例如完成一端后，另一端生成的同名未完成项残留在当天清单）。保留优先级：已完成 > 未完成，其次 _u 较新。 */
@@ -2836,7 +2844,7 @@ function dedupeRecurringTodos(todos){
   });
   return keep;
 }
-/* 常用词（按科目）：按 id 取较新的一方 */
+/* 常用词（按科目）：以逻辑版本号 _rev 较新一方为准，_rev 相同回退比 _u */
 function mergeGroups(cloudG, localG){
   const out={};
   SUBJECTS.forEach(s=>{
@@ -2844,7 +2852,11 @@ function mergeGroups(cloudG, localG){
     ((cloudG&&cloudG[s])||[]).forEach(c=>{ if(c&&c.id) map.set(c.id,c); });
     ((localG&&localG[s])||[]).forEach(c=>{
       if(!c||!c.id) return;
-      const o=map.get(c.id); if(!o || (c._u||0)>(o._u||0)) map.set(c.id,c);
+      const o=map.get(c.id);
+      if(!o){ map.set(c.id,c); return; }
+      const lr=c._rev||0, lo=o._rev||0;
+      if(lr!==lo){ if(lr>lo) map.set(c.id,c); }
+      else if((c._u||0)>(o._u||0)) map.set(c.id,c);
     });
     out[s]=Array.from(map.values());
   });
@@ -2893,9 +2905,14 @@ async function readCloud(){
   if(!f) return null;
   try{ return JSON.parse(f.content); }catch(e){ return null; }
 }
-/* 仅在数据指纹变化时才写回云端，避免无意义的写入与 _syncedAt 空转 */
-async function writeCloud(obj){
+/* 写回云端：先读云端当前 rev，乐观锁校验未变再写；给本机刚改记录打新 rev 并整体自增 */
+async function writeCloud(obj, expectRev){
   const cfg=syncCfg();
+  const cur = await readCloud();
+  const curRev = (cur && cur._rev)||0;
+  if(expectRev!=null && curRev !== expectRev) throw { status:'REV_CONFLICT', cloud: cur };
+  stampLocalRev(obj, curRev+1);
+  obj._rev = curRev + 1;
   obj._syncedAt = Date.now();
   const content = JSON.stringify(obj);
   const r = await fetch("https://api.github.com/gists/"+encodeURIComponent(cfg.gist), {
@@ -2904,16 +2921,27 @@ async function writeCloud(obj){
     body: JSON.stringify({ files:{ [SYNC_FILE]:{ content } } })
   });
   if(!r.ok) throw { status:r.status };
+  return true;
 }
 /* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据 */
 function dataSig(s){
   return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{} ]);
 }
-/* 某条目正在本机编辑时，保留本机版本，不被云端覆盖 */
-function protectEditing(merged){
-  if(!editingId || !merged.todos) return merged;
-  const local = state.todos.find(x=>x.id===editingId);
-  if(local) merged.todos = merged.todos.map(it=> (it && it.id===editingId) ? local : it);
+/* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
+function protectMerged(merged){
+  if(!merged) return merged;
+  const now = Date.now();
+  const keep = new Set();
+  if(editingId) keep.add(editingId);
+  for(const id in localDirty){
+    if(now - localDirty[id] < LOCAL_DIRTY_TTL) keep.add(id);
+    else delete localDirty[id];                              // 过期清理，避免无限增长
+  }
+  if(keep.size===0) return merged;
+  const localById = {};
+  ['todos','tasks','masters','rewards'].forEach(k=>{ (state[k]||[]).forEach(x=>{ if(x&&x.id) localById[x.id]=x; }); });
+  ['todos','tasks','masters','rewards'].forEach(k=>{ if(Array.isArray(merged[k])) merged[k]=merged[k].map(x=> (x&&keep.has(x.id)&&localById[x.id]) ? localById[x.id] : x); });
+  if(merged.hw && state.hw) SUBJECTS.forEach(s=>{ const lm=new Map((state.hw[s]||[]).map(c=>[c.id,c])); if(Array.isArray(merged.hw[s])) merged.hw[s]=merged.hw[s].map(c=> (c&&keep.has(c.id)&&lm.has(c.id)) ? lm.get(c.id) : c); });
   return merged;
 }
 function applyMerged(merged){
@@ -2921,35 +2949,35 @@ function applyMerged(merged){
   state = merged; saveLocal();
   if(dataSig(state) !== before){ pruneTombstones(); refreshAll(); renderTasks(); }
 }
-/* 一轮完整同步：取云端 → 与本机合并 → 写回；写后复核消除并发写丢失 */
+/* 一轮完整同步：取云端 → 与本机合并 → 写回；乐观锁重试消除并发写丢失 */
 async function syncCycle(silent){
   if(syncBusy || !syncEnabled()) return false;
   if(document.hidden) return false;            // 后台不抢同步，回到前台再同步
   syncBusy = true; setSyncUI("syncing");
   try{
-    const cloud = await readCloud();
-    const cloudOk = cloud && typeof cloud==="object" && Array.isArray(cloud.todos);
+    let cloud = await readCloud();
+    let cloudOk = cloud && typeof cloud==="object" && Array.isArray(cloud.todos);
+    let cloudRev = cloudOk ? (cloud._rev||0) : 0;
     let merged = mergeState(cloudOk ? cloud : {}, state);
-    protectEditing(merged);
-    const cloudSig = cloudOk ? dataSig(cloud) : "";
-    if(dataSig(merged) !== cloudSig){
-      await writeCloud(merged);
-      // 写后复核：若期间另一设备已写入，把对方数据并回后再写一次，杜绝「后写覆盖」丢数据
-      const cloud2 = await readCloud();
-      if(cloud2 && dataSig(cloud2) !== dataSig(merged)){
-        merged = mergeState(cloud2, merged);
-        protectEditing(merged);
-        await writeCloud(merged);
+    protectMerged(merged);
+    let attempt = 0;
+    while(attempt < 3){
+      const sig = dataSig(merged);
+      const cloudSig = cloudOk ? dataSig(cloud) : "";
+      if(sig === cloudSig){ lastCloudSig = sig; applyMerged(merged); setSyncUI("ok"); return true; }
+      try{
+        await writeCloud(merged, cloudRev);                  // 写前校验云端 rev，变了则抛冲突重合并
+        const cloud2 = await readCloud();
+        if(dataSig(cloud2) === sig){ lastCloudSig = sig; applyMerged(merged); setSyncUI("ok"); return true; }
+        cloud = cloud2; cloudOk = true; cloudRev = cloud._rev||0; merged = mergeState(cloud, state); protectMerged(merged); attempt++;
+      }catch(e){
+        if(e && e.status==='REV_CONFLICT'){ cloud = e.cloud; cloudOk = true; cloudRev = cloud._rev||0; merged = mergeState(cloud, state); protectMerged(merged); attempt++; }
+        else { setSyncUI("err"); if(!silent) toast("同步失败："+syncErr(e)); return false; }
       }
     }
-    lastCloudSig = dataSig(merged);
-    applyMerged(merged);
-    setSyncUI("ok");
-    return true;
+    setSyncUI("err"); if(!silent) toast("同步冲突过多，稍后重试"); return false;
   }catch(e){
-    setSyncUI("err");
-    if(!silent) toast("同步失败："+syncErr(e));
-    return false;
+    setSyncUI("err"); if(!silent) toast("同步失败："+syncErr(e)); return false;
   }finally{ syncBusy=false; }
 }
 
@@ -2964,7 +2992,7 @@ async function syncPullOnly(silent){
     if(cloudSig === lastCloudSig){ setSyncUI("ok"); return false; }   // 云端无变化，跳过
     let merged = mergeState(cloud, state);
     merged._syncedAt = Math.max(cloud._syncedAt||0, state._syncedAt||0);
-    protectEditing(merged);
+    protectMerged(merged);
     lastCloudSig = cloudSig;
     applyMerged(merged);          // 仅更新本机视图，不回写云端
     setSyncUI("ok");
@@ -3243,7 +3271,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.73";
+const APP_VERSION = "2026.09.10.74";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
