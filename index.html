@@ -966,6 +966,7 @@ async function removeSubject(name){
     + "· 今日及以后的作业（"+affected+" 条）、循环母版（"+mCnt+" 条）、常用词（"+hwCnt+" 条）将被删除\n"
     + "· 删除后可在添加栏「已删除」处恢复";
   if(!await askConfirm("删除科目「"+name+"」？", msg)) return;
+  tombstoneSubject(name);                      // v.90：写科目墓碑，防旧表设备同步复活
   all.arc = true; all.arcAt = today;    // v.89：归档日 = 今天；该日之前的历史清单仍显示此科目
   // 今日及以后的作业：写 _del 墓碑后移除，防止云端复活
   state.todos.filter(t=>t.subject===name && t.date>=today).forEach(t=>{ tombstone(t.id); touch(t); });
@@ -985,6 +986,7 @@ async function removeSubject(name){
 /* 恢复已删除科目 */
 function restoreSubject(name){
   const sObj = state.subjects.find(s=>s.name===name); if(!sObj) return;
+  if(state._delSubj && state._delSubj[name]) delete state._delSubj[name];   // v.90：恢复 = 撤销墓碑
   sObj.arc = false;
   sObj.arcAt = "";                 // v.89：恢复后从归档日当日起重新显示
   bumpSubjects(); refreshAll(); toast("已恢复科目「"+name+"」");
@@ -1146,6 +1148,23 @@ function tombstoneHW(id){
   if(!id) return;
   state._delHW = state._delHW||{};
   state._delHW[id] = Date.now();
+}
+/* v.90：科目表删除墓碑（整表同步的例外）
+   科目表是「整表取一 + _u 最后写入者胜」，没有条目级墓碑 ⇒ 后台/其它设备删掉的科目
+   会被持有旧表的设备同步回来。现引入 _delSubj（按科目名记录删除时间）：
+   合并时剔除「已被删除的科目」，保证删除是单向不可复活。 */
+function tombstoneSubject(name){
+  if(!name) return;
+  state._delSubj = state._delSubj||{};
+  state._delSubj[name] = Date.now();
+}
+/* 合并阶段过滤：剔除墓碑中的科目（数组可能携带 _u 属性，逐一取 name） */
+function applySubjDel(subs, delSubj){
+  if(!Array.isArray(subs) || !delSubj) return subs;
+  const u = subs._u || 0;                       // 数组属性 _u 需要保留
+  const out = subs.filter(x=>x && x.name && !delSubj[x.name]);
+  try{ out._u = u; }catch(e){}
+  return out;
 }
 function pruneTasks(){      // 已完成超过上限，按完成时间逐条删最旧
   const done = state.tasks.filter(t=>t.done);
@@ -3494,7 +3513,12 @@ function mergeState(cloud, local){
     _del: del, _delM: delM, _delR: delR,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
-  if(subjects){ merged.subjects = subjects; merged.subjects._u = Math.max((local.subjects&&local.subjects._u)||0, (cloud.subjects&&cloud.subjects._u)||0); }
+  if(subjects){
+    subjects = applySubjDel(subjects, Object.assign({}, local._delSubj||{}, cloud._delSubj||{}));
+    merged.subjects = subjects;
+    merged.subjects._u = Math.max((local.subjects&&local.subjects._u)||0, (cloud.subjects&&cloud.subjects._u)||0);
+  }
+  merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
   return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
@@ -3880,7 +3904,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.89";
+const APP_VERSION = "2026.09.10.90";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
