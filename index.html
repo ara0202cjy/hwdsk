@@ -864,7 +864,7 @@ function load(){
       localStorage.removeItem(HW_KEY); saveLocal();
     }
   }catch(e){}
-  if(migrateXN(state)) saveLocal();   // v.66：lvcheng「其他」栏整体迁入「校内」
+  if(migrateXN(state)) saveLocal();   // v.67：lvcheng 关键字项（琵琶等）迁回「其他」
   pruneTombstones();
 }
 /* 迁移 v.66→v.67：lvcheng 账号下的数据归类（门控 lvcheng + 幂等，挂在 load / mergeState / syncPull 三处）。
@@ -888,15 +888,7 @@ function migrateXN(o){
       if(move.length){ o.hw[s]=stay; o.hw["其他"]=(o.hw["其他"]||[]).concat(move); n+=move.length; }
     });
   }
-  // 2) 剩余非关键字的「其他」→ 校内（v.66 语义；幂等）
-  (o.todos||[]).forEach(t=>{ if(t && t.subject==="其他" && !isXN(t.title)){ t.subject="校内"; touch(t); n++; } });
-  (o.masters||[]).forEach(m=>{ if(m && m.subject==="其他" && !isXN(m.title)){ m.subject="校内"; touch(m); n++; } });
-  if(o.hw && Array.isArray(o.hw["其他"])){
-    const keep=[], move=[];
-    o.hw["其他"].forEach(c=>{ const t=(c&&c.t)||c; if(isXN(t)) keep.push(c); else move.push(c); });
-    o.hw["其他"]=keep;
-    if(move.length){ o.hw["校内"]=(o.hw["校内"]||[]).concat(move); n+=move.length; }
-  }
+  // 2) 注：v.74 起移除「其他→校内」自动搬运，lvcheng 的「其他」栏自由添加、不再被搬走（避免误把生活类条目并入校内）
   return n;
 }
 /* 仅写本机，不触发云同步（供同步流程内部使用，避免递归） */
@@ -2758,7 +2750,7 @@ async function syncPull(mode){
     if(!state._delR) state._delR = {};           // 奖励删除墓碑
     (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
-    migrateXN(state);   // v.66：lvcheng「其他」栏迁入「校内」
+    migrateXN(state);   // v.67：lvcheng 关键字项（琵琶等）迁回「其他」
     saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
     syncStatus("已同步云端 "+n+" 条作业","ok");
@@ -2892,7 +2884,7 @@ function mergeState(cloud, local){
     _del: del, _delM: delM, _delR: delR,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
-  migrateXN(merged);   // v.66：合并后即时把 lvcheng「其他」迁入「校内」，确保云端拉回也归位
+  migrateXN(merged);   // v.67：合并后即时把 lvcheng 关键字项（琵琶等）归位「其他」
   return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
@@ -3271,7 +3263,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.74";
+const APP_VERSION = "2026.09.10.75";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
