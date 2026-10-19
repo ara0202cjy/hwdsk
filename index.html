@@ -183,6 +183,14 @@
   .seg-edit-tip{margin:-4px 0 8px; padding:6px 10px; border-radius:9px; background:rgba(232,133,59,.10); color:var(--sun); font-size:12px; font-weight:600;}
   /* 科目选择 + 管理按钮组合 */
   .seg-wrap{display:inline-flex; align-items:stretch; border-radius:9px; overflow:hidden; border:1.5px solid var(--line); background:#fcfaf5;}
+  /* v.85：设置模式下的拖拽排序（科目 / 常用词） */
+  .seg-wrap.sortable{cursor:grab;}
+  .seg-wrap.sortable:active{cursor:grabbing;}
+  .seg-wrap .seg-ops .drag-ico{display:inline-flex; align-items:center; color:var(--muted); padding:0 2px;}
+  .hw-chip.sortable{cursor:grab;}
+  .hw-chip.sortable:active{cursor:grabbing;}
+  .sortable.dragging{opacity:.45;}
+  .sortable.drag-over{outline:2px dashed var(--sun); outline-offset:2px;}
   .seg-wrap .seg-pick{border:none; background:transparent; border-radius:0; padding:8px 12px; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer;}
   .seg-wrap .seg-ops{display:inline-flex; align-items:center; border-left:1px solid var(--line); background:rgba(0,0,0,.02);}
   .seg-wrap .seg-op{width:26px; display:inline-flex; align-items:center; justify-content:center; border:none; background:transparent; color:var(--muted); cursor:pointer; padding:0;}
@@ -1347,6 +1355,66 @@ function fmtDur(ms){
   return pad2(m)+":"+pad2(ss);
 }
 
+/* ============ 添加栏拖拽排序（v.85） ============
+   作用域严格限定在「添加作业」栏的设置模式（subjEditOn）内：
+     · 科目：拖动 .seg-wrap，落盘写回 state.subjects 顺序 → 随云同步；
+             清单卡片顺序与统计（subjIdx）本就跟随 state.subjects，故自动重排。
+     · 常用词：拖动 .hw-chip，落盘写回该科目分组的数组顺序（本地 localStorage）。
+   与 v.81 删除的「整页卡片/清单拖拽」无关：这里只重排添加栏内的两个小列表。 */
+function dragSvg(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>'; }
+/* 通用：给容器内 [data-drag-id] 元素绑定 HTML5 拖拽排序；onDrop(id, order) 负责落盘 */
+function bindDragSort(container, itemSel, onDrop){
+  if(!container) return;
+  container.querySelectorAll(itemSel).forEach(el=>{
+    if(el._sortBound) return; el._sortBound = true;
+    el.addEventListener("dragstart", (e)=>{
+      el.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try{ e.dataTransfer.setData("text/plain", el.getAttribute("data-drag-id")||""); }catch(err){}
+    });
+    el.addEventListener("dragend", ()=>{
+      el.classList.remove("dragging");
+      container.querySelectorAll(".drag-over").forEach(x=>x.classList.remove("drag-over"));
+      const order = Array.from(container.querySelectorAll(itemSel)).map(x=>x.getAttribute("data-drag-id"));
+      onDrop(order);
+    });
+    el.addEventListener("dragover", (e)=>{ e.preventDefault(); e.dataTransfer.dropEffect="move"; el.classList.add("drag-over"); });
+    el.addEventListener("dragleave", ()=> el.classList.remove("drag-over"));
+    el.addEventListener("drop", (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      el.classList.remove("drag-over");
+      const src = container.querySelector(".dragging"); if(!src || src===el) return;
+      const r = el.getBoundingClientRect();
+      const after = (e.clientY - r.top) > r.height/2;
+      if(after) el.parentNode.insertBefore(src, el.nextSibling); else el.parentNode.insertBefore(src, el);
+    });
+  });
+}
+/* 科目顺序落盘：按 DOM 顺序重排 state.subjects（未出现的保持在后面），bump 时间戳 → 云同步 */
+function saveSubjOrderByNames(orderNames){
+  ensureSubjects();
+  const byName = new Map(state.subjects.map(s=>[s.name, s]));
+  const next = [];
+  orderNames.forEach(nm=>{ const s=byName.get(nm); if(s && !next.includes(s)) next.push(s); });
+  state.subjects.forEach(s=>{ if(!next.includes(s)) next.push(s); });   // 归档/未显示的兜底保留
+  state.subjects = next;
+  bumpSubjects();
+  refreshAll();
+}
+/* 常用词顺序：存本地（不进云端，避免与条目合并语义混淆） */
+const HWORDER_KEY = "wb_hwdsk_hword_v1";
+function getHwOrder(subj){ try{ const o=JSON.parse(localStorage.getItem(HWORDER_KEY)||"{}"); return Array.isArray(o[subj])?o[subj]:[]; }catch(e){ return []; } }
+function saveHwOrder(subj, ids){ try{ const o=JSON.parse(localStorage.getItem(HWORDER_KEY)||"{}"); o[subj]=ids; localStorage.setItem(HWORDER_KEY, JSON.stringify(o)); }catch(e){} }
+/* 依本地记忆重排常用词数组（返回新数组；未记录的追加在后） */
+function orderHw(arr, ids){
+  if(!ids.length) return arr;
+  const rank = new Map(ids.map((id,i)=>[id,i]));
+  return arr.slice().sort((a,b)=>{
+    const ra = a&&a.id&&rank.has(a.id)?rank.get(a.id):1e6, rb = b&&b.id&&rank.has(b.id)?rank.get(b.id):1e6;
+    return ra-rb;
+  });
+}
+
 /* ============ 日视图统计（v.84：从 renderList 抽出的纯计算，便于单测与复用） ============
    输入当日清单 ts，返回计数与时长（混合口径：计时项用真实用时，未计时用预估分）。
    注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
@@ -1437,23 +1505,25 @@ function renderList(){
     html += `</div>`;
   });
 
-  // 添加作业统一卡（v.82：科目栏「设置」开关——开启后才显示各科目的改名 / 删除 / 新增 / 恢复）
+  // 添加作业统一卡（v.85：设置模式下支持科目与常用词拖拽排序）
   html += `<div class="card">
     <div class="add-title">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
       添加作业
       <span class="add-tools">
-        <button class="book-set${subjEditOn?' on':''}" title="科目栏设置：开启后可改名 / 删除 / 新增 / 恢复科目" onclick="toggleSubjEdit()">${gearSvg()}</button>
+        <button class="book-set${subjEditOn?' on':''}" title="科目栏设置：开启后可改名 / 删除 / 新增 / 恢复，并拖拽排序" onclick="toggleSubjEdit()">${gearSvg()}</button>
       </span>
     </div>
-    ${subjEditOn?'<div class="seg-edit-tip">科目编辑已开启：点 ✎ 改名、🗑 删除，行尾 ＋ 新增科目</div>':''}
+    ${subjEditOn?'<div class="seg-edit-tip">科目编辑已开启：可 ✎ 改名、🗑 删除、拖拽排序（清单按此顺序排列）；行尾 ＋ 新增</div>':''}
     <div class="seg4" id="seg4">`;
   const activeSubjs = subjArr.filter(s=>!s.arc);
   activeSubjs.forEach((sObj)=>{
     const s = sObj.name;
-    html += `<span class="seg-wrap${s===addSubj?' on':''}" data-s="${esc(s)}">
+    /* v.85：设置模式下科目可拖拽排序（拖动整个 seg-wrap，落盘写回 state.subjects 顺序） */
+    html += `<span class="seg-wrap${s===addSubj?' on':''}${subjEditOn?' sortable':''}" data-s="${esc(s)}"${subjEditOn?` draggable="true"`:""}>
       <button class="seg-pick" data-s="${esc(s)}" onclick="pickAddSubj(this)" style="--sc:${sObj.color||"#6B8E5A"}">${esc(s)}</button>
       ${subjEditOn?`<span class="seg-ops">
+        <span class="drag-ico" title="拖拽调整顺序">${dragSvg()}</span>
         <button class="seg-op" title="重命名科目「${esc(s)}」" onclick="event.stopPropagation();renameSubject('${esc(s)}')">${penSvg()}</button>
         <button class="seg-op danger" title="删除科目「${esc(s)}」" onclick="event.stopPropagation();removeSubject('${esc(s)}')">${trashSvg()}</button>
       </span>`:""}
@@ -1479,6 +1549,7 @@ function renderList(){
 
   $("listContent").innerHTML = html;
   renderHWChips();
+  bindAddBarSort();     // v.85：设置模式下绑定添加栏（科目 + 常用词）拖拽排序
 }
 
 let addSubj = "语文";
@@ -1499,15 +1570,39 @@ function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发�
 /* 常用词统一为 {t:标题, e:预估分钟}；旧数据仅存字符串，读取时兼容 */function hwItem(x){ if(typeof x==="string") return {t:x, e:0}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0)}; }
 function renderHWChips(){
   const box=$("hwChips"); if(!box) return;
-  const arr=(loadHW()[addSubj]||[]).map(hwItem);
+  /* v.85：按本地记忆的顺序展示常用词（orderHw）；renderHWChips 还被单独调用（选科目/编辑），
+     故每次都重排，保证与拖拽结果一致。 */
+  const raw = loadHW()[addSubj]||[];
+  const ordered = orderHw(raw, getHwOrder(addSubj));
+  const arr = ordered.map(hwItem);
   const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
   if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
-  box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`).join("");
+  /* v.85：设置模式下 chip 可拖拽（按 id 标识，落盘写本地顺序） */
+  const dragOK = subjEditOn;
+  box.innerHTML=arr.map((w,i)=>{
+    const id = (ordered[i]&&ordered[i].id)||("idx"+i);
+    return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`draggable="true" data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
+  }).join("");
   const addBtn=$("hwAddBtn"); if(addBtn) addBtn.style.display = arr.length>=15 ? "none" : "";
+}
+/* v.85：绑定添加栏拖拽（仅设置模式）。科目 → 云同步；常用词 → 本地。 */
+function bindAddBarSort(){
+  if(!subjEditOn) return;
+  const seg = $("seg4");
+  if(seg) bindDragSort(seg, ".seg-wrap[data-s]", (names)=>{
+    saveSubjOrderByNames(names);
+    toast("科目顺序已更新，清单与统计同步调整");
+  });
+  const chips = $("hwChips");
+  if(chips) bindDragSort(chips, ".hw-chip[data-drag-id]", (ids)=>{
+    saveHwOrder(addSubj, ids);
+    renderHWChips();
+    toast("常用词顺序已更新");
+  });
 }
 /* v.80：记录「本次输入框内容来自哪个常用词」，用于添加时写入 todo.hwId，常用词改名时可级联更新 */
 let _fillHwId = null;
-function fillHW(i){ const raw=loadHW()[addSubj]||[]; const w=hwItem(raw[i]); _fillHwId = (raw[i]&&raw[i].id)||null; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
+function fillHW(i){ const raw=orderHw(loadHW()[addSubj]||[], getHwOrder(addSubj)); const w=hwItem(raw[i]); _fillHwId = (raw[i]&&raw[i].id)||null; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
 /* v.84：应用内弹窗替代原生 prompt（连弹两次体验差）
    addHW：内容 + 预估分两步 → 仍分两步但用统一弹窗；如需一步可后续合并 */
 async function addHW(){
@@ -1521,7 +1616,8 @@ async function addHW(){
   arr.push({id:uid(), t:t, e:est, _u:Date.now()}); saveHW(hw); renderHWChips();
 }
 async function editHW(i){
-  const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
+  const hw=loadHW(); const real=hw[addSubj]||[];
+  const arr=orderHw(real, getHwOrder(addSubj)); if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
   const v = await askInput({ title:"修改常用词", label:"作业内容", value:cur.t,
     hint:"改名后，此前通过该常用词添加的作业标题会一并更新。" });
   if(v==null) return; const t=v.trim(); if(!t) return;
@@ -1529,7 +1625,9 @@ async function editHW(i){
   if(e==null) return; const est=Math.max(0, parseInt(String(e).trim()||"0",10)||0);
   const raw=arr[i]||{}; const hwId = raw.id||uid();
   const oldTitle = cur.t;                     // 旧标题：用于存量数据的标题兜底匹配
-  arr[i]={id:hwId, t:t, e:est, _u:Date.now()};
+  const newItem={id:hwId, t:t, e:est, _u:Date.now()};
+  const at = real.indexOf(raw);               // 写回真实数组中该词的所在位置（保持原存储顺序）
+  if(at>=0) real[at]=newItem; else real.push(newItem);
   saveHW(hw);
   /* 级联更新「所有由该常用词添加的清单项」标题 + 预估分
      v.82 修复：hwId 是 v.80 才新增的字段，v.80 之前创建的作业都没有 hwId，
@@ -1550,7 +1648,13 @@ async function editHW(i){
   else toast("常用词已更新");
 }
 /* v.80：删除常用词只删词本身，不影响此前已添加的清单项（无需处理 state.todos） */
-function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const gone=arr[i]; if(gone&&gone.id) tombstoneHW(gone.id); arr.splice(i,1); saveHW(hw); renderHWChips(); }
+function delHW(i){
+  const hw=loadHW(); const real=hw[addSubj]||[];
+  const arr=orderHw(real, getHwOrder(addSubj)); if(i<0||i>=arr.length) return;
+  const gone=arr[i]; if(gone&&gone.id) tombstoneHW(gone.id);
+  const at=real.indexOf(gone); if(at>=0) real.splice(at,1); else arr.splice(i,1);
+  saveHW(hw); renderHWChips();
+}
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
@@ -3631,7 +3735,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.84";
+const APP_VERSION = "2026.09.10.85";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
