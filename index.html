@@ -594,6 +594,19 @@
   .opt:active{background:#f1ece1;}
   .opt .sub{font-size:12px; color:var(--muted); font-weight:500;}
   .opt.danger{color:var(--red);}
+  /* v.84：应用内输入弹窗（替代原生 prompt），基于既有 sheet 样式 */
+  .dlg-field{margin-bottom:12px;}
+  .dlg-label{display:block; font-size:13px; font-weight:700; color:var(--muted); margin-bottom:6px;}
+  .dlg-input{width:100%; border:1.5px solid var(--line); border-radius:12px; padding:12px 13px; font-size:16px; background:#fcfaf5; color:var(--ink); font-family:inherit;}
+  .dlg-input:focus{outline:none; border-color:var(--sun);}
+  .dlg-hint{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5;}
+  .dlg-swatches{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .dlg-sw{width:34px; height:34px; border-radius:10px; cursor:pointer; border:2.5px solid transparent; padding:0;}
+  .dlg-sw.on{border-color:var(--ink); transform:scale(1.06);}
+  .dlg-btns{display:flex; gap:9px; margin-top:16px;}
+  .dlg-btn{flex:1; border:none; border-radius:13px; padding:13px; font-size:15.5px; font-weight:700; font-family:inherit; cursor:pointer; background:#f1ece1; color:var(--ink);}
+  .dlg-btn.primary{background:var(--ink); color:#fff;}
+  .dlg-btn:active{transform:scale(.98);}
 
   /* 云同步（GitHub Gist）面板 */
   .sync-box{background:var(--card); border-radius:14px; padding:14px; margin-bottom:9px; box-shadow:var(--shadow);}
@@ -871,25 +884,30 @@ function subjExists(name){ return subjList().some(s=>s.name===name); }
 /* ============ 科目管理（v.80） ============ */
 /* 给可变科目表打时间戳并保存（用于云端「最后写入者胜」合并） */
 function bumpSubjects(){ state.subjects._u = Date.now(); save(); }
-/* 新增科目：插到「其他」之前，归档科目之后 */
-function addSubject(){
-  const v = prompt("新增科目名称：",""); if(v==null) return;
+/* 新增科目：插到「其他」之前，归档科目之后（v.84：应用内弹窗 + 色板，一次完成） */
+async function addSubject(){
+  const v = await askInput({ title:"新增科目", label:"科目名称", placeholder:"如：体育 / 科学", hint:"科目用于分类作业；创建后可在添加栏修改或删除。" });
+  if(v==null) return;
   const name = v.trim(); if(!name){ toast("科目名不能为空"); return; }
   if(subjExists(name)){ toast("已存在同名科目「"+name+"」"); return; }
   ensureSubjects();
   const used = subjList().map(s=>s.color);
-  let color = SUBJ_PALETTE.find(c=>!used.includes(c)) || SUBJ_PALETTE[state.subjects.length % SUBJ_PALETTE.length];
-  const ci = prompt("该科目颜色（HEX，留空=自动）：", color); if(ci!=null){ const t=ci.trim(); if(/^#[0-9a-fA-F]{6}$/.test(t)) color=t; }
+  const auto = SUBJ_PALETTE.find(c=>!used.includes(c)) || SUBJ_PALETTE[state.subjects.length % SUBJ_PALETTE.length];
+  const picked = await askInput({ title:"选择颜色", label:"科目颜色", type:"color", value:auto, hint:"用于该科目卡片与图例配色。" });
+  if(picked==null) return;
+  const color = /^#[0-9a-fA-F]{6}$/.test(String(picked).trim()) ? String(picked).trim() : auto;
   const other = state.subjects.findIndex(s=>s.name==="其他");
   const item = { name, color, arc:false };
   if(other>=0) state.subjects.splice(other,0,item); else state.subjects.push(item);
   addSubj = name;
   bumpSubjects(); refreshAll(); toast("已新增科目「"+name+"」");
 }
-/* 重命名科目：级联更新历史作业 / 循环母版 / 常用词分组键 / 本地排序键 / 当前选中 */
-function renameSubject(oldName){
+/* 重命名科目：级联更新历史作业 / 循环母版 / 常用词分组键 / 当前选中（v.84：应用内弹窗） */
+async function renameSubject(oldName){
   if(subjArchived(oldName)){ toast("已删除科目请先恢复再改名"); return; }
-  const v = prompt("重命名科目（旧内容会一并更新）：", oldName); if(v==null) return;
+  const v = await askInput({ title:"重命名科目", label:"新的科目名称", value:oldName,
+    hint:"改名后，此前该科目下的作业、循环母版与常用词会一并更新（原色系保留）。" });
+  if(v==null) return;
   const name = v.trim(); if(!name){ toast("科目名不能为空"); return; }
   if(name===oldName) return;
   if(subjExists(name)){ toast("已存在同名科目「"+name+"」"); return; }
@@ -906,32 +924,30 @@ function renameSubject(oldName){
   bumpSubjects(); refreshAll();
   toast(n>0 ? ("已改名为「"+name+"」，同步更新 "+n+" 条内容") : ("已改名为「"+name+"」"));
 }
-/* 删除科目：今日前的历史内容保留（卡片转归档），今日及以后的内容 + 母版 + 常用词一并删除 */
-function removeSubject(name){
+/* 删除科目：今日前的历史内容保留（卡片转归档），今日及以后的内容 + 母版 + 常用词一并删除
+   v.84：确认框改用应用内 askConfirm（替代原生 confirm） */
+async function removeSubject(name){
   const today = ymd(new Date());
   const all = state.subjects.find(s=>s.name===name);
   if(!all || all.arc){ toast("该科目已删除"); return; }
   const affected = state.todos.filter(t=>t.subject===name && t.date>=today).length;
   const mCnt = (state.masters||[]).filter(m=>m.subject===name).length;
   const hwCnt = ((state.hw||{})[name]||[]).length;
-  const msg = "删除科目「"+name+"」？\n\n"
-    + "· 今日（"+today+"）之前的 "+"历史内容保留，卡片转为「已删除」只读归档\n"
+  const msg = "· 今日（"+today+"）之前的历史内容保留，卡片转为「已删除」只读归档\n"
     + "· 今日及以后的作业（"+affected+" 条）、循环母版（"+mCnt+" 条）、常用词（"+hwCnt+" 条）将被删除\n"
-    + "· 删除后可在归档卡片上「↺ 恢复」\n\n确认删除？";
-  if(!confirm(msg)) return;
+    + "· 删除后可在添加栏「已删除」处恢复";
+  if(!await askConfirm("删除科目「"+name+"」？", msg)) return;
   all.arc = true;
   // 今日及以后的作业：写 _del 墓碑后移除，防止云端复活
-  const kill = {};
-  state.todos.filter(t=>t.subject===name && t.date>=today).forEach(t=>{ kill[t.id]=Date.now(); touch(t); });
-  state._del = Object.assign(state._del||{}, kill);
+  state.todos.filter(t=>t.subject===name && t.date>=today).forEach(t=>{ tombstone(t.id); touch(t); });
   state.todos = state.todos.filter(t=> !(t.subject===name && t.date>=today));
   // 母版：删除并写墓碑（否则明天会重新生成）
-  (state.masters||[]).filter(m=>m.subject===name).forEach(m=>{ state._delM = state._delM||{}; state._delM[m.id]=Date.now(); touch(m); });
+  (state.masters||[]).filter(m=>m.subject===name).forEach(m=>{ tombstoneMaster(m.id); touch(m); });
   state.masters = (state.masters||[]).filter(m=>m.subject!==name);
   // 待办
   state.tasks = (state.tasks||[]).filter(x=>x.subject!==name);
   // 常用词：删除并写墓碑
-  if(state.hw && Array.isArray(state.hw[name])){ state.hw[name].forEach(c=>{ if(c&&c.id){ state._delHW=state._delHW||{}; state._delHW[c.id]=Date.now(); } }); delete state.hw[name]; }
+  if(state.hw && Array.isArray(state.hw[name])){ state.hw[name].forEach(c=>{ if(c&&c.id) tombstoneHW(c.id); }); delete state.hw[name]; }
   if(addSubj===name){ const a=subjList().find(s=>!s.arc); addSubj = a ? a.name : "其他"; }
   editBooks.delete(name);
   bumpSubjects(); refreshAll();
@@ -1081,10 +1097,25 @@ function delTask(id){       // 仅未完成可删除（已完成由数量上限�
   state.tasks = state.tasks.filter(x=>x.id!==id); save(); renderTasks(); toast("已删除待办");
 }
 /* 删除记录：写入墓碑，避免合并时又被云端数据“复活” */
+/* 删除墓碑：记录「已删除」，同步合并时用于防止云端旧值复活。
+   v.84：统一封装 —— 任何删除（含按科目/循环批量删除）都必须经由这里，
+   不要再手工拼 kill map 写 state._del，避免漏写或写错字段。 */
 function tombstone(id){
   if(!id) return;
   state._del = state._del||{};
   state._del[id] = Date.now();
+}
+/* 循环母版删除墓碑：跨端停止该循环（母版删了，实例不再重生） */
+function tombstoneMaster(id){
+  if(!id) return;
+  state._delM = state._delM||{};
+  state._delM[id] = Date.now();
+}
+/* 常用词删除墓碑 */
+function tombstoneHW(id){
+  if(!id) return;
+  state._delHW = state._delHW||{};
+  state._delHW[id] = Date.now();
 }
 function pruneTasks(){      // 已完成超过上限，按完成时间逐条删最旧
   const done = state.tasks.filter(t=>t.done);
@@ -1316,6 +1347,47 @@ function fmtDur(ms){
   return pad2(m)+":"+pad2(ss);
 }
 
+/* ============ 日视图统计（v.84：从 renderList 抽出的纯计算，便于单测与复用） ============
+   输入当日清单 ts，返回计数与时长（混合口径：计时项用真实用时，未计时用预估分）。
+   注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
+function dayListStats(ts, dsStr){
+  // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
+  const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日清单按时完成（非补做）
+  const doneLater  = ts.filter(t=>t.done && t.makeup);               // 当日清单后期补做完成
+  const undone     = ts.filter(t=>!t.done);                           // 当日未完成
+  // 当日补做「其他日期」清单项：完成日==当日 且 作业日≠当日（跨日统计）
+  const madeUpEst  = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr)
+                      .reduce((a,t)=>a+durOf(t),0);
+  return {
+    doneReal:     ts.filter(t=>t.done && !t.makeup).length,          // 当日完成（真实完成、非补打卡）
+    doneMakeup:   ts.filter(t=>t.done && t.makeup).length,           // 补打卡完成
+    pendingCorr:  ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length,// 待订正
+    pendingDone:  ts.filter(t=>!t.done).length,                      // 待完成
+    totalEst:     ts.reduce((a,t)=>a+durOf(t),0),                    // 预计时长 = 当日所有项之和
+    doneEst:      doneOnTime.reduce((a,t)=>a+durOf(t),0),            // 当日已做
+    laterEst:     doneLater.reduce((a,t)=>a+durOf(t),0),             // 后期补做
+    undoneEst:    undone.reduce((a,t)=>a+durOf(t),0),                // 未做
+    madeUpEst,                                                        // 当日补做（其他日期）
+    // 自检：预计时长 = 当日已做 + 后期补做 + 未做（按定义恒成立）
+    workEst:      doneOnTime.reduce((a,t)=>a+durOf(t),0) + madeUpEst // 当日时长 = 当日已做 + 当日补做
+  };
+}
+/* 顶部紧凑统计栏 + 四时长摘要栏（含金色恒等式行）的 HTML */
+function dayStatsHtml(st){
+  return `<div class="top-stats">
+    <div class="ts-cell"><div class="ts-v g">${st.doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
+    <div class="ts-cell"><div class="ts-v g">${st.doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
+    <div class="ts-cell"><div class="ts-v warn">${st.pendingCorr}<small>项</small></div><div class="ts-k">待订正</div></div>
+    <div class="ts-cell"><div class="ts-v warn">${st.pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
+  </div>
+  <div class="day-summary"><div class="ds-main">
+    <div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>未做时长</span></div>
+    <div class="ds-row ds-vals"><b class="ds-v">${fmtEst(st.totalEst)}</b><b class="ds-v3">${fmtEst(st.doneEst)}</b><b class="ds-v4">${fmtEst(st.laterEst)}</b><b class="ds-v2">${fmtEst(st.undoneEst)}</b></div>
+    <div class="ds-gold">当日时长（${fmtEst(st.workEst)}）= 当日已做（${fmtEst(st.doneEst)}）+ 当日补做（${fmtEst(st.madeUpEst)}）</div>
+  </div></div>`;
+}
+
 function renderList(){
   const ds = ymd(viewDate);
   genRecurring(ds);
@@ -1331,35 +1403,11 @@ function renderList(){
   const normSubj = s => validNames.includes(s) ? s : targetOther;
   ts.forEach(t=>{ (bySubj[normSubj(t.subject)]||(bySubj[normSubj(t.subject)]=[])).push(t); });
 
-  let html="";
-  // 顶部紧凑统计栏：当日完成 / 补打卡 / 待订正 / 待完成（显示在一个卡片栏中）
-  // 口径（与订正状态无关：含无须订正、已订正或未订正）
-  const doneReal = ts.filter(t=>t.done && !t.makeup).length;     // 当日完成数量（真实完成、非补打卡）
-  const doneMakeup = ts.filter(t=>t.done && t.makeup).length;    // 补打卡完成数量
-  const pendingCorr = ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length;  // 待订正：有错题且未确认订正
-  const pendingDone = ts.filter(t=>!t.done).length;              // 待完成：尚未完成
-  html += `<div class="top-stats">
-    <div class="ts-cell"><div class="ts-v g">${doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
-    <div class="ts-cell"><div class="ts-v g">${doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
-    <div class="ts-cell"><div class="ts-v warn">${pendingCorr}<small>项</small></div><div class="ts-k">待订正</div></div>
-    <div class="ts-cell"><div class="ts-v warn">${pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
-  </div>`;
+  // 顶部统计栏与四时长摘要：统计计算已抽为 dayStats()（纯函数，便于单测）
   const dsStr = ymd(viewDate);
-  // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
-  const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
-  const doneOnTime = ts.filter(t=>t.done && !t.makeup);                 // 当日清单按时完成（非补做）
-  const doneLater  = ts.filter(t=>t.done && t.makeup);                   // 当日清单后期补做完成（completedOn>作业日）
-  const undone     = ts.filter(t=>!t.done);                             // 当日未完成
-  // 当日补做「其他日期」清单项：完成日==当日 且 作业日≠当日（makeup 且 completedOn==ds），跨日统计
-  const madeUpEst  = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr).reduce((a,t)=>a+durOf(t),0);
-  const totalEst   = ts.reduce((a,t)=>a+durOf(t),0);                    // 预计时长 = 当日所有项时长之和（混合口径）
-  const doneEst    = doneOnTime.reduce((a,t)=>a+durOf(t),0);            // 当日已做时长
-  const laterEst   = doneLater.reduce((a,t)=>a+durOf(t),0);             // 后期补做时长
-  const undoneEst  = undone.reduce((a,t)=>a+durOf(t),0);                // 未做时长
-  // 自检：预计时长 = 当日已做 + 后期补做 + 未做（按定义恒成立，因当日项恰好三分天下）
-  const workEst = doneEst + madeUpEst;   // 当日时长 = 当日已做 + 当日补做
-  html += `<div class="day-summary"><div class="ds-main"><div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v4">${fmtEst(laterEst)}</b><b class="ds-v2">${fmtEst(undoneEst)}</b></div><div class="ds-gold">当日时长（${fmtEst(workEst)}）= 当日已做（${fmtEst(doneEst)}）+ 当日补做（${fmtEst(madeUpEst)}）</div></div></div>`;
-  /* v.80：按可变科目表顺序渲染卡片；卡片头支持 拖拽手柄 / 改名 / 删除；归档卡置灰只读 */
+  let html = dayStatsHtml(dayListStats(ts, dsStr));
+  /* 按可变科目表（state.subjects）顺序渲染卡片；卡片头仅保留齿轮设置；归档卡置灰只读。
+     注：科目改名 / 删除 / 新增 / 恢复统一在下方「添加作业」栏（需开启 subjEditOn），见 v.81/v.82。 */
   subjArr.forEach((sObj, subjIdxRender)=>{
     const subj = sObj.name;
     const arc = !!sObj.arc;
@@ -1460,17 +1508,25 @@ function renderHWChips(){
 /* v.80：记录「本次输入框内容来自哪个常用词」，用于添加时写入 todo.hwId，常用词改名时可级联更新 */
 let _fillHwId = null;
 function fillHW(i){ const raw=loadHW()[addSubj]||[]; const w=hwItem(raw[i]); _fillHwId = (raw[i]&&raw[i].id)||null; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
-function addHW(){
+/* v.84：应用内弹窗替代原生 prompt（连弹两次体验差）
+   addHW：内容 + 预估分两步 → 仍分两步但用统一弹窗；如需一步可后续合并 */
+async function addHW(){
   const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]);
   if(arr.length>=15){ toast("【"+addSubj+"】常用词最多 15 个"); return; }
-  const v=prompt("为【"+addSubj+"】添加常用词（作业内容）：",""); if(v==null) return; const t=v.trim(); if(!t) return;
-  const e=prompt("预估时长（分钟，留空=不填）：",""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
+  const v = await askInput({ title:"添加常用词 · "+addSubj, label:"作业内容", placeholder:"如：默写 / 朗读",
+    hint:"常用词会归入【"+addSubj+"】栏，点词即可填入输入框。" });
+  if(v==null) return; const t=v.trim(); if(!t) return;
+  const e = await askInput({ title:"预估时长", label:"预估分钟（留空 = 不填）", type:"number", placeholder:"如：15" });
+  if(e==null) return; const est=Math.max(0, parseInt(String(e).trim()||"0",10)||0);
   arr.push({id:uid(), t:t, e:est, _u:Date.now()}); saveHW(hw); renderHWChips();
 }
-function editHW(i){
+async function editHW(i){
   const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
-  const v=prompt("修改常用词（作业内容）：\n注意：改名后，此前通过该常用词添加的作业标题会一并更新。",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
-  const e=prompt("预估时长（分钟）：",cur.e?String(cur.e):""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
+  const v = await askInput({ title:"修改常用词", label:"作业内容", value:cur.t,
+    hint:"改名后，此前通过该常用词添加的作业标题会一并更新。" });
+  if(v==null) return; const t=v.trim(); if(!t) return;
+  const e = await askInput({ title:"预估时长", label:"预估分钟", type:"number", value:cur.e?String(cur.e):"" });
+  if(e==null) return; const est=Math.max(0, parseInt(String(e).trim()||"0",10)||0);
   const raw=arr[i]||{}; const hwId = raw.id||uid();
   const oldTitle = cur.t;                     // 旧标题：用于存量数据的标题兜底匹配
   arr[i]={id:hwId, t:t, e:est, _u:Date.now()};
@@ -1494,7 +1550,7 @@ function editHW(i){
   else toast("常用词已更新");
 }
 /* v.80：删除常用词只删词本身，不影响此前已添加的清单项（无需处理 state.todos） */
-function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const gone=arr[i]; if(gone&&gone.id){ state._delHW=state._delHW||{}; state._delHW[gone.id]=Date.now(); } arr.splice(i,1); saveHW(hw); renderHWChips(); }
+function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const gone=arr[i]; if(gone&&gone.id) tombstoneHW(gone.id); arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
@@ -1646,16 +1702,19 @@ function doneRow(t, subj, ds){
     </div>
   </div>`;
 }
-function delTodo(id){
+/* v.84：确认框改用应用内 askConfirm（替代原生 confirm） */
+async function delTodo(id){
   const t=getTodo(id); if(!t) return;
   if(deleteLocked(t)){ toast("该作业已超过 "+DELETE_LOCK_DAYS+" 天，无法删除；仍可编辑状态、补打卡、改错题、订正"); return; }
   const m = t.masterId ? getMaster(t.masterId) : null;
   if(m){
     // 循环作业单天删除：仅跳过该天，循环继续
-    if(!confirm("这是循环作业「"+t.title+"」。\n点【确定】＝只删除 "+t.date+" 这一天（之后仍按循环出现）；\n点【取消】＝不删除。")) return;
+    const ok = await askConfirm("删除这一天的循环作业？",
+      "「"+t.title+"」在 "+t.date+" 这一天\n\n确定＝只跳过这一天（之后仍按循环出现）；取消＝不删除。");
+    if(!ok) return;
     m.skip = m.skip||[]; if(!m.skip.includes(t.date)) m.skip.push(t.date); m._u=Date.now(); markLocal(m.id);
   } else {
-    if(!confirm("确定删除该作业？")) return;
+    if(!await askConfirm("确定删除该作业？", "「"+t.title+"」将被移除。")) return;
   }
   tombstone(id);
   state.todos=state.todos.filter(x=>x.id!==id);
@@ -1725,7 +1784,7 @@ function setLock(id, type){
   if(type===null){
     // 解锁：对「操作日之后」的每一日生效——清除该项（含已完成）；操作日当天仅去标记保留，之前不动
     if(m){
-      state._delM[m.id]=Date.now();                  // 母版删除墓碑：跨端停止循环
+      tombstoneMaster(m.id);                        // 母版删除墓碑：跨端停止循环
       state.masters = state.masters.filter(x=>x.id!==m.id);
       state.todos = state.todos.filter(x=>{          // ad 之后每一日均清除（无论完成与否），并记墓碑防云端复活
         if(x.masterId===m.id && x.date>ad){ tombstone(x.id); return false; }
@@ -2730,6 +2789,85 @@ function gotoDate(y,m,d){ viewDate=new Date(y,m,d); refreshHeader(); switchTab('
 function openSheet(html){ $("sheet").innerHTML=html; $("mask").classList.add("show"); requestAnimationFrame(()=>$("sheet").classList.add("show")); }
 function closeSheet(){ $("sheet").classList.remove("show"); $("mask").classList.remove("show"); }
 
+/* ============ 应用内输入弹窗（v.84，替代原生 prompt） ============
+   动机：原生 prompt 在手机上体验割裂、无法做颜色选择、且连弹两次很繁琐。
+   用法：askInput({title, label, value, placeholder, hint, type, color}) → Promise<string|null>
+        确认 → resolve(值)；取消 / 关闭 → resolve(null)
+   type:'color' 时额外显示色板（SUBJ_PALETTE），并回传 '#rrggbb'。 */
+let _dlgResolve = null;
+function askInput(opt){
+  return new Promise((resolve)=>{
+    _dlgResolve = resolve;
+    const type = opt.type || "text";
+    const safe = opt.value==null ? "" : String(opt.value).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+    let sw = "";
+    if(type==="color"){
+      const cur = opt.value || SUBJ_PALETTE[0];
+      sw = `<div class="dlg-swatches" id="dlgSw">`
+        + SUBJ_PALETTE.map(c=>`<button class="dlg-sw${c.toLowerCase()===String(cur).toLowerCase()?' on':''}" data-c="${c}" style="background:${c}"></button>`).join("")
+        + `</div>`;
+    }
+    const inputTag = type==="number"
+      ? `<input class="dlg-input" id="dlgVal" type="number" min="0" inputmode="numeric" placeholder="${esc(opt.placeholder||"")}" value="${safe}">`
+      : `<input class="dlg-input" id="dlgVal" type="text" placeholder="${esc(opt.placeholder||"")}" value="${safe}">`;
+    const html = `<div class="sheet-h">${esc(opt.title||"输入")}<span class="close" onclick="askCancel()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+      <div class="dlg-field">
+        ${opt.label?`<label class="dlg-label">${esc(opt.label)}</label>`:""}
+        ${inputTag}
+        ${sw}
+        ${opt.hint?`<div class="dlg-hint">${esc(opt.hint)}</div>`:""}
+      </div>
+      <div class="dlg-btns">
+        <button class="dlg-btn" onclick="askCancel()">取消</button>
+        <button class="dlg-btn primary" onclick="askOk()">确定</button>
+      </div>`;
+    openSheet(html);
+    const inp = $("dlgVal");
+    if(inp){ inp.focus(); if(type!=="number") inp.select(); }
+    const swBox = $("dlgSw");
+    if(swBox) swBox.addEventListener("click", (e)=>{
+      const b = e.target.closest(".dlg-sw"); if(!b) return;
+      swBox.querySelectorAll(".dlg-sw").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+    });
+    if(inp) inp.addEventListener("keydown", (e)=>{ if(e.key==="Enter") askOk(); });
+  });
+}
+/* 确认动作：无输入框 = askConfirm（resolve true）；有输入框 = askInput（resolve 输入值） */
+function askOk(){
+  const inp = $("dlgVal");
+  const r = _dlgResolve; _dlgResolve = null;
+  closeSheet();
+  if(!r) return;
+  if(!inp){ r(true); return; }                 // askConfirm 场景（无输入框）
+  let v = inp.value;
+  if(inp.type==="number"){
+    v = String(Math.max(0, parseInt(v||"0",10)||0));
+    inp.value = v;
+  }
+  const on = $("dlgSw") && $("dlgSw").querySelector(".dlg-sw.on");
+  if(on) v = on.getAttribute("data-c");
+  r(v);
+}
+/* 取消动作：askInput → null；askConfirm → false（用「有无输入框」区分两种弹窗） */
+function askCancel(){
+  const isConfirm = !$("dlgVal");
+  const r=_dlgResolve; _dlgResolve=null; closeSheet();
+  if(r) r(isConfirm ? false : null);
+}
+/* 确认弹窗（替代原生 confirm，返回 Promise<boolean>） */
+function askConfirm(title, msg){
+  return new Promise((resolve)=>{
+    _dlgResolve = resolve;
+    openSheet(`<div class="sheet-h">${esc(title||"确认")}<span class="close" onclick="askCancel()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg></span></div>
+      <div class="dlg-hint" style="margin-bottom:4px; white-space:pre-line;">${esc(msg||"")}</div>
+      <div class="dlg-btns">
+        <button class="dlg-btn" onclick="askCancel()">取消</button>
+        <button class="dlg-btn primary" onclick="askOk()">确定</button>
+      </div>`);
+  });
+}
+
 function openDatePicker(){ const y=viewDate.getFullYear(), m=viewDate.getMonth(); openSheet(buildDatePicker(y,m)); }
 function buildDatePicker(y,m){
   const dt=new Date(y,m,1); y=dt.getFullYear(); m=dt.getMonth();
@@ -2944,7 +3082,7 @@ async function syncPull(mode){
         const tip = cloudN===0
           ? "云端暂无作业数据，继续下载会清空本机的 "+localN+" 条作业。确定吗？"
           : "从云端下载会用云端的 "+cloudN+" 条作业覆盖本机的 "+localN+" 条。确定吗？";
-        if(!confirm(tip)){ syncStatus("已取消下载"); return false; }
+        if(!await askConfirm("确认下载云端数据？", tip)){ syncStatus("已取消下载"); return false; }
       }
     }
 
@@ -3489,7 +3627,11 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.83";
+/* ⚠️ 这里恒为发布流水线的固定基线值（不是线上真实版本号）。
+   线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
+   （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
+   因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
+const APP_VERSION = "2026.09.10.84";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
