@@ -177,6 +177,10 @@
   /* v.81：归档卡 + 科目管理（管理入口统一在「添加作业」栏，卡片内无改名/删除/拖拽） */
   .card.archived{opacity:.62; background:repeating-linear-gradient(135deg, rgba(0,0,0,.02) 0 6px, transparent 6px 12px);}
   .arc-tag{font-style:normal; font-size:10px; font-weight:700; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:1px 4px; margin-left:6px; vertical-align:middle;}
+  /* v.82：科目栏编辑开关 + 编辑态提示 */
+  .add-tools{margin-left:auto; display:inline-flex; gap:6px; align-items:center;}
+  .add-tools .book-set{margin-left:0;}
+  .seg-edit-tip{margin:-4px 0 8px; padding:6px 10px; border-radius:9px; background:rgba(232,133,59,.10); color:var(--sun); font-size:12px; font-weight:600;}
   /* 科目选择 + 管理按钮组合 */
   .seg-wrap{display:inline-flex; align-items:stretch; border-radius:9px; overflow:hidden; border:1.5px solid var(--line); background:#fcfaf5;}
   .seg-wrap .seg-pick{border:none; background:transparent; border-radius:0; padding:8px 12px; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer;}
@@ -1385,27 +1389,32 @@ function renderList(){
     html += `</div>`;
   });
 
-  // 添加作业统一卡（v.81：科目的新增 / 改名 / 删除 / 恢复 全部集中在这里）
+  // 添加作业统一卡（v.82：科目栏「设置」开关——开启后才显示各科目的改名 / 删除 / 新增 / 恢复）
   html += `<div class="card">
     <div class="add-title">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
       添加作业
+      <span class="add-tools">
+        <button class="book-set${subjEditOn?' on':''}" title="科目栏设置：开启后可改名 / 删除 / 新增 / 恢复科目" onclick="toggleSubjEdit()">${gearSvg()}</button>
+      </span>
     </div>
+    ${subjEditOn?'<div class="seg-edit-tip">科目编辑已开启：点 ✎ 改名、🗑 删除，行尾 ＋ 新增科目</div>':''}
     <div class="seg4" id="seg4">`;
   const activeSubjs = subjArr.filter(s=>!s.arc);
   activeSubjs.forEach((sObj)=>{
     const s = sObj.name;
     html += `<span class="seg-wrap${s===addSubj?' on':''}" data-s="${esc(s)}">
       <button class="seg-pick" data-s="${esc(s)}" onclick="pickAddSubj(this)" style="--sc:${sObj.color||"#6B8E5A"}">${esc(s)}</button>
-      <span class="seg-ops">
+      ${subjEditOn?`<span class="seg-ops">
         <button class="seg-op" title="重命名科目「${esc(s)}」" onclick="event.stopPropagation();renameSubject('${esc(s)}')">${penSvg()}</button>
         <button class="seg-op danger" title="删除科目「${esc(s)}」" onclick="event.stopPropagation();removeSubject('${esc(s)}')">${trashSvg()}</button>
-      </span>
+      </span>`:""}
     </span>`;
   });
-  html += `<button class="seg-add" title="新增科目" onclick="addSubject()">＋</button></div>`;
+  html += subjEditOn?`<button class="seg-add" title="新增科目" onclick="addSubject()">＋</button>`:"";
+  html += `</div>`;
   const arcSubjs = subjArr.filter(s=>s.arc);
-  if(arcSubjs.length){
+  if(subjEditOn && arcSubjs.length){
     html += `<div class="seg-arc-row"><span class="seg-arc-label">已删除：</span>`;
     arcSubjs.forEach(sObj=>{
       html += `<span class="seg-arc"><span class="seg-arc-name">${esc(sObj.name)}</span><button class="seg-op" title="恢复科目「${esc(sObj.name)}」" onclick="event.stopPropagation();restoreSubject('${esc(sObj.name)}')">↺</button></span>`;
@@ -1429,6 +1438,9 @@ let editHWOn = false;   // 常用词「设置」开关：开启后显示添加 /
 function toggleEditHW(){ editHWOn=!editHWOn; renderList(); }
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名），用于显示各项的修改/删除/固定按钮
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
+/* v.82：科目栏编辑开关——默认关闭，开启后各科目才显示 改名/删除，新增与已删除科目的恢复入口 */
+let subjEditOn = false;
+function toggleSubjEdit(){ subjEditOn=!subjEditOn; renderList(); if(subjEditOn) toast("科目编辑已开启"); }
 /* v.81：科目选择按钮改为 .seg-wrap > .seg-pick，选中态挂在 wrapper（.on）上 */
 function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 .seg-wrap").forEach(w=>w.classList.toggle("on", w.dataset.s===addSubj)); renderHWChips(); }
 
@@ -1460,16 +1472,25 @@ function editHW(i){
   const v=prompt("修改常用词（作业内容）：\n注意：改名后，此前通过该常用词添加的作业标题会一并更新。",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
   const e=prompt("预估时长（分钟）：",cur.e?String(cur.e):""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
   const raw=arr[i]||{}; const hwId = raw.id||uid();
+  const oldTitle = cur.t;                     // 旧标题：用于存量数据的标题兜底匹配
   arr[i]={id:hwId, t:t, e:est, _u:Date.now()};
   saveHW(hw);
-  /* v.80：级联更新「所有由该常用词添加的清单项」标题 + 预估分（按 hwId 关联） */
-  let n=0;
+  /* 级联更新「所有由该常用词添加的清单项」标题 + 预估分
+     v.82 修复：hwId 是 v.80 才新增的字段，v.80 之前创建的作业都没有 hwId，
+     仅按 hwId 匹配会导致存量作业改不到名 → 增加「标题等于旧名」的兜底匹配。
+     两条规则只影响标题与该常用词旧名完全一致的作业，不会误伤其他条目。 */
+  let n=0, byTitle=0;
   (state.todos||[]).forEach(x=>{
-    if(x && x.hwId===hwId && x.title!==t){ x.title=t; x._u=Date.now(); markLocal(x.id); n++; }
-    if(x && x.hwId===hwId && est>0 && x.estMin!==est){ x.estMin=est; x._u=Date.now(); markLocal(x.id); }
+    if(!x) return;
+    const hit = (x.hwId===hwId) || (!x.hwId && x.title===oldTitle);   // 精确关联 或 旧数据标题兜底
+    if(!hit) return;
+    if(x.title!==t){ x.title=t; n++; if(!x.hwId) byTitle++; }
+    if(!x.hwId) x.hwId = hwId;                                          // 回填关联，后续改名可直接命中
+    if(est>0 && x.estMin!==est) x.estMin=est;
+    x._u=Date.now(); markLocal(x.id);
   });
   renderHWChips(); renderList();
-  if(n>0) toast("已改名为「"+t+"」，同步更新 "+n+" 条清单项");
+  if(n>0) toast("已改名为「"+t+"」，同步更新 "+n+" 条清单项"+(byTitle?("（其中 "+byTitle+" 条为历史数据按名称匹配）"):""));
   else toast("常用词已更新");
 }
 /* v.80：删除常用词只删词本身，不影响此前已添加的清单项（无需处理 state.todos） */
@@ -3437,7 +3458,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.81";
+const APP_VERSION = "2026.09.10.82";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
