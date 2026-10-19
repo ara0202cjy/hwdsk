@@ -864,18 +864,7 @@ function load(){
       localStorage.removeItem(HW_KEY); saveLocal();
     }
   }catch(e){}
-  if(migrateXN(state)) saveLocal();   // v.76：migrateXN 已彻底停用（空操作），不再自动迁移任何栏目
   pruneTombstones();
-}
-/* 迁移（v.66→v.67 建立，v.75 删规则2「其他→校内」，v.76 彻底停用）。
-   v.76 起 migrateXN 不再做任何自动搬运：校内/其他/语文等所有栏目均按用户在 App 内手动选择的 subject 存储，
-   程序不再跨栏移动任何条目（原「琵琶等关键字→其他」规则1 与原「其他→校内」规则2 均已移除）。
-   函数保留空壳仅占位，三处调用（load / mergeState / syncPull）无需改动即可安全保持。 */
-function migrateXN(o){
-  // v.76：彻底停用自动迁移。所有栏目（校内/其他/语文/数学/英语）均按用户在 App 内手动选择的 subject 保存，
-  // 不再有任何跨栏自动搬运（含原「琵琶等关键字→其他」规则1 与原「其他→校内」规则2 均已移除）。
-  // 保留空壳仅占位；返回 0 表示无任何改动，三处调用方（load/syncPull/mergeState）无需改动。
-  return 0;
 }
 /* 仅写本机，不触发云同步（供同步流程内部使用，避免递归） */
 function saveLocal(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
@@ -2736,7 +2725,6 @@ async function syncPull(mode){
     if(!state._delR) state._delR = {};           // 奖励删除墓碑
     (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
-    migrateXN(state);   // v.76：已停用（空操作），保留调用占位
     saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
     syncStatus("已同步云端 "+n+" 条作业","ok");
@@ -2870,7 +2858,6 @@ function mergeState(cloud, local){
     _del: del, _delM: delM, _delR: delR,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
-  migrateXN(merged);   // v.76：已停用（空操作），保留调用占位
   return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
@@ -3249,7 +3236,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.76";
+const APP_VERSION = "2026.09.10.77";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
