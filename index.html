@@ -174,17 +174,26 @@
   /* ===== 卡片 ===== */
   .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px; margin-bottom:10px;}
   .card-h{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
-  /* v.80：拖拽 / 归档 / 科目管理 */
-  .drag-handle{cursor:grab; color:var(--muted); display:inline-flex; align-items:center; touch-action:none; user-select:none; -webkit-user-select:none;}
-  .drag-handle:active{cursor:grabbing;}
-  .todo-handle{padding-right:2px;}
-  .card.dragging, .todo.dragging{opacity:.45;}
-  .card.drag-over, .todo.drag-over{outline:2px dashed var(--sun); outline-offset:2px;}
+  /* v.81：归档卡 + 科目管理（管理入口统一在「添加作业」栏，卡片内无改名/删除/拖拽） */
   .card.archived{opacity:.62; background:repeating-linear-gradient(135deg, rgba(0,0,0,.02) 0 6px, transparent 6px 12px);}
   .arc-tag{font-style:normal; font-size:10px; font-weight:700; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:1px 4px; margin-left:6px; vertical-align:middle;}
-  .add-tools{margin-left:auto; display:inline-flex; gap:6px; align-items:center;}
-  .add-tools .mini-btn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
-  .card-h .subj-title .drag-handle + .subj-dot{margin-left:0;}
+  /* 科目选择 + 管理按钮组合 */
+  .seg-wrap{display:inline-flex; align-items:stretch; border-radius:9px; overflow:hidden; border:1.5px solid var(--line); background:#fcfaf5;}
+  .seg-wrap .seg-pick{border:none; background:transparent; border-radius:0; padding:8px 12px; font-size:14px; font-weight:700; color:var(--ink); cursor:pointer;}
+  .seg-wrap .seg-ops{display:inline-flex; align-items:center; border-left:1px solid var(--line); background:rgba(0,0,0,.02);}
+  .seg-wrap .seg-op{width:26px; display:inline-flex; align-items:center; justify-content:center; border:none; background:transparent; color:var(--muted); cursor:pointer; padding:0;}
+  .seg-wrap .seg-op:hover{color:var(--ink); background:rgba(0,0,0,.05);}
+  .seg-wrap .seg-op.danger:hover{color:var(--red, #C0392B);}
+  .seg-wrap.on .seg-pick{background:var(--sc, var(--ink)); color:#fff;}
+  .seg-wrap.on{border-color:var(--sc, var(--ink));}
+  .seg-add{border:1.5px dashed var(--line); background:#fcfaf5; border-radius:9px; color:var(--muted); font-size:15px; font-weight:800; padding:8px 12px; cursor:pointer;}
+  .seg-add:hover{color:var(--ink); border-color:var(--muted);}
+  .seg-arc-row{margin-top:8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; color:var(--muted);}
+  .seg-arc-label{font-weight:700;}
+  .seg-arc{display:inline-flex; align-items:center; gap:2px; border:1px solid var(--line); border-radius:7px; background:rgba(0,0,0,.02); padding:2px 4px 2px 8px;}
+  .seg-arc-name{text-decoration:line-through; opacity:.75;}
+  .seg-arc .seg-op{width:22px; border:none; background:transparent; color:var(--muted); cursor:pointer; border-radius:5px;}
+  .seg-arc .seg-op:hover{color:var(--ink); background:rgba(0,0,0,.06);}
   .book-set{width:28px; height:28px; flex:0 0 28px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5; margin-left:8px; cursor:pointer;}
   .book-set:active{transform:scale(.96);}
   .book-set.on{color:#fff; background:var(--sun); border-color:var(--sun);}
@@ -292,14 +301,8 @@
 
   /* 添加作业统一卡 */
   .add-title{font-size:15px; font-weight:800; color:var(--ink); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
-  .seg4{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:12px;}
-  .seg4 button{padding:10px 0; border-radius:12px; background:#f1ece1; color:#6b655b; font-size:13.5px; font-weight:700; border:1.5px solid transparent;}
-  .seg4 button.on{color:#fff; background:var(--ink);}
-  .seg4 button.on[data-s="语文"]{background:#C25B5B;}
-  .seg4 button.on[data-s="数学"]{background:#3F6FB0;}
-  .seg4 button.on[data-s="英语"]{background:#C2953B;}
-  .seg4 button.on[data-s="其他"]{background:#6B8E5A;}
-  .seg4 button.on[data-s="校内"]{background:#7B5FA6;}
+  /* v.81：科目选择行改为 flex 自适应（科目数量可变），颜色由 state.subjects 的 --sc 驱动 */
+  .seg4{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px;}
   .add-row{display:flex; gap:8px;}
   .add-row input{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:#fcfaf5;}
   .add-row .plus{width:46px; height:46px; border-radius:12px; background:var(--sun); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; flex:0 0 46px;}
@@ -894,8 +897,6 @@ function renameSubject(oldName){
   ["todos","tasks","masters"].forEach(k=> (state[k]||[]).forEach(x=>{ if(x && x.subject===oldName){ x.subject=name; x._u=Date.now(); markLocal(x.id); n++; } }));
   // 级联：常用词分组键
   if(state.hw && Array.isArray(state.hw[oldName])){ state.hw[name]=state.hw[oldName]; delete state.hw[oldName]; }
-  // 本地排序键
-  try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); Object.keys(o).forEach(k=>{ if(k.indexOf("|"+oldName)>-1){ o[k.replace("|"+oldName,"|"+name)]=o[k]; delete o[k]; } }); localStorage.setItem(ORDER_KEY, JSON.stringify(o)); }catch(e){}
   if(addSubj===oldName) addSubj = name;
   editBooks.delete(oldName); editBooks.add(name);
   bumpSubjects(); refreshAll();
@@ -937,22 +938,6 @@ function restoreSubject(name){
   const sObj = state.subjects.find(s=>s.name===name); if(!sObj) return;
   sObj.arc = false;
   bumpSubjects(); refreshAll(); toast("已恢复科目「"+name+"」");
-}
-
-/* ============ 清单排序（v.80：按「当天+科目」本地记忆） ============ */
-const ORDER_KEY = "wb_hwdsk_order_v1";
-function orderKey(ds, subj){ return ds + "|" + subj; }
-function getOrder(ds, subj){ try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); return Array.isArray(o[orderKey(ds,subj)]) ? o[orderKey(ds,subj)] : []; }catch(e){ return []; } }
-function setOrder(ds, subj, ids){ try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); o[orderKey(ds,subj)]=ids; localStorage.setItem(ORDER_KEY, JSON.stringify(o)); }catch(e){} }
-/* 按本地记忆的 id 顺序排列；未记录过的按原顺序追加在后 */
-function orderFor(ds, subj, arr){
-  const ids = getOrder(ds, subj);
-  if(!ids.length) return arr;
-  const rank = new Map(ids.map((id,i)=>[id,i]));
-  return arr.slice().sort((a,b)=>{
-    const ra = rank.has(a.id)?rank.get(a.id):1e6, rb = rank.has(b.id)?rank.get(b.id):1e6;
-    return ra-rb;
-  });
 }
 
 
@@ -1321,8 +1306,6 @@ function arrowSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fil
 function penSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function trashSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function gearSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
-/* 拖拽手柄（设置模式下出现） */
-function dragSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>'; }
 
 function fmtDur(ms){
   const s=Math.round(ms/1000); const m=Math.floor(s/60); const ss=s%60;
@@ -1377,51 +1360,59 @@ function renderList(){
     const subj = sObj.name;
     const arc = !!sObj.arc;
     const all = bySubj[subj]||[];
-    const pending = orderFor(ds, subj, all.filter(t=>!t.done));
+    const pending = all.filter(t=>!t.done);
     const done = all.filter(t=>t.done);
     const total = ts.filter(t=>normSubj(t.subject)===subj).length;
     const eOn = editBooks.has(subj);
-    const drag = (setModeOn||dragMode) ? ` draggable="true" data-drag-subj="${esc(subj)}"` : "";
     const style = ` style="--sc:${sObj.color||"#6B8E5A"}"`;
-    html += `<div class="card${eOn?' editing':''}${arc?' archived':''}"${style}${drag} data-subj-card="${esc(subj)}">
+    /* v.81：科目卡内不再提供 改名 / 删除 / 新增 / 拖拽 —— 科目管理统一收敛到下方「添加作业」栏 */
+    html += `<div class="card${eOn?' editing':''}${arc?' archived':''}"${style}>
       <div class="card-h">
-        ${(setModeOn||dragMode)?`<span class="drag-handle" title="长按拖动调整科目顺序">${dragSvg()}</span>`:""}
         <span class="subj-dot" style="background:${sObj.color||"#6B8E5A"}"></span>
         <span class="subj-title" style="color:${sObj.color||"#6B8E5A"}">${esc(subj)}${arc?'<i class="arc-tag">已删除</i>':""}</span>
         <span class="card-count">${done.length}/${total} 完成</span>
-        ${arc
-          ? `<button class="mini-btn" title="恢复该科目" onclick="event.stopPropagation();restoreSubject('${esc(subj)}')">↺ 恢复</button>`
-          : `<button class="book-set${eOn?' on':''}" title="设置：显示本作业本各项的修改 / 删除 / 固定按钮" onclick="toggleEditBook('${esc(subj)}')">${gearSvg()}</button>
-             <button class="mini-btn" title="重命名科目（同时更新历史作业与常用词）" onclick="event.stopPropagation();renameSubject('${esc(subj)}')">${penSvg()}</button>
-             <button class="mini-btn del" title="删除科目（今日前的历史内容保留为归档）" onclick="event.stopPropagation();removeSubject('${esc(subj)}')">${trashSvg()}</button>`}
+        <button class="book-set${eOn?' on':''}" title="设置：显示本作业本各项的修改 / 删除 / 固定按钮" onclick="toggleEditBook('${esc(subj)}')">${gearSvg()}</button>
       </div>`;
     if(all.length===0){
       html += `<div class="empty-tip" style="padding:16px 0;">${arc?'该科目已删除，历史内容保留':'今日暂无'+esc(subj)+'作业'}</div>`;
     } else {
-      pending.forEach(t=>{ html += todoRow(t, subj, ds); });
-      // 已完成项沉到本卡片底部，而非全局统一沉底（仅留紧凑分隔线，不显示文字）
+      pending.forEach(t=>{ html += todoRow(t); });
       if(done.length){
         html += `<div class="done-sep"></div>`;
-        done.forEach(t=>{ html += doneRow(t, subj, ds); });
+        done.forEach(t=>{ html += doneRow(t); });
       }
     }
     html += `</div>`;
   });
 
-  // 添加作业统一卡
+  // 添加作业统一卡（v.81：科目的新增 / 改名 / 删除 / 恢复 全部集中在这里）
   html += `<div class="card">
     <div class="add-title">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
       添加作业
-      <span class="add-tools">
-        <button class="mini-btn add-subj-btn" title="新增科目卡片" onclick="addSubject()">＋ 科目</button>
-        <button class="mini-btn set-mode-btn ${setModeOn?'on':''}" title="设置模式：长按卡片/清单项拖动排序" onclick="toggleSetMode()">${gearSvg()} ${setModeOn?'完成设置':'设置'}</button>
-      </span>
     </div>
     <div class="seg4" id="seg4">`;
-  const activeSubjs = subjArr.filter(s=>!s.arc).map(s=>s.name);
-  activeSubjs.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${esc(s)}" onclick="pickAddSubj(this)">${esc(s)}</button>`);
-  html += `</div>
+  const activeSubjs = subjArr.filter(s=>!s.arc);
+  activeSubjs.forEach((sObj)=>{
+    const s = sObj.name;
+    html += `<span class="seg-wrap${s===addSubj?' on':''}" data-s="${esc(s)}">
+      <button class="seg-pick" data-s="${esc(s)}" onclick="pickAddSubj(this)" style="--sc:${sObj.color||"#6B8E5A"}">${esc(s)}</button>
+      <span class="seg-ops">
+        <button class="seg-op" title="重命名科目「${esc(s)}」" onclick="event.stopPropagation();renameSubject('${esc(s)}')">${penSvg()}</button>
+        <button class="seg-op danger" title="删除科目「${esc(s)}」" onclick="event.stopPropagation();removeSubject('${esc(s)}')">${trashSvg()}</button>
+      </span>
+    </span>`;
+  });
+  html += `<button class="seg-add" title="新增科目" onclick="addSubject()">＋</button></div>`;
+  const arcSubjs = subjArr.filter(s=>s.arc);
+  if(arcSubjs.length){
+    html += `<div class="seg-arc-row"><span class="seg-arc-label">已删除：</span>`;
+    arcSubjs.forEach(sObj=>{
+      html += `<span class="seg-arc"><span class="seg-arc-name">${esc(sObj.name)}</span><button class="seg-op" title="恢复科目「${esc(sObj.name)}」" onclick="event.stopPropagation();restoreSubject('${esc(sObj.name)}')">↺</button></span>`;
+    });
+    html += `</div>`;
+  }
+  html += `
     <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><button class="plus" onclick="doAdd()">+</button></div>
     <div id="hwWrap" class="hw-wrap">
       <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span>${editHWOn && (loadHW()[addSubj]||[]).length<15?'<button id="hwAddBtn" class="hw-add" onclick="addHW()">＋ 添加</button>':''}<button class="hw-set${editHWOn?' on':''}" title="设置：显示常用词的添加 / 修改 / 删除" onclick="toggleEditHW()">${gearSvg()}</button></div>
@@ -1431,7 +1422,6 @@ function renderList(){
 
   $("listContent").innerHTML = html;
   renderHWChips();
-  bindSortables();   // v.80：设置模式下的长按拖拽排序
 }
 
 let addSubj = "语文";
@@ -1439,103 +1429,9 @@ let editHWOn = false;   // 常用词「设置」开关：开启后显示添加 /
 function toggleEditHW(){ editHWOn=!editHWOn; renderList(); }
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名），用于显示各项的修改/删除/固定按钮
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
-function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
+/* v.81：科目选择按钮改为 .seg-wrap > .seg-pick，选中态挂在 wrapper（.on）上 */
+function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 .seg-wrap").forEach(w=>w.classList.toggle("on", w.dataset.s===addSubj)); renderHWChips(); }
 
-/* ============ 设置模块 + 拖拽排序（v.80） ============
-   进入「设置模式」后：科目卡片与清单项出现拖拽手柄；长按手柄/卡片/清单项可拖动排序。
-   科目顺序 → 写回 state.subjects 顺序（云同步）；作业顺序 → 写 localStorage（当天+科目）。 */
-let setModeOn = false;    // 设置模式开关
-let dragMode = false;     // 拖拽进行中（避免长按/滚动冲突）
-function toggleSetMode(on){
-  setModeOn = (on==null) ? !setModeOn : !!on;
-  renderList();
-  if(setModeOn) toast("设置模式：长按卡片或清单项可拖动排序");
-}
-/* 从 DOM 顺序读回科目顺序并写回 state.subjects（云同步） */
-function persistSubjOrder(){
-  const cards = Array.from(document.querySelectorAll("[data-subj-card]"));
-  if(!cards.length) return;
-  const byName = new Map(state.subjects.map(s=>[s.name,s]));
-  const next = [];
-  cards.forEach(c=>{ const nm=c.getAttribute("data-subj-card"); const s=byName.get(nm); if(s && !next.includes(s)) next.push(s); });
-  state.subjects.forEach(s=>{ if(!next.includes(s)) next.push(s); });   // 兜底：未在 DOM 中的（如空态）追加保留
-  state.subjects = next;
-  bumpSubjects();
-}
-/* 从 DOM 顺序读回某科目当天未完成作业顺序并写 localStorage */
-function persistTodoOrder(ds, subj){
-  const card = document.querySelector('[data-subj-card="'+CSS.escape(subj)+'"]');
-  if(!card) return;
-  const ids = Array.from(card.querySelectorAll("[data-todo-id]")).map(e=>e.getAttribute("data-todo-id"));
-  if(ids.length) setOrder(ds, subj, ids);
-}
-/* 拖拽初始化：长按 400ms 后激活，HTML5 draggable 排序 */
-let _pressTimer = null, _pressEl = null;
-function bindSortables(){
-  const list = document.getElementById("listContent");
-  if(!list) return;
-  // 长按激活拖拽（鼠标 + 触摸）
-  list.addEventListener("pointerdown", onPressStart, { passive:true });
-  list.addEventListener("pointerup", clearPress, { passive:true });
-  list.addEventListener("pointercancel", clearPress, { passive:true });
-  list.addEventListener("pointermove", onPressMove, { passive:true });
-  list.querySelectorAll("[data-drag-subj]").forEach(attachDrag);
-  list.querySelectorAll("[data-todo-id]").forEach(attachDrag);
-}
-function pressTarget(e){
-  let el = e.target;
-  while(el && el !== document.getElementById("listContent")){
-    if(el.hasAttribute && (el.hasAttribute("data-drag-subj") || el.hasAttribute("data-todo-id"))) return el;
-    if(el.classList && el.classList.contains("drag-handle")) return el.closest("[data-drag-subj],[data-todo-id]");
-    el = el.parentElement;
-  }
-  return null;
-}
-function onPressStart(e){
-  if(!setModeOn && !dragMode) return;
-  const el = pressTarget(e); if(!el) return;
-  _pressEl = el;
-  clearPress();
-  _pressTimer = setTimeout(()=>{ dragMode = true; _pressEl = el; if(el.setPointerCapture && e.pointerId!=null){ try{ el.setPointerCapture(e.pointerId); }catch(err){} } }, 350);
-}
-function onPressMove(e){ if(dragMode && _pressEl) e.preventDefault && e.preventDefault(); }
-function clearPress(){ if(_pressTimer){ clearTimeout(_pressTimer); _pressTimer=null; } if(!dragMode){ _pressEl=null; } }
-/* 绑定单个可拖拽元素（科目卡 / 清单项） */
-function attachDrag(el){
-  if(el._dragBound) return; el._dragBound = true;
-  el.addEventListener("dragstart", (e)=>{
-    if(!setModeOn && !dragMode){ e.preventDefault(); return; }
-    el.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-    try{ e.dataTransfer.setData("text/plain","1"); }catch(err){}
-  });
-  el.addEventListener("dragend", ()=>{
-    el.classList.remove("dragging");
-    document.querySelectorAll(".drag-over").forEach(x=>x.classList.remove("drag-over"));
-    const ds = ymd(viewDate);
-    // 拖拽结束：按 DOM 顺序落盘
-    const subj = el.getAttribute("data-drag-subj");
-    if(subj){ persistSubjOrder(); }
-    else { const card = el.closest("[data-subj-card]"); if(card) persistTodoOrder(ds, card.getAttribute("data-subj-card")); }
-    dragMode = false; _pressEl = null;
-  });
-  el.addEventListener("dragover", (e)=>{
-    if(!setModeOn && !dragMode) return;
-    e.preventDefault(); e.dataTransfer.dropEffect = "move";
-    el.classList.add("drag-over");
-  });
-  el.addEventListener("dragleave", ()=> el.classList.remove("drag-over"));
-  el.addEventListener("drop", (e)=>{
-    if(!setModeOn && !dragMode) return;
-    e.preventDefault(); e.stopPropagation();
-    el.classList.remove("drag-over");
-    const src = document.querySelector(".dragging"); if(!src || src===el) return;
-    const rect = el.getBoundingClientRect();
-    const after = (e.clientY - rect.top) > rect.height/2;
-    const parent = el.parentElement;
-    if(after) parent.insertBefore(src, el.nextSibling); else parent.insertBefore(src, el);
-  });
-}
 /* 常用词功能（按科目分组，存于 state.hw，随作业清单一起多端同步） */
 const HW_KEY = "wb_hwdsk_hw_v1";   // 仅用于旧版本数据迁移
 function loadHW(){ return (state && state.hw) || {}; }
@@ -1645,12 +1541,9 @@ function todoRow(t, subj, ds){
         ${ (t.accum>0 || t.done || t.timerRunning) ? `<div class="dur-hint" style="margin-top:9px;">起止时间：<b style="color:var(--ink)">${segText(t)}</b></div>` : "" }
       </div>
     </div>`;
-  const dragAttr = (setModeOn||dragMode) ? ` draggable="true" data-todo-id="${t.id}"` : ` data-todo-id="${t.id}"`;
-  const handle = (setModeOn||dragMode) ? `<span class="drag-handle todo-handle" title="长按拖动排序">${dragSvg()}</span>` : "";
-  return `<div class="todo" id="todo-${t.id}"${dragAttr}>
+  return `<div class="todo" id="todo-${t.id}">
     ${ t.done?'<span class="stamp" id="stamp-'+t.id+'">已完成</span>':'' }
     <div class="todo-top">
-      ${handle}
       <button class="chk ${t.done?'done':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
         <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}</div>
@@ -1708,10 +1601,7 @@ function doneRow(t, subj, ds){
     t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
   ].filter(Boolean);
-  const dragAttr = (setModeOn||dragMode) ? ` draggable="true" data-todo-id="${t.id}"` : ` data-todo-id="${t.id}"`;
-  const handle = (setModeOn||dragMode) ? `<span class="drag-handle todo-handle" title="长按拖动排序">${dragSvg()}</span>` : "";
-  return `<div class="todo" id="todo-${t.id}"${dragAttr}>
-    ${handle}
+  return `<div class="todo" id="todo-${t.id}">
     <span class="stamp" id="stamp-${t.id}">已完成</span>
     <div class="todo-top">
       <button class="chk done" onclick="onChk('${t.id}')">${chkSvg(true)}</button>
@@ -3547,7 +3437,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.80";
+const APP_VERSION = "2026.09.10.81";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
