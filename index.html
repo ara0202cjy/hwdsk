@@ -874,13 +874,26 @@ const SUBJ_ORDER = {"校内":0,"语文":1,"数学":2,"英语":3,"其他":4};
    - 科目改名 → 级联改历史作业 subject + 常用词分组键；删除 → 今日前不动、今日后清空，母版+常用词一并删，卡片转归档
    - 排序：科目顺序存 state.subjects 数组下标（云同步）；作业顺序按「当天+科目」存本地 localOrder */
 const SUBJ_PALETTE = ["#7B5FA6","#C25B5B","#3F6FB0","#C2953B","#6B8E5A","#8E6B3F","#4A7C8C","#9A5578","#5F7A3F","#A0522D"];
-function defaultSubjects(){ return SUBJECTS.map((n,i)=>({ name:n, color: SUBJ_COLOR[n]||SUBJ_PALETTE[i%SUBJ_PALETTE.length], arc:false })); }
-/* 当前生效科目（含归档，渲染用） */
+function defaultSubjects(){ return SUBJECTS.map((n,i)=>({ name:n, color: SUBJ_COLOR[n]||SUBJ_PALETTE[i%SUBJ_PALETTE.length], arc:false, since:"0000-00-00", arcAt:"" })); }
+/* 全部科目（含归档，原始表；管理/同步用） */
 function subjList(){
   const s = state && state.subjects;
   if(Array.isArray(s) && s.length) return s;
   return defaultSubjects();
 }
+/* v.89：某一天「应显示」的科目 —— 增删只对增删日之后生效。
+   since：生效日（含）。该日 < since → 当天不显示（新增前的历史日不该出现新科目）。
+   arcAt：归档日（含）。归档后仍显示 arcAt 之前的历史日；arcAt 当天起不再显示。 */
+function subjListOn(ds){
+  return subjList().filter(s=>{
+    const since = s.since || "0000-00-00";
+    if(since && ds < since) return false;
+    if(s.arc){ const at=s.arcAt||""; if(at && ds>=at) return false; }
+    return true;
+  });
+}
+/* 某科目在某日是否可见（用于归一化，避免历史条目被误塞进「其他」） */
+function subjVisibleOn(name, ds){ return subjListOn(ds).some(s=>s.name===name); }
 /* 有效科目名集合（归一化用：不在集合内的科目归入「其他」） */
 function subjNames(){ return subjList().map(s=>s.name); }
 /* 取科目配色（找不到回退默认色） */
@@ -913,7 +926,7 @@ async function addSubject(){
   if(picked==null) return;
   const color = /^#[0-9a-fA-F]{6}$/.test(String(picked).trim()) ? String(picked).trim() : auto;
   const other = state.subjects.findIndex(s=>s.name==="其他");
-  const item = { name, color, arc:false };
+  const item = { name, color, arc:false, since:ymd(new Date()), arcAt:"" };   // v.89：生效日 = 今天，之前的历史日不显示
   if(other>=0) state.subjects.splice(other,0,item); else state.subjects.push(item);
   addSubj = name;
   bumpSubjects(); refreshAll(); toast("已新增科目「"+name+"」");
@@ -953,7 +966,7 @@ async function removeSubject(name){
     + "· 今日及以后的作业（"+affected+" 条）、循环母版（"+mCnt+" 条）、常用词（"+hwCnt+" 条）将被删除\n"
     + "· 删除后可在添加栏「已删除」处恢复";
   if(!await askConfirm("删除科目「"+name+"」？", msg)) return;
-  all.arc = true;
+  all.arc = true; all.arcAt = today;    // v.89：归档日 = 今天；该日之前的历史清单仍显示此科目
   // 今日及以后的作业：写 _del 墓碑后移除，防止云端复活
   state.todos.filter(t=>t.subject===name && t.date>=today).forEach(t=>{ tombstone(t.id); touch(t); });
   state.todos = state.todos.filter(t=> !(t.subject===name && t.date>=today));
@@ -973,6 +986,7 @@ async function removeSubject(name){
 function restoreSubject(name){
   const sObj = state.subjects.find(s=>s.name===name); if(!sObj) return;
   sObj.arc = false;
+  sObj.arcAt = "";                 // v.89：恢复后从归档日当日起重新显示
   bumpSubjects(); refreshAll(); toast("已恢复科目「"+name+"」");
 }
 
@@ -1576,15 +1590,19 @@ function renderList(){
   genRecurring(ds);
   ensureSubjects();
   const ts = todosOf(ds);
-  /* v.80：科目表可变（增删改/归档）；归一化目标科目取第一个未归档的，若全归档则回退默认「其他」 */
-  const subjArr = subjList();
+  /* v.80：科目表可变（增删改/归档）；v.89：按「当前查看日 ds」过滤科目——
+     新增科目在其生效日之前的历史日不显示；已删除科目在归档日之前的历史日仍显示。 */
+  const subjArr = subjListOn(ds);
   const validNames = subjArr.map(s=>s.name);
   const fallbackName = subjArr.find(s=>!s.arc) ? subjArr.find(s=>!s.arc).name : (validNames[0]||"其他");
   const bySubj = {}; validNames.forEach(s=>bySubj[s]=[]);
-  /* 非已知科目归入「其他」；若不存在「其他」则归入第一个有效科目，避免条目凭空消失 */
+  /* 归一化只把「科目表里彻底不存在」的科目并入「其他」（如历史遗留）。
+     仅因日期过滤而不可见的科目**保持原样**（其条目当天不渲染卡片即可），
+     避免「删除/新增科目」把历史条目错误搬到其他。 */
+  const allNames = subjList().map(s=>s.name);
   const targetOther = validNames.includes("其他") ? "其他" : fallbackName;
-  const normSubj = s => validNames.includes(s) ? s : targetOther;
-  ts.forEach(t=>{ (bySubj[normSubj(t.subject)]||(bySubj[normSubj(t.subject)]=[])).push(t); });
+  const normSubj = s => (allNames.includes(s) || validNames.includes(s)) ? s : targetOther;
+  ts.forEach(t=>{ const k=normSubj(t.subject); (bySubj[k]||(bySubj[k]=[])).push(t); });
 
   // 顶部统计栏与四时长摘要：统计计算已抽为 dayStats()（纯函数，便于单测）
   const dsStr = ymd(viewDate);
@@ -1648,7 +1666,9 @@ function renderList(){
   });
   html += subjEditOn?`<button class="seg-add" title="新增科目" onclick="addSubject()">＋</button>`:"";
   html += `</div>`;
-  const arcSubjs = subjArr.filter(s=>s.arc);
+  /* v.89：归档列表取「全表」的归档科目（不按日期过滤）——恢复是管理操作，
+     与「该日清单是否显示该科目」无关，否则归档日后就再也点不到 ↺ 恢复。 */
+  const arcSubjs = subjList().filter(s=>s.arc);
   if(subjEditOn && arcSubjs.length){
     html += `<div class="seg-arc-row"><span class="seg-arc-label">已删除：</span>`;
     arcSubjs.forEach(sObj=>{
@@ -3860,7 +3880,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.88";
+const APP_VERSION = "2026.09.10.89";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
