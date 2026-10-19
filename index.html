@@ -184,10 +184,10 @@
   /* 科目选择 + 管理按钮组合 */
   .seg-wrap{display:inline-flex; align-items:stretch; border-radius:9px; overflow:hidden; border:1.5px solid var(--line); background:#fcfaf5;}
   /* v.85：设置模式下的拖拽排序（科目 / 常用词） */
-  .seg-wrap.sortable{cursor:grab; touch-action:pan-y; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+  .seg-wrap.sortable{cursor:grab; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
   .seg-wrap.sortable:active{cursor:grabbing;}
   .seg-wrap .seg-ops .drag-ico{display:inline-flex; align-items:center; color:var(--muted); padding:0 6px; height:26px; cursor:grab;}
-  .hw-chip.sortable{cursor:grab; touch-action:pan-y; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+  .hw-chip.sortable{cursor:grab; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
   .hw-chip.sortable:active{cursor:grabbing;}
   .sortable.dragging{opacity:.45;}
   .sortable.drop-mark{outline:2px solid var(--sun); outline-offset:2px; border-radius:9px;}
@@ -195,6 +195,14 @@
   .seg-wrap .seg-ops{display:inline-flex; align-items:center; border-left:1px solid var(--line); background:rgba(0,0,0,.02);}
   .seg-wrap .seg-op{width:26px; display:inline-flex; align-items:center; justify-content:center; border:none; background:transparent; color:var(--muted); cursor:pointer; padding:0;}
   .seg-wrap .seg-op:hover{color:var(--ink); background:rgba(0,0,0,.05);}
+  .seg-wrap .seg-op.dis, .hw-mv.dis{opacity:.3; pointer-events:none;}
+  /* v.86：前移/后移按钮（拖拽之外的可靠兜底，手机必可用） */
+  .seg-wrap .seg-op{font-size:17px; font-weight:800; line-height:1;}
+  .hw-mv{display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+         font-size:14px; font-weight:800; font-style:normal; color:var(--muted); cursor:pointer;
+         margin-right:1px; border-radius:4px; flex:0 0 auto;}
+  .hw-mv:hover{color:var(--ink); background:rgba(0,0,0,.07);}
+  .hw-mv.dis{opacity:.3; pointer-events:none;}
   .seg-wrap .seg-op.danger:hover{color:var(--red, #C0392B);}
   .seg-wrap.on .seg-pick{background:var(--sc, var(--ink)); color:#fff;}
   .seg-wrap.on{border-color:var(--sc, var(--ink));}
@@ -1362,14 +1370,17 @@ function fmtDur(ms){
      · 常用词：拖动 .hw-chip，落盘写回该科目分组的数组顺序（本地 localStorage）。
    与 v.81 删除的「整页卡片/清单拖拽」无关：这里只重排添加栏内的两个小列表。 */
 function dragSvg(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>'; }
-/* 通用拖拽排序（v.85 修正）：用 Pointer Events 同时支持「手指触摸」与「鼠标」。
-   ⚠️ 之前用 HTML5 draggable/dragstart/drop，实测在手机上完全不触发（只支持鼠标），
-   导致「怎么拖都没反应」。现改为 pointerdown → 长按 300ms 或移动超阈值 → 激活，
-   松手时按指针位置落在目标元素的前半/后半区决定插入点，再回调 onDrop 落盘。
-   itemSel 元素需带 idAttr 指定的属性（默认 data-drag-id）作为标识。
-   注：插入点用元素 rect 计算，**不使用 elementFromPoint**（部分环境不支持）。 */
-const DRAG_HOLD_MS = 300;      // 长按多久激活拖拽（避免与点击选择科目冲突）
-const DRAG_MOVE_TOL = 8;       // 未激活时允许的移动容差（px）
+/* ============ 通用拖拽排序（v.86 修正版） ============
+   ⚠️ 手机端踩过的两个坑（都已修）：
+   1) HTML5 DnD（draggable/dragstart/drop）**只支持鼠标**，触摸完全不触发 → 已弃用。
+   2) CSS `touch-action: pan-y` 会让浏览器**接管竖向手势并取消 pointer 事件**
+      （触发 pointercancel）→ 拖拽被中断。现在 sortable 元素一律 `touch-action: none`。
+   现在策略：**Pointer Events 为主 + touch 事件兜底**（部分手机浏览器 pointer 支持不稳）。
+   交互：按住 → 长按 DRAG_HOLD_MS 或位移超阈值即激活 → 拖动时目标显示 .drop-mark
+        → 松手按指针落在目标上半区/下半区决定插入到其前/其后 → onDrop(order) 落盘。
+   itemSel 元素需带 idAttr 指定的属性（默认 data-drag-id）。 */
+const DRAG_HOLD_MS = 320;      // 长按多久激活拖拽
+const DRAG_MOVE_TOL = 10;      // 未激活时允许的移动容差（px）：超过即视为想拖动
 /* 依指针 (x,y) 找出应插入到哪个元素的前/后面；返回 {el, after} 或 null */
 function pickDropTarget(container, itemSel, x, y, exclude){
   const list = Array.from(container.querySelectorAll(itemSel)).filter(e=>e!==exclude);
@@ -1382,63 +1393,117 @@ function pickDropTarget(container, itemSel, x, y, exclude){
     if(d < bestDist){ bestDist = d; best = { el, r, cx, cy }; }
   });
   if(!best) return null;
-  // 指针在目标元素下半区 → 插到其后；上半区 → 插到其前
-  const after = (y - best.r.top) > best.r.height/2;
-  return { el:best.el, after };
+  return { el:best.el, after:(y - best.r.top) > best.r.height/2 };
 }
 function bindDragSort(container, itemSel, onDrop, idAttr){
   if(!container) return;
   const idOf = el => el.getAttribute(idAttr||'data-drag-id');
   container.querySelectorAll(itemSel).forEach(el=>{
     if(el._peBound) return; el._peBound = true;
-    let holdT=null, dragging=false, startX=0, startY=0, src=null, lastX=0, lastY=0;
+    let holdT=null, dragging=false, startX=0, startY=0, src=null, lastX=0, lastY=0, holdDone=false;
 
     const clearMark = ()=> container.querySelectorAll(".drop-mark").forEach(x=>x.classList.remove("drop-mark"));
-    const activate = (e)=>{ dragging=true; el.classList.add("dragging"); try{ el.setPointerCapture && el.setPointerCapture(e.pointerId); }catch(err){} };
-    const stop = ()=>{
-      if(holdT){ clearTimeout(holdT); holdT=null; }
-      if(dragging && src){
-        src.classList.remove("dragging"); clearMark();
-        const order = Array.from(container.querySelectorAll(itemSel)).map(idOf);
-        onDrop(order);
-      }
-      dragging=false; src=null;
-    };
-
-    el.addEventListener("pointerdown", (e)=>{
-      if(e.button!=null && e.button!==0) return;      // 只响应主键
-      startX=lastX=e.clientX; startY=lastY=e.clientY; src=el;
-      holdT=setTimeout(()=>activate(e), DRAG_HOLD_MS);
-    });
-    el.addEventListener("pointermove", (e)=>{
-      if(!src) return;
-      lastX=e.clientX; lastY=e.clientY;
-      const dx=e.clientX-startX, dy=e.clientY-startY;
-      if(!dragging){
-        if(holdT && Math.abs(dx)>DRAG_MOVE_TOL*2 && Math.abs(dy)>DRAG_MOVE_TOL*2){ clearTimeout(holdT); holdT=null; activate(e); }
-        else if(holdT && (Math.abs(dx)>DRAG_MOVE_TOL || Math.abs(dy)>DRAG_MOVE_TOL)){ clearTimeout(holdT); holdT=null; }
-        return;
-      }
-      try{ e.preventDefault(); }catch(err){}
+    const activate = ()=>{ dragging=true; holdDone=true; el.classList.add("dragging"); };
+    const drop = ()=>{
       clearMark();
-      const hit = pickDropTarget(container, itemSel, e.clientX, e.clientY, el);
+      const order = Array.from(container.querySelectorAll(itemSel)).map(idOf);
+      onDrop(order);
+    };
+    const reset = ()=>{ dragging=false; src=null; holdDone=false; };
+
+    /* ---- 拖动中的实时处理（pointer 与 touch 共用） ---- */
+    const onMove = (x, y)=>{
+      lastX=x; lastY=y;
+      const dx=x-startX, dy=y-startY;
+      if(!dragging){
+        const far = Math.abs(dx)>DRAG_MOVE_TOL*1.6 && Math.abs(dy)>DRAG_MOVE_TOL*1.6;
+        const slight = Math.abs(dx)>DRAG_MOVE_TOL || Math.abs(dy)>DRAG_MOVE_TOL;
+        if(holdT && far){ clearTimeout(holdT); holdT=null; activate(); }
+        else if(holdT && slight){ clearTimeout(holdT); holdT=null; reset(); }  // 视为滚动/点击，放弃
+        return false;   // 未激活：让浏览器继续处理手势（不拦截滚动）
+      }
+      clearMark();
+      const hit = pickDropTarget(container, itemSel, x, y, el);
       if(hit) hit.el.classList.add("drop-mark");
-    });
-    const finish = ()=>{
-      if(!src) return;
+      return true;      // 已激活：本次移动应阻止默认行为
+    };
+    const onUp = ()=>{
+      if(holdT){ clearTimeout(holdT); holdT=null; }
       if(dragging){
         const hit = pickDropTarget(container, itemSel, lastX, lastY, el);
         if(hit){
           if(hit.after) hit.el.parentNode.insertBefore(el, hit.el.nextSibling);
           else hit.el.parentNode.insertBefore(el, hit.el);
         }
+        drop();
       }
-      stop();
+      el.classList.remove("dragging");
+      reset();
     };
-    el.addEventListener("pointerup", finish);
-    el.addEventListener("pointercancel", stop);
+
+    /* ---- Pointer Events（现代浏览器，含桌面鼠标） ---- */
+    el.addEventListener("pointerdown", (e)=>{
+      if(e.button!=null && e.button!==0) return;
+      startX=lastX=e.clientX; startY=lastY=e.clientY; src=el;
+      holdT=setTimeout(activate, DRAG_HOLD_MS);
+    });
+    el.addEventListener("pointermove", (e)=>{
+      if(!src) return;
+      if(onMove(e.clientX, e.clientY)){ try{ e.preventDefault(); }catch(err){} }
+    });
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", ()=>{ if(holdT){ clearTimeout(holdT); holdT=null; } el.classList.remove("dragging"); reset(); });
+
+    /* ---- Touch Events 兜底（pointer 不可靠的老手机浏览器） ----
+       注意：必须 {passive:false} 才能 preventDefault 阻止滚动；一旦激活即拦下后续 touchmove。 */
+    const tStart = (e)=>{
+      const t = e.changedTouches && e.changedTouches[0]; if(!t) return;
+      startX=lastX=t.clientX; startY=lastY=t.clientY; src=el; holdDone=false;
+      if(!holdT) holdT=setTimeout(activate, DRAG_HOLD_MS);
+    };
+    const tMove = (e)=>{
+      if(!src || !holdDone && !dragging) { if(src && !dragging) return; }
+      const t = e.changedTouches && e.changedTouches[0]; if(!t) return;
+      if(onMove(t.clientX, t.clientY)){ if(e.cancelable) e.preventDefault(); }
+    };
+    const tEnd = ()=>{ if(src){ onUp(); } };
+    if(window.PointerEvent){
+      // 现代浏览器已由 pointer 事件处理；仍挂 touch 兜底以防 pointer 被浏览器吞掉
+      el.addEventListener("touchstart", tStart, {passive:true});
+      el.addEventListener("touchmove", tMove, {passive:false});
+      el.addEventListener("touchend", tEnd);
+      el.addEventListener("touchcancel", tEnd);
+    } else {
+      el.addEventListener("touchstart", tStart, {passive:true});
+      el.addEventListener("touchmove", tMove, {passive:false});
+      el.addEventListener("touchend", tEnd);
+      el.addEventListener("touchcancel", tEnd);
+    }
     el.addEventListener("contextmenu", (e)=>{ if(dragging) e.preventDefault(); });
   });
+}
+/* v.86：科目/常用词的前移后移按钮 —— 不依赖任何拖拽手势，100% 可用（手机端兜底方案）。
+   dir: -1 前移 / +1 后移。只在「未归档科目」之间移动，归档科目固定在后面。 */
+function moveSubject(name, dir){
+  ensureSubjects();
+  const names = state.subjects.filter(s=>!s.arc).map(s=>s.name);
+  const i = names.indexOf(name);
+  const j = i + dir;
+  if(i<0 || j<0 || j>=names.length) return;            // 已在首/尾，无需移动
+  names.splice(j, 0, names.splice(i,1)[0]);               // 交换为「移动一格」
+  saveSubjOrderByNames(names);
+  toast("「"+name+"」已" + (dir<0?"前移":"后移"));
+}
+/* 常用词前移后移（同样以展示顺序为准，落盘到 HWORDER 记忆） */
+function moveHW(i, dir){
+  const raw = loadHW()[addSubj]||[];
+  const arr = orderHw(raw, getHwOrder(addSubj));
+  const j = i + dir;
+  if(i<0 || i>=arr.length || j<0 || j>=arr.length) return;
+  arr.splice(j, 0, arr.splice(i,1)[0]);
+  saveHwOrder(addSubj, arr.map(x=>x&&x.id).filter(Boolean));
+  renderHWChips();
+  toast("「"+hwItem(arr[j]).t+"」已" + (dir<0?"前移":"后移"));
 }
 /* 科目顺序落盘：按 DOM 顺序重排 state.subjects（未出现的保持在后面），bump 时间戳 → 云同步 */
 function saveSubjOrderByNames(orderNames){
@@ -1564,16 +1629,18 @@ function renderList(){
         <button class="book-set${subjEditOn?' on':''}" title="科目栏设置：开启后可改名 / 删除 / 新增 / 恢复，并拖拽排序" onclick="toggleSubjEdit()">${gearSvg()}</button>
       </span>
     </div>
-    ${subjEditOn?'<div class="seg-edit-tip">科目编辑已开启：可 ✎ 改名、🗑 删除、行尾 ＋ 新增。<b>按住科目（或常用词）半秒后拖动即可排序</b>，清单按此顺序排列。</div>':''}
+    ${subjEditOn?'<div class="seg-edit-tip">科目编辑已开启：点 <b>‹ ›</b> 调整顺序（也可长按拖动）；✎ 改名、🗑 删除、行尾 ＋ 新增。清单与统计按此顺序排列。</div>':''}
     <div class="seg4" id="seg4">`;
-  const activeSubjs = subjArr.filter(s=>!s.arc);
-  activeSubjs.forEach((sObj)=>{
+      const activeSubjs = subjArr.filter(s=>!s.arc);
+  activeSubjs.forEach((sObj, si)=>{
     const s = sObj.name;
-    /* v.85：设置模式下科目可拖拽排序（拖动整个 seg-wrap，落盘写回 state.subjects 顺序） */
+    /* v.86：设置模式下科目可拖拽排序；另提供 ◀ ▶ 按钮作为不依赖拖拽的可靠兜底 */
     html += `<span class="seg-wrap${s===addSubj?' on':''}${subjEditOn?' sortable':''}" data-s="${esc(s)}">
       <button class="seg-pick" data-s="${esc(s)}" onclick="pickAddSubj(this)" style="--sc:${sObj.color||"#6B8E5A"}">${esc(s)}</button>
       ${subjEditOn?`<span class="seg-ops">
-        <span class="drag-ico" title="拖拽调整顺序">${dragSvg()}</span>
+        <span class="drag-ico" title="按住拖动可调整顺序">${dragSvg()}</span>
+        <button class="seg-op${si===0?' dis':''}" title="前移" onclick="event.stopPropagation();moveSubject('${esc(s)}',-1)">‹</button>
+        <button class="seg-op${si===activeSubjs.length-1?' dis':''}" title="后移" onclick="event.stopPropagation();moveSubject('${esc(s)}',1)">›</button>
         <button class="seg-op" title="重命名科目「${esc(s)}」" onclick="event.stopPropagation();renameSubject('${esc(s)}')">${penSvg()}</button>
         <button class="seg-op danger" title="删除科目「${esc(s)}」" onclick="event.stopPropagation();removeSubject('${esc(s)}')">${trashSvg()}</button>
       </span>`:""}
@@ -1627,11 +1694,14 @@ function renderHWChips(){
   const arr = ordered.map(hwItem);
   const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
   if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
-  /* v.85：设置模式下 chip 可拖拽（按 id 标识，落盘写本地顺序） */
+  /* v.85/86：设置模式下 chip 可拖拽；v.86 另加 ‹ › 前移后移按钮（拖拽之外的可靠兜底） */
   const dragOK = subjEditOn;
   box.innerHTML=arr.map((w,i)=>{
     const id = (ordered[i]&&ordered[i].id)||("idx"+i);
-    return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
+    const mv = dragOK
+      ? `<i class="hw-mv${i===0?' dis':''}" title="前移" onclick="event.stopPropagation();moveHW(${i},-1)">‹</i>`
+       +`<i class="hw-mv${i===arr.length-1?' dis':''}" title="后移" onclick="event.stopPropagation();moveHW(${i},1)">›</i>` : "";
+    return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${mv}${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
   }).join("");
   const addBtn=$("hwAddBtn"); if(addBtn) addBtn.style.display = arr.length>=15 ? "none" : "";
 }
@@ -3787,7 +3857,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.86";
+const APP_VERSION = "2026.09.10.87";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
