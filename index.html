@@ -174,6 +174,17 @@
   /* ===== 卡片 ===== */
   .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px; margin-bottom:10px;}
   .card-h{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+  /* v.80：拖拽 / 归档 / 科目管理 */
+  .drag-handle{cursor:grab; color:var(--muted); display:inline-flex; align-items:center; touch-action:none; user-select:none; -webkit-user-select:none;}
+  .drag-handle:active{cursor:grabbing;}
+  .todo-handle{padding-right:2px;}
+  .card.dragging, .todo.dragging{opacity:.45;}
+  .card.drag-over, .todo.drag-over{outline:2px dashed var(--sun); outline-offset:2px;}
+  .card.archived{opacity:.62; background:repeating-linear-gradient(135deg, rgba(0,0,0,.02) 0 6px, transparent 6px 12px);}
+  .arc-tag{font-style:normal; font-size:10px; font-weight:700; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:1px 4px; margin-left:6px; vertical-align:middle;}
+  .add-tools{margin-left:auto; display:inline-flex; gap:6px; align-items:center;}
+  .add-tools .mini-btn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .card-h .subj-title .drag-handle + .subj-dot{margin-left:0;}
   .book-set{width:28px; height:28px; flex:0 0 28px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); border:1.5px solid var(--line); background:#fcfaf5; margin-left:8px; cursor:pointer;}
   .book-set:active{transform:scale(.96);}
   .book-set.on{color:#fff; background:var(--sun); border-color:var(--sun);}
@@ -819,6 +830,131 @@ const STORE_KEY = "wb_hwdsk_v1";
 const SUBJECTS = ["校内","语文","数学","英语","其他"];
 const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
 const SUBJ_COLOR = {"校内":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
+const SUBJ_ORDER = {"校内":0,"语文":1,"数学":2,"英语":3,"其他":4};
+
+/* ============ 可变科目表（v.80：支持改名 / 删除 / 新增 / 排序，随云端同步） ============
+   - state.subjects：数组，每项 {name, color, arc?}；arc=true 表示「已删除归档」（今日前的历史内容保留、置灰只读）
+   - 旧数据无 state.subjects 时回退到上方写死常量（SUBJECTS / SUBJ_COLOR / SUBJ_ORDER），保证向后兼容
+   - 科目改名 → 级联改历史作业 subject + 常用词分组键；删除 → 今日前不动、今日后清空，母版+常用词一并删，卡片转归档
+   - 排序：科目顺序存 state.subjects 数组下标（云同步）；作业顺序按「当天+科目」存本地 localOrder */
+const SUBJ_PALETTE = ["#7B5FA6","#C25B5B","#3F6FB0","#C2953B","#6B8E5A","#8E6B3F","#4A7C8C","#9A5578","#5F7A3F","#A0522D"];
+function defaultSubjects(){ return SUBJECTS.map((n,i)=>({ name:n, color: SUBJ_COLOR[n]||SUBJ_PALETTE[i%SUBJ_PALETTE.length], arc:false })); }
+/* 当前生效科目（含归档，渲染用） */
+function subjList(){
+  const s = state && state.subjects;
+  if(Array.isArray(s) && s.length) return s;
+  return defaultSubjects();
+}
+/* 有效科目名集合（归一化用：不在集合内的科目归入「其他」） */
+function subjNames(){ return subjList().map(s=>s.name); }
+/* 取科目配色（找不到回退默认色） */
+function subjColor(name){ const f = subjList().find(s=>s.name===name); return (f && f.color) || "#6B8E5A"; }
+/* 确保 state.subjects 存在（旧数据回退默认值） */
+function ensureSubjects(){
+  if(!Array.isArray(state.subjects) || !state.subjects.length){ state.subjects = defaultSubjects(); }
+  return state.subjects;
+}
+/* 科目是否归档（已删除）：归档卡只读、置灰，今日前的历史内容仍显示 */
+function subjArchived(name){ const f = subjList().find(s=>s.name===name); return !!(f && f.arc); }
+/* 提交科目表变更：bump 后保存并触发同步 */
+function touchSubjects(){ save(); }
+/* 科目是否已存在（用于新增查重） */
+function subjExists(name){ return subjList().some(s=>s.name===name); }
+
+/* ============ 科目管理（v.80） ============ */
+/* 给可变科目表打时间戳并保存（用于云端「最后写入者胜」合并） */
+function bumpSubjects(){ state.subjects._u = Date.now(); save(); }
+/* 新增科目：插到「其他」之前，归档科目之后 */
+function addSubject(){
+  const v = prompt("新增科目名称：",""); if(v==null) return;
+  const name = v.trim(); if(!name){ toast("科目名不能为空"); return; }
+  if(subjExists(name)){ toast("已存在同名科目「"+name+"」"); return; }
+  ensureSubjects();
+  const used = subjList().map(s=>s.color);
+  let color = SUBJ_PALETTE.find(c=>!used.includes(c)) || SUBJ_PALETTE[state.subjects.length % SUBJ_PALETTE.length];
+  const ci = prompt("该科目颜色（HEX，留空=自动）：", color); if(ci!=null){ const t=ci.trim(); if(/^#[0-9a-fA-F]{6}$/.test(t)) color=t; }
+  const other = state.subjects.findIndex(s=>s.name==="其他");
+  const item = { name, color, arc:false };
+  if(other>=0) state.subjects.splice(other,0,item); else state.subjects.push(item);
+  addSubj = name;
+  bumpSubjects(); refreshAll(); toast("已新增科目「"+name+"」");
+}
+/* 重命名科目：级联更新历史作业 / 循环母版 / 常用词分组键 / 本地排序键 / 当前选中 */
+function renameSubject(oldName){
+  if(subjArchived(oldName)){ toast("已删除科目请先恢复再改名"); return; }
+  const v = prompt("重命名科目（旧内容会一并更新）：", oldName); if(v==null) return;
+  const name = v.trim(); if(!name){ toast("科目名不能为空"); return; }
+  if(name===oldName) return;
+  if(subjExists(name)){ toast("已存在同名科目「"+name+"」"); return; }
+  ensureSubjects();
+  const sObj = state.subjects.find(s=>s.name===oldName); if(!sObj) return;
+  sObj.name = name;
+  // 级联：作业 / 待办 / 母版 的 subject
+  let n=0;
+  ["todos","tasks","masters"].forEach(k=> (state[k]||[]).forEach(x=>{ if(x && x.subject===oldName){ x.subject=name; x._u=Date.now(); markLocal(x.id); n++; } }));
+  // 级联：常用词分组键
+  if(state.hw && Array.isArray(state.hw[oldName])){ state.hw[name]=state.hw[oldName]; delete state.hw[oldName]; }
+  // 本地排序键
+  try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); Object.keys(o).forEach(k=>{ if(k.indexOf("|"+oldName)>-1){ o[k.replace("|"+oldName,"|"+name)]=o[k]; delete o[k]; } }); localStorage.setItem(ORDER_KEY, JSON.stringify(o)); }catch(e){}
+  if(addSubj===oldName) addSubj = name;
+  editBooks.delete(oldName); editBooks.add(name);
+  bumpSubjects(); refreshAll();
+  toast(n>0 ? ("已改名为「"+name+"」，同步更新 "+n+" 条内容") : ("已改名为「"+name+"」"));
+}
+/* 删除科目：今日前的历史内容保留（卡片转归档），今日及以后的内容 + 母版 + 常用词一并删除 */
+function removeSubject(name){
+  const today = ymd(new Date());
+  const all = state.subjects.find(s=>s.name===name);
+  if(!all || all.arc){ toast("该科目已删除"); return; }
+  const affected = state.todos.filter(t=>t.subject===name && t.date>=today).length;
+  const mCnt = (state.masters||[]).filter(m=>m.subject===name).length;
+  const hwCnt = ((state.hw||{})[name]||[]).length;
+  const msg = "删除科目「"+name+"」？\n\n"
+    + "· 今日（"+today+"）之前的 "+"历史内容保留，卡片转为「已删除」只读归档\n"
+    + "· 今日及以后的作业（"+affected+" 条）、循环母版（"+mCnt+" 条）、常用词（"+hwCnt+" 条）将被删除\n"
+    + "· 删除后可在归档卡片上「↺ 恢复」\n\n确认删除？";
+  if(!confirm(msg)) return;
+  all.arc = true;
+  // 今日及以后的作业：写 _del 墓碑后移除，防止云端复活
+  const kill = {};
+  state.todos.filter(t=>t.subject===name && t.date>=today).forEach(t=>{ kill[t.id]=Date.now(); touch(t); });
+  state._del = Object.assign(state._del||{}, kill);
+  state.todos = state.todos.filter(t=> !(t.subject===name && t.date>=today));
+  // 母版：删除并写墓碑（否则明天会重新生成）
+  (state.masters||[]).filter(m=>m.subject===name).forEach(m=>{ state._delM = state._delM||{}; state._delM[m.id]=Date.now(); touch(m); });
+  state.masters = (state.masters||[]).filter(m=>m.subject!==name);
+  // 待办
+  state.tasks = (state.tasks||[]).filter(x=>x.subject!==name);
+  // 常用词：删除并写墓碑
+  if(state.hw && Array.isArray(state.hw[name])){ state.hw[name].forEach(c=>{ if(c&&c.id){ state._delHW=state._delHW||{}; state._delHW[c.id]=Date.now(); } }); delete state.hw[name]; }
+  if(addSubj===name){ const a=subjList().find(s=>!s.arc); addSubj = a ? a.name : "其他"; }
+  editBooks.delete(name);
+  bumpSubjects(); refreshAll();
+  toast("已删除科目「"+name+"」（今日前的历史内容保留为归档）");
+}
+/* 恢复已删除科目 */
+function restoreSubject(name){
+  const sObj = state.subjects.find(s=>s.name===name); if(!sObj) return;
+  sObj.arc = false;
+  bumpSubjects(); refreshAll(); toast("已恢复科目「"+name+"」");
+}
+
+/* ============ 清单排序（v.80：按「当天+科目」本地记忆） ============ */
+const ORDER_KEY = "wb_hwdsk_order_v1";
+function orderKey(ds, subj){ return ds + "|" + subj; }
+function getOrder(ds, subj){ try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); return Array.isArray(o[orderKey(ds,subj)]) ? o[orderKey(ds,subj)] : []; }catch(e){ return []; } }
+function setOrder(ds, subj, ids){ try{ const o=JSON.parse(localStorage.getItem(ORDER_KEY)||"{}"); o[orderKey(ds,subj)]=ids; localStorage.setItem(ORDER_KEY, JSON.stringify(o)); }catch(e){} }
+/* 按本地记忆的 id 顺序排列；未记录过的按原顺序追加在后 */
+function orderFor(ds, subj, arr){
+  const ids = getOrder(ds, subj);
+  if(!ids.length) return arr;
+  const rank = new Map(ids.map((id,i)=>[id,i]));
+  return arr.slice().sort((a,b)=>{
+    const ra = rank.has(a.id)?rank.get(a.id):1e6, rb = rank.has(b.id)?rank.get(b.id):1e6;
+    return ra-rb;
+  });
+}
+
 
 /* ============ 工具 ============ */
 const $ = id => document.getElementById(id);
@@ -852,6 +988,7 @@ function load(){
   if(!state._delHW) state._delHW = {};        // 常用词删除墓碑：跨端同步删除
   if(!Array.isArray(state.rewards)) state.rewards = [];   // 奖励（目标/劳动/惩罚），随作业一起多端同步
   if(!state._delR) state._delR = {};          // 奖励删除墓碑：跨端同步删除
+  ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   // 兼容旧数据：补齐 done 字段（目标默认未完成；劳动/惩罚默认已完成）
   (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
   /* 迁移：旧版常用词存于独立 localStorage 键 wb_hwdsk_hw_v1，并入 state.hw 一并同步 */
@@ -873,7 +1010,7 @@ function save(){ saveLocal(); syncSchedule(); }
 
 function seed(){
   // 全新安装从空开始（不再生成示例数据，避免混入统计与云端）
-  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, subjects: defaultSubjects(), _syncedAt:0 };
 }
 function mkTodo(date, subject, title, o={}){
   return Object.assign({
@@ -1184,6 +1321,8 @@ function arrowSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fil
 function penSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function trashSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 function gearSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+/* 拖拽手柄（设置模式下出现） */
+function dragSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>'; }
 
 function fmtDur(ms){
   const s=Math.round(ms/1000); const m=Math.floor(s/60); const ss=s%60;
@@ -1193,9 +1332,16 @@ function fmtDur(ms){
 function renderList(){
   const ds = ymd(viewDate);
   genRecurring(ds);
+  ensureSubjects();
   const ts = todosOf(ds);
-  const bySubj = {}; SUBJECTS.forEach(s=>bySubj[s]=[]);
-  const normSubj = s => SUBJECTS.includes(s) ? s : "其他";   // 非标准学科归入「其他」卡
+  /* v.80：科目表可变（增删改/归档）；归一化目标科目取第一个未归档的，若全归档则回退默认「其他」 */
+  const subjArr = subjList();
+  const validNames = subjArr.map(s=>s.name);
+  const fallbackName = subjArr.find(s=>!s.arc) ? subjArr.find(s=>!s.arc).name : (validNames[0]||"其他");
+  const bySubj = {}; validNames.forEach(s=>bySubj[s]=[]);
+  /* 非已知科目归入「其他」；若不存在「其他」则归入第一个有效科目，避免条目凭空消失 */
+  const targetOther = validNames.includes("其他") ? "其他" : fallbackName;
+  const normSubj = s => validNames.includes(s) ? s : targetOther;
   ts.forEach(t=>{ (bySubj[normSubj(t.subject)]||(bySubj[normSubj(t.subject)]=[])).push(t); });
 
   let html="";
@@ -1226,21 +1372,37 @@ function renderList(){
   // 自检：预计时长 = 当日已做 + 后期补做 + 未做（按定义恒成立，因当日项恰好三分天下）
   const workEst = doneEst + madeUpEst;   // 当日时长 = 当日已做 + 当日补做
   html += `<div class="day-summary"><div class="ds-main"><div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>未做时长</span></div><div class="ds-row ds-vals"><b class="ds-v">${fmtEst(totalEst)}</b><b class="ds-v3">${fmtEst(doneEst)}</b><b class="ds-v4">${fmtEst(laterEst)}</b><b class="ds-v2">${fmtEst(undoneEst)}</b></div><div class="ds-gold">当日时长（${fmtEst(workEst)}）= 当日已做（${fmtEst(doneEst)}）+ 当日补做（${fmtEst(madeUpEst)}）</div></div></div>`;
-  SUBJECTS.forEach(subj=>{
+  /* v.80：按可变科目表顺序渲染卡片；卡片头支持 拖拽手柄 / 改名 / 删除；归档卡置灰只读 */
+  subjArr.forEach((sObj, subjIdxRender)=>{
+    const subj = sObj.name;
+    const arc = !!sObj.arc;
     const all = bySubj[subj]||[];
-    const pending = all.filter(t=>!t.done);
+    const pending = orderFor(ds, subj, all.filter(t=>!t.done));
     const done = all.filter(t=>t.done);
     const total = ts.filter(t=>normSubj(t.subject)===subj).length;
     const eOn = editBooks.has(subj);
-    html += `<div class="card${eOn?' editing':''}"><div class="card-h"><span class="subj-dot subj-${subj}"></span><span class="subj-title ${subj}">${subj}</span><span class="card-count">${done.length}/${total} 完成</span><button class="book-set${eOn?' on':''}" title="设置：显示本作业本各项的修改 / 删除 / 固定按钮" onclick="toggleEditBook('${subj}')">${gearSvg()}</button></div>`;
+    const drag = (setModeOn||dragMode) ? ` draggable="true" data-drag-subj="${esc(subj)}"` : "";
+    const style = ` style="--sc:${sObj.color||"#6B8E5A"}"`;
+    html += `<div class="card${eOn?' editing':''}${arc?' archived':''}"${style}${drag} data-subj-card="${esc(subj)}">
+      <div class="card-h">
+        ${(setModeOn||dragMode)?`<span class="drag-handle" title="长按拖动调整科目顺序">${dragSvg()}</span>`:""}
+        <span class="subj-dot" style="background:${sObj.color||"#6B8E5A"}"></span>
+        <span class="subj-title" style="color:${sObj.color||"#6B8E5A"}">${esc(subj)}${arc?'<i class="arc-tag">已删除</i>':""}</span>
+        <span class="card-count">${done.length}/${total} 完成</span>
+        ${arc
+          ? `<button class="mini-btn" title="恢复该科目" onclick="event.stopPropagation();restoreSubject('${esc(subj)}')">↺ 恢复</button>`
+          : `<button class="book-set${eOn?' on':''}" title="设置：显示本作业本各项的修改 / 删除 / 固定按钮" onclick="toggleEditBook('${esc(subj)}')">${gearSvg()}</button>
+             <button class="mini-btn" title="重命名科目（同时更新历史作业与常用词）" onclick="event.stopPropagation();renameSubject('${esc(subj)}')">${penSvg()}</button>
+             <button class="mini-btn del" title="删除科目（今日前的历史内容保留为归档）" onclick="event.stopPropagation();removeSubject('${esc(subj)}')">${trashSvg()}</button>`}
+      </div>`;
     if(all.length===0){
-      html += `<div class="empty-tip" style="padding:16px 0;">今日暂无${subj}作业</div>`;
+      html += `<div class="empty-tip" style="padding:16px 0;">${arc?'该科目已删除，历史内容保留':'今日暂无'+esc(subj)+'作业'}</div>`;
     } else {
-      pending.forEach(t=>{ html += todoRow(t); });
+      pending.forEach(t=>{ html += todoRow(t, subj, ds); });
       // 已完成项沉到本卡片底部，而非全局统一沉底（仅留紧凑分隔线，不显示文字）
       if(done.length){
         html += `<div class="done-sep"></div>`;
-        done.forEach(t=>{ html += doneRow(t); });
+        done.forEach(t=>{ html += doneRow(t, subj, ds); });
       }
     }
     html += `</div>`;
@@ -1251,9 +1413,14 @@ function renderList(){
     <div class="add-title">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
       添加作业
+      <span class="add-tools">
+        <button class="mini-btn add-subj-btn" title="新增科目卡片" onclick="addSubject()">＋ 科目</button>
+        <button class="mini-btn set-mode-btn ${setModeOn?'on':''}" title="设置模式：长按卡片/清单项拖动排序" onclick="toggleSetMode()">${gearSvg()} ${setModeOn?'完成设置':'设置'}</button>
+      </span>
     </div>
     <div class="seg4" id="seg4">`;
-  SUBJECTS.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${s}" onclick="pickAddSubj(this)">${s}</button>`);
+  const activeSubjs = subjArr.filter(s=>!s.arc).map(s=>s.name);
+  activeSubjs.forEach((s,i)=> html += `<button class="${s===addSubj?'on':''}" data-s="${esc(s)}" onclick="pickAddSubj(this)">${esc(s)}</button>`);
   html += `</div>
     <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><button class="plus" onclick="doAdd()">+</button></div>
     <div id="hwWrap" class="hw-wrap">
@@ -1264,6 +1431,7 @@ function renderList(){
 
   $("listContent").innerHTML = html;
   renderHWChips();
+  bindSortables();   // v.80：设置模式下的长按拖拽排序
 }
 
 let addSubj = "语文";
@@ -1272,6 +1440,102 @@ function toggleEditHW(){ editHWOn=!editHWOn; renderList(); }
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名），用于显示各项的修改/删除/固定按钮
 function toggleEditBook(key){ if(editBooks.has(key)) editBooks.delete(key); else editBooks.add(key); renderList(); }
 function pickAddSubj(btn){ addSubj = btn.dataset.s; document.querySelectorAll("#seg4 button").forEach(b=>b.classList.toggle("on", b===btn)); renderHWChips(); }
+
+/* ============ 设置模块 + 拖拽排序（v.80） ============
+   进入「设置模式」后：科目卡片与清单项出现拖拽手柄；长按手柄/卡片/清单项可拖动排序。
+   科目顺序 → 写回 state.subjects 顺序（云同步）；作业顺序 → 写 localStorage（当天+科目）。 */
+let setModeOn = false;    // 设置模式开关
+let dragMode = false;     // 拖拽进行中（避免长按/滚动冲突）
+function toggleSetMode(on){
+  setModeOn = (on==null) ? !setModeOn : !!on;
+  renderList();
+  if(setModeOn) toast("设置模式：长按卡片或清单项可拖动排序");
+}
+/* 从 DOM 顺序读回科目顺序并写回 state.subjects（云同步） */
+function persistSubjOrder(){
+  const cards = Array.from(document.querySelectorAll("[data-subj-card]"));
+  if(!cards.length) return;
+  const byName = new Map(state.subjects.map(s=>[s.name,s]));
+  const next = [];
+  cards.forEach(c=>{ const nm=c.getAttribute("data-subj-card"); const s=byName.get(nm); if(s && !next.includes(s)) next.push(s); });
+  state.subjects.forEach(s=>{ if(!next.includes(s)) next.push(s); });   // 兜底：未在 DOM 中的（如空态）追加保留
+  state.subjects = next;
+  bumpSubjects();
+}
+/* 从 DOM 顺序读回某科目当天未完成作业顺序并写 localStorage */
+function persistTodoOrder(ds, subj){
+  const card = document.querySelector('[data-subj-card="'+CSS.escape(subj)+'"]');
+  if(!card) return;
+  const ids = Array.from(card.querySelectorAll("[data-todo-id]")).map(e=>e.getAttribute("data-todo-id"));
+  if(ids.length) setOrder(ds, subj, ids);
+}
+/* 拖拽初始化：长按 400ms 后激活，HTML5 draggable 排序 */
+let _pressTimer = null, _pressEl = null;
+function bindSortables(){
+  const list = document.getElementById("listContent");
+  if(!list) return;
+  // 长按激活拖拽（鼠标 + 触摸）
+  list.addEventListener("pointerdown", onPressStart, { passive:true });
+  list.addEventListener("pointerup", clearPress, { passive:true });
+  list.addEventListener("pointercancel", clearPress, { passive:true });
+  list.addEventListener("pointermove", onPressMove, { passive:true });
+  list.querySelectorAll("[data-drag-subj]").forEach(attachDrag);
+  list.querySelectorAll("[data-todo-id]").forEach(attachDrag);
+}
+function pressTarget(e){
+  let el = e.target;
+  while(el && el !== document.getElementById("listContent")){
+    if(el.hasAttribute && (el.hasAttribute("data-drag-subj") || el.hasAttribute("data-todo-id"))) return el;
+    if(el.classList && el.classList.contains("drag-handle")) return el.closest("[data-drag-subj],[data-todo-id]");
+    el = el.parentElement;
+  }
+  return null;
+}
+function onPressStart(e){
+  if(!setModeOn && !dragMode) return;
+  const el = pressTarget(e); if(!el) return;
+  _pressEl = el;
+  clearPress();
+  _pressTimer = setTimeout(()=>{ dragMode = true; _pressEl = el; if(el.setPointerCapture && e.pointerId!=null){ try{ el.setPointerCapture(e.pointerId); }catch(err){} } }, 350);
+}
+function onPressMove(e){ if(dragMode && _pressEl) e.preventDefault && e.preventDefault(); }
+function clearPress(){ if(_pressTimer){ clearTimeout(_pressTimer); _pressTimer=null; } if(!dragMode){ _pressEl=null; } }
+/* 绑定单个可拖拽元素（科目卡 / 清单项） */
+function attachDrag(el){
+  if(el._dragBound) return; el._dragBound = true;
+  el.addEventListener("dragstart", (e)=>{
+    if(!setModeOn && !dragMode){ e.preventDefault(); return; }
+    el.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try{ e.dataTransfer.setData("text/plain","1"); }catch(err){}
+  });
+  el.addEventListener("dragend", ()=>{
+    el.classList.remove("dragging");
+    document.querySelectorAll(".drag-over").forEach(x=>x.classList.remove("drag-over"));
+    const ds = ymd(viewDate);
+    // 拖拽结束：按 DOM 顺序落盘
+    const subj = el.getAttribute("data-drag-subj");
+    if(subj){ persistSubjOrder(); }
+    else { const card = el.closest("[data-subj-card]"); if(card) persistTodoOrder(ds, card.getAttribute("data-subj-card")); }
+    dragMode = false; _pressEl = null;
+  });
+  el.addEventListener("dragover", (e)=>{
+    if(!setModeOn && !dragMode) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    el.classList.add("drag-over");
+  });
+  el.addEventListener("dragleave", ()=> el.classList.remove("drag-over"));
+  el.addEventListener("drop", (e)=>{
+    if(!setModeOn && !dragMode) return;
+    e.preventDefault(); e.stopPropagation();
+    el.classList.remove("drag-over");
+    const src = document.querySelector(".dragging"); if(!src || src===el) return;
+    const rect = el.getBoundingClientRect();
+    const after = (e.clientY - rect.top) > rect.height/2;
+    const parent = el.parentElement;
+    if(after) parent.insertBefore(src, el.nextSibling); else parent.insertBefore(src, el);
+  });
+}
 /* 常用词功能（按科目分组，存于 state.hw，随作业清单一起多端同步） */
 const HW_KEY = "wb_hwdsk_hw_v1";   // 仅用于旧版本数据迁移
 function loadHW(){ return (state && state.hw) || {}; }
@@ -1285,7 +1549,9 @@ function renderHWChips(){
   box.innerHTML=arr.map((w,i)=>`<span class="hw-chip" onclick="fillHW(${i})">${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`).join("");
   const addBtn=$("hwAddBtn"); if(addBtn) addBtn.style.display = arr.length>=15 ? "none" : "";
 }
-function fillHW(i){ const arr=(loadHW()[addSubj]||[]).map(hwItem); const w=arr[i]; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
+/* v.80：记录「本次输入框内容来自哪个常用词」，用于添加时写入 todo.hwId，常用词改名时可级联更新 */
+let _fillHwId = null;
+function fillHW(i){ const raw=loadHW()[addSubj]||[]; const w=hwItem(raw[i]); _fillHwId = (raw[i]&&raw[i].id)||null; const el=$("addInput"); if(el) el.value=w?w.t:""; const est=$("addEst"); if(est) est.value=w?w.e:""; if(el) el.focus(); }
 function addHW(){
   const hw=loadHW(); const arr=hw[addSubj]||(hw[addSubj]=[]);
   if(arr.length>=15){ toast("【"+addSubj+"】常用词最多 15 个"); return; }
@@ -1295,15 +1561,30 @@ function addHW(){
 }
 function editHW(i){
   const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const cur=hwItem(arr[i]);
-  const v=prompt("修改常用词（作业内容）：",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
+  const v=prompt("修改常用词（作业内容）：\n注意：改名后，此前通过该常用词添加的作业标题会一并更新。",cur.t); if(v==null) return; const t=v.trim(); if(!t) return;
   const e=prompt("预估时长（分钟）：",cur.e?String(cur.e):""); const est=Math.max(0, parseInt((e==null?"":e).trim()||"0",10)||0);
-  const raw=arr[i]||{}; arr[i]={id:raw.id||uid(), t:t, e:est, _u:Date.now()}; saveHW(hw); renderHWChips();
+  const raw=arr[i]||{}; const hwId = raw.id||uid();
+  arr[i]={id:hwId, t:t, e:est, _u:Date.now()};
+  saveHW(hw);
+  /* v.80：级联更新「所有由该常用词添加的清单项」标题 + 预估分（按 hwId 关联） */
+  let n=0;
+  (state.todos||[]).forEach(x=>{
+    if(x && x.hwId===hwId && x.title!==t){ x.title=t; x._u=Date.now(); markLocal(x.id); n++; }
+    if(x && x.hwId===hwId && est>0 && x.estMin!==est){ x.estMin=est; x._u=Date.now(); markLocal(x.id); }
+  });
+  renderHWChips(); renderList();
+  if(n>0) toast("已改名为「"+t+"」，同步更新 "+n+" 条清单项");
+  else toast("常用词已更新");
 }
+/* v.80：删除常用词只删词本身，不影响此前已添加的清单项（无需处理 state.todos） */
 function delHW(i){ const hw=loadHW(); const arr=hw[addSubj]||[]; if(i<0||i>=arr.length) return; const gone=arr[i]; if(gone&&gone.id){ state._delHW=state._delHW||{}; state._delHW[gone.id]=Date.now(); } arr.splice(i,1); saveHW(hw); renderHWChips(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
-  addTodo(addSubj, v, {estMin:est}); $("addInput").value=""; $("addEst").value=""; toast("已添加 · "+addSubj); renderList();
+  /* v.80：若内容来自常用词（fillHW 记过 hwId），把 hwId 写入 todo，供「改名常用词级联更新已添加项」使用 */
+  addTodo(addSubj, v, { estMin:est, hwId:_fillHwId||null });
+  _fillHwId = null;
+  $("addInput").value=""; $("addEst").value=""; toast("已添加 · "+addSubj); renderList();
 }
 
 /* 展开后可编辑的字段：具体内容 / 预估时间 / 错题数量（未完成与已完成共用） */
@@ -1333,7 +1614,7 @@ function expoFields(t){
       </div>` : "" }`;
 }
 
-function todoRow(t){
+function todoRow(t, subj, ds){
   const open = openExpo===t.id;
   const running = t.timerRunning;
   const locked = makeupLocked(t);     // 逾期锁定：未完成且距作业日已超过锁定天数 → 不可补打卡
@@ -1364,9 +1645,12 @@ function todoRow(t){
         ${ (t.accum>0 || t.done || t.timerRunning) ? `<div class="dur-hint" style="margin-top:9px;">起止时间：<b style="color:var(--ink)">${segText(t)}</b></div>` : "" }
       </div>
     </div>`;
-  return `<div class="todo" id="todo-${t.id}">
+  const dragAttr = (setModeOn||dragMode) ? ` draggable="true" data-todo-id="${t.id}"` : ` data-todo-id="${t.id}"`;
+  const handle = (setModeOn||dragMode) ? `<span class="drag-handle todo-handle" title="长按拖动排序">${dragSvg()}</span>` : "";
+  return `<div class="todo" id="todo-${t.id}"${dragAttr}>
     ${ t.done?'<span class="stamp" id="stamp-'+t.id+'">已完成</span>':'' }
     <div class="todo-top">
+      ${handle}
       <button class="chk ${t.done?'done':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
         <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}</div>
@@ -1413,18 +1697,21 @@ function setManual(id,val){
   toast(m>0 ? "已记录实际用时 "+m+" 分" : "已清除手动用时（按计时器计）");
 }
 /* 已完成作业：同样可点击展开（再点折叠），展开后可改 具体内容 / 预估时间 / 错题数量 */
-function doneRow(t){
+function doneRow(t, subj, ds){
   const open = openExpo===t.id;
   const sp = Math.round(recMs(t)/60000);
   const delLocked = deleteLocked(t);
   const meta = [
-    `<span class="subj-dot subj-${t.subject}" style="width:8px;height:8px;"></span><span style="color:var(--muted)">${t.subject}</span>`,
+    `<span class="subj-dot" style="width:8px;height:8px;background:${subjColor(t.subject)}"></span><span style="color:var(--muted)">${esc(t.subject)}</span>`,
     t.estMin ? `预估 ${t.estMin} 分` : "",
     sp>0 ? `用时 ${sp} 分` : "",
     t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
   ].filter(Boolean);
-  return `<div class="todo" id="todo-${t.id}">
+  const dragAttr = (setModeOn||dragMode) ? ` draggable="true" data-todo-id="${t.id}"` : ` data-todo-id="${t.id}"`;
+  const handle = (setModeOn||dragMode) ? `<span class="drag-handle todo-handle" title="长按拖动排序">${dragSvg()}</span>` : "";
+  return `<div class="todo" id="todo-${t.id}"${dragAttr}>
+    ${handle}
     <span class="stamp" id="stamp-${t.id}">已完成</span>
     <div class="todo-top">
       <button class="chk done" onclick="onChk('${t.id}')">${chkSvg(true)}</button>
@@ -1683,7 +1970,7 @@ function renderStats(){
   const sorted = s.ts.slice().sort((a,b)=> byStart(a)-byStart(b));
 
   const {clusters, untimed} = buildRows(s);
-  const legend = SUBJECTS.map(sb=>`<span><i style="background:${SUBJ_COLOR[sb]}"></i>${sb}</span>`).join("");
+  const legend = subjList().filter(x=>!x.arc).map(x=>`<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join("");
   const span = commonSpan(clusters);                     // 当日统一时长：各行时间轴等长
   const step = span<=150 ? 30 : (span<=330 ? 60 : 120);  // 刻度步长各行一致
 
@@ -1702,7 +1989,7 @@ function renderStats(){
       const widthP = Math.min(Math.max(((it.em-it.sm)/span)*100, 3), 100-leftP);
       const cls = t.done ? "" : (it.running ? "g-run" : "g-none");
       const hl  = ganttHL===t.id ? "hl":"";
-      const col = SUBJ_COLOR[t.subject]||"#6B8E5A";
+      const col = subjColor(t.subject);
       const top = it.lane*LANE_H + Math.round((LANE_H-BLK_H)/2);
       const tip = esc(t.title) + " · " + t.subject;
       blocks += `<div class="gblock ${cls} ${hl}" style="left:${leftP}%;top:${top}px;height:${BLK_H}px;width:${blkWidth(widthP)};background:${col}" title="${tip}" data-gid="${t.id}" data-sm="${it.sm}" onclick="ganttClick('${t.id}')"></div>`;
@@ -1721,7 +2008,7 @@ function renderStats(){
     let blocks="";
     untimed.forEach(t=>{
       const hl  = ganttHL===t.id ? "hl":"";
-      const col = SUBJ_COLOR[t.subject]||"#6B8E5A";
+      const col = subjColor(t.subject);
       blocks += `<div class="gblock g-none ${hl}" style="background:${col}" title="${esc(t.title)} · ${t.subject}" data-gid="${t.id}" onclick="ganttClick('${t.id}')"></div>`;
     });
     const noTimeTag = untimed.some(t=>t.done) ? "未计时" : "未开始";
@@ -1863,8 +2150,13 @@ let sumCalCollapsed = true;           // 下拉日历是否折叠（默认折叠
 let calMonth = null;                  // 下拉日历当前显示的月份（Date，1号）；null=跟随 viewDate
 let sumSort = {key:null, dir:1};       // 比较栏排序：key∈doneN|undoneN|avgMin|avgWrong；dir 1升序/-1降序；null=默认(语数英其他+完成率)
 
-const SUBJ_ORDER = {"校内":0,"语文":1,"数学":2,"英语":3,"其他":4};
-function subjIdx(s){ return SUBJ_ORDER.hasOwnProperty(s) ? SUBJ_ORDER[s] : 99; }
+/* 科目排序权重：取可变科目表（state.subjects）下标，归档科目排最后；找不到=99 */
+function subjIdx(s){
+  const list = subjList();
+  const i = list.findIndex(x=>x.name===s);
+  if(i<0) return 99;
+  return list[i].arc ? 100+i : i;
+}
 
 function sumRangeDays(){
   const today=new Date(); today.setHours(0,0,0,0);
@@ -2051,7 +2343,7 @@ function renderSummary(){
   });
   html += `<div class="cmpt-colhead"><span class="lh">科目 / 名称</span><div class="hg">${ch}</div></div>`;
   rows.forEach(r=>{
-    const col = SUBJ_COLOR[r.subject] || "#6B8E5A";
+    const col = subjColor(r.subject);
     const minTxt = r.avgMin==null ? "—" : (r.avgMin<1 ? "<1" : r.avgMin);
     const minUnit = r.avgMin==null ? "" : "<i>分</i>";
     const wrongTxt = r.avgWrong==null ? "—" : (r.avgWrong>=10 ? Math.round(r.avgWrong) : r.avgWrong.toFixed(1));
@@ -2187,7 +2479,7 @@ function renderMonth(){
   });
   unc.sort((a,b)=> (a.d-b.d) || 0);                     // 未订正：作业日先后（拖得久的靠前）
   const muRow = (x, right, cls)=>`<div class="${cls||"mu-row"}" onclick="gotoDate(${y},${m},${x.d})">
-        <span class="mu-dot" style="background:${SUBJ_COLOR[x.t.subject] || "#6B8E5A"}"></span>
+        <span class="mu-dot" style="background:${subjColor(x.t.subject)}"></span>
         <span class="mu-date">${m+1}/${x.d}</span>
         <span class="mu-title">${esc(x.t.title)}</span>
         ${right}
@@ -2788,7 +3080,7 @@ function stampLocalRev(obj, rev){
   for(const id in localDirty){ if(now - localDirty[id] < LOCAL_DIRTY_TTL) ids.add(id); }
   const stamp = (arr)=>{ (arr||[]).forEach(x=>{ if(x && x.id && ids.has(x.id)) x._rev = rev; }); };
   stamp(obj.todos); stamp(obj.tasks); stamp(obj.masters); stamp(obj.rewards);
-  if(obj.hw) SUBJECTS.forEach(s=> stamp(obj.hw[s]));
+  if(obj.hw) subjNames().forEach(s=> stamp(obj.hw[s]));
 }
 /* 折叠循环实例：同一 masterId + date 只允许一条，避免多端各自生成不同 id 导致「同日重复」
    （例如完成一端后，另一端生成的同名未完成项残留在当天清单）。保留优先级：已完成 > 未完成，其次 _u 较新。 */
@@ -2810,10 +3102,15 @@ function dedupeRecurringTodos(todos){
   });
   return keep;
 }
-/* 常用词（按科目）：以逻辑版本号 _rev 较新一方为准，_rev 相同回退比 _u */
+/* 常用词（按科目）：以逻辑版本号 _rev 较新一方为准，_rev 相同回退比 _u
+   v.80：科目表可变，这里遍历「云端 ∪ 本机」的全部分组键（不再固定 5 科），
+   否则新增/改名的科目其常用词会在合并中被丢弃 */
 function mergeGroups(cloudG, localG){
   const out={};
-  SUBJECTS.forEach(s=>{
+  const keys = new Set();
+  Object.keys(cloudG||{}).forEach(k=>keys.add(k));
+  Object.keys(localG||{}).forEach(k=>keys.add(k));
+  keys.forEach(s=>{
     const map=new Map();
     ((cloudG&&cloudG[s])||[]).forEach(c=>{ if(c&&c.id) map.set(c.id,c); });
     ((localG&&localG[s])||[]).forEach(c=>{
@@ -2848,7 +3145,17 @@ function mergeState(cloud, local){
   const delR = mergeDel(cloud._delR, local._delR);
   const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
   const hw = mergeGroups(cloud.hw, local.hw);
-  SUBJECTS.forEach(s=>{ if(Array.isArray(hw[s])) hw[s]=hw[s].filter(c=>c&&c.id&&!delHW[c.id]); });
+  const hwKeys = new Set(Object.keys(hw).concat(subjNames()));
+  hwKeys.forEach(s=>{ if(Array.isArray(hw[s])) hw[s]=hw[s].filter(c=>c&&c.id&&!delHW[c.id]); });
+  /* 科目表（v.80）：整表以「本机有 subjects 且更新」为准；否则取云端；都无则默认。
+     因科目表是「配置」而非条目级数据，用 _u 时间戳做最后写入者胜。 */
+  let subjects = null;
+  if(Array.isArray(local.subjects) && local.subjects.length){
+    const lu = local.subjects._u || 0, cu = (cloud.subjects && cloud.subjects._u) || 0;
+    subjects = (lu >= cu) ? local.subjects : cloud.subjects;
+  } else if(Array.isArray(cloud.subjects) && cloud.subjects.length){
+    subjects = cloud.subjects;
+  }
   const merged = {
     todos: dedupeRecurringTodos(mergeItems(cloud.todos, local.todos, del)),
     tasks: mergeItems(cloud.tasks, local.tasks, del),
@@ -2858,6 +3165,7 @@ function mergeState(cloud, local){
     _del: del, _delM: delM, _delR: delR,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
+  if(subjects){ merged.subjects = subjects; merged.subjects._u = Math.max((local.subjects&&local.subjects._u)||0, (cloud.subjects&&cloud.subjects._u)||0); }
   return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
@@ -2888,9 +3196,10 @@ async function writeCloud(obj, expectRev){
   if(!r.ok) throw { status:r.status };
   return true;
 }
-/* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据 */
+/* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据；v.80 纳入 subjects（排除其 _u） */
 function dataSig(s){
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{} ]);
+  const subs = Array.isArray(s&&s.subjects) ? s.subjects.map(x=>({name:x.name,color:x.color,arc:!!x.arc})) : null;
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, subs ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
 function protectMerged(merged){
@@ -2906,12 +3215,14 @@ function protectMerged(merged){
   const localById = {};
   ['todos','tasks','masters','rewards'].forEach(k=>{ (state[k]||[]).forEach(x=>{ if(x&&x.id) localById[x.id]=x; }); });
   ['todos','tasks','masters','rewards'].forEach(k=>{ if(Array.isArray(merged[k])) merged[k]=merged[k].map(x=> (x&&keep.has(x.id)&&localById[x.id]) ? localById[x.id] : x); });
-  if(merged.hw && state.hw) SUBJECTS.forEach(s=>{ const lm=new Map((state.hw[s]||[]).map(c=>[c.id,c])); if(Array.isArray(merged.hw[s])) merged.hw[s]=merged.hw[s].map(c=> (c&&keep.has(c.id)&&lm.has(c.id)) ? lm.get(c.id) : c); });
+  if(merged.hw && state.hw) new Set(Object.keys(merged.hw).concat(Object.keys(state.hw))).forEach(s=>{ const lm=new Map((state.hw[s]||[]).map(c=>[c.id,c])); if(Array.isArray(merged.hw[s])) merged.hw[s]=merged.hw[s].map(c=> (c&&keep.has(c.id)&&lm.has(c.id)) ? lm.get(c.id) : c); });
   return merged;
 }
 function applyMerged(merged){
   const before = dataSig(state);
-  state = merged; saveLocal();
+  state = merged;
+  ensureSubjects();          // v.80：科目表缺失时回退默认，避免变量名报错
+  saveLocal();
   if(dataSig(state) !== before){ pruneTombstones(); refreshAll(); renderTasks(); }
 }
 /* 一轮完整同步：取云端 → 与本机合并 → 写回；乐观锁重试消除并发写丢失 */
@@ -3236,7 +3547,7 @@ let toastT=null;
    原理：页面内嵌一个版本号，启动时（及之后每隔 5 分钟）去取站点根目录下的
    version.json（带时间戳防缓存）。若版本号不一致，底部弹出「发现新版本」提示，
    点一下才刷新。这样既能绕开缓存，又不会在你正计时的时候被强制打断。 */
-const APP_VERSION = "2026.09.10.79";
+const APP_VERSION = "2026.09.10.80";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
