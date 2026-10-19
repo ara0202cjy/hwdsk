@@ -198,9 +198,9 @@
   .seg-wrap .seg-op.dis, .hw-mv.dis{opacity:.3; pointer-events:none;}
   /* v.86：前移/后移按钮（拖拽之外的可靠兜底，手机必可用） */
   .seg-wrap .seg-op{font-size:17px; font-weight:800; line-height:1;}
-  .hw-mv{display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
-         font-size:14px; font-weight:800; font-style:normal; color:var(--muted); cursor:pointer;
-         margin-right:1px; border-radius:4px; flex:0 0 auto;}
+  .hw-mv{display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+         font-size:16px; font-weight:800; font-style:normal; color:var(--muted); cursor:pointer;
+         margin:0 1px; border-radius:5px; flex:0 0 auto; line-height:1;}
   .hw-mv:hover{color:var(--ink); background:rgba(0,0,0,.07);}
   .hw-mv.dis{opacity:.3; pointer-events:none;}
   .seg-wrap .seg-op.danger:hover{color:var(--red, #C0392B);}
@@ -1694,11 +1694,14 @@ function renderHWChips(){
   const arr = ordered.map(hwItem);
   const lbl=$("hwSubj"); if(lbl) lbl.textContent=addSubj;
   if(!arr.length){ box.innerHTML='<div class="hw-empty">暂无常用词，点「＋ 添加」建立本学科的常用作业</div>'; return; }
-  /* v.85/86：设置模式下 chip 可拖拽；v.86 另加 ‹ › 前移后移按钮（拖拽之外的可靠兜底） */
+  /* v.88：常用词的前移/后移按钮改为「科目栏齿轮 或 常用词自身齿轮 任一开启即显示」
+     （此前只认 subjEditOn，导致只开常用词齿轮时按钮不出现——与它的设置入口割裂）。
+     ‹ › 完全不依赖手势，手机必可用；拖拽仍受 dragOK 控制。 */
+  const mvOK = subjEditOn || editHWOn;
   const dragOK = subjEditOn;
   box.innerHTML=arr.map((w,i)=>{
     const id = (ordered[i]&&ordered[i].id)||("idx"+i);
-    const mv = dragOK
+    const mv = mvOK
       ? `<i class="hw-mv${i===0?' dis':''}" title="前移" onclick="event.stopPropagation();moveHW(${i},-1)">‹</i>`
        +`<i class="hw-mv${i===arr.length-1?' dis':''}" title="后移" onclick="event.stopPropagation();moveHW(${i},1)">›</i>` : "";
     return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${mv}${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
@@ -3857,7 +3860,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.87";
+const APP_VERSION = "2026.09.10.88";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
