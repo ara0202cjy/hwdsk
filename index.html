@@ -240,6 +240,18 @@
   .corr.done{color:#fff; background:var(--green); border:1.5px solid var(--green);}
   .corr-toggle{width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--sun); background:rgba(232,133,59,.06); color:var(--sun); font-size:13.5px; font-weight:700; cursor:pointer; text-align:center; -webkit-tap-highlight-color:transparent;}
   .corr-toggle.on{background:var(--green); border-color:var(--green); color:#fff;}
+  /* v.96：是否合格（默认合格；不合格需单独勾选） */
+  .qual-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .qual-label{font-size:13px; color:var(--muted); font-weight:600;}
+  .qual-tag{display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:800; border-radius:8px; padding:3px 9px; border:1.5px solid var(--green); color:var(--green); background:rgba(63,164,106,.08); white-space:nowrap;}
+  .qual-tag.bad{border-color:var(--red); color:var(--red); background:rgba(192,57,43,.08);}
+  .qual-box{width:20px; height:20px; border-radius:6px; border:1.8px solid var(--green); background:var(--green); color:#fff; font-size:13px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; flex:0 0 auto; -webkit-tap-highlight-color:transparent;}
+  .qual-box.off{background:#fff; border-color:var(--line); color:transparent;}
+  .qual-box.off.bad{background:#fff; border-color:var(--red); color:var(--red); font-size:12px;}
+  .qual-hint{font-size:11.5px; color:var(--muted);}
+  .mu-sub.bad b{color:var(--red);}
+  .qual-mu-note{font-size:11.5px; color:var(--red); font-weight:700; margin-top:4px; padding-left:2px;}
+  .qual-mu-note.ok{color:var(--muted);}
   .todo-title.done{text-decoration:line-through; color:var(--muted);}
   .todo-meta{display:flex; align-items:center; gap:10px; margin-top:5px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
   .pulse{width:8px; height:8px; border-radius:50%; background:var(--sun); box-shadow:0 0 0 0 rgba(232,133,59,.6); animation:pulse 1.2s infinite;}
@@ -613,6 +625,7 @@
   .mu{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
   .mu-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
   .mu-h .mu-n{color:var(--sun); font-weight:800; margin-left:4px;}
+  .mu-h .mu-n{display:inline-block;}
   .mu-sub{font-size:11px; font-weight:700; color:var(--muted); margin:9px 0 2px; padding-left:2px; letter-spacing:.3px;}
   .mu-sub b{color:var(--ink); font-weight:800; margin:0 2px;}
   .mu-row{display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f2efe6; cursor:pointer;}
@@ -1081,6 +1094,8 @@ function load(){
   if(!Array.isArray(state.reads)) state.reads = [];       // 阅读记录：{id,date,minutes,lang,fic,book}
   if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
+  /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
+  (state.todos||[]).forEach(t=>{ if(t && typeof t.qualified==="undefined") t.qualified = true; });
   // 兼容旧数据：补齐 done 字段（目标默认未完成；额外奖惩默认已完成）
   (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
   /* 迁移：旧版常用词存于独立 localStorage 键 wb_hwdsk_hw_v1，并入 state.hw 一并同步 */
@@ -1108,6 +1123,7 @@ function mkTodo(date, subject, title, o={}){
   return Object.assign({
     id:uid(), date:ymd(date), subject, title,
     detail:"", estMin:0, wrong:0, done:false,
+    qualified:true,               // v.96：是否合格（默认合格；不合格需在展开栏内单独勾选）
     makeup:false, completedOn:null, dinged:false, corrected:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示 / 订正是否完成
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null,
@@ -2068,7 +2084,15 @@ function expoFields(t){
       ${ t.wrong>0 ? `<div class="field" style="margin-top:10px;">
         <label>订正完成确认（有 ${t.wrong} 道错题需订正）</label>
         <button class="corr-toggle ${t.corrected?'on':''}" onclick="toggleCorrected('${t.id}')">${t.corrected?'✓ 已确认：错题已订正完成':'点击确认：错题已订正'}</button>
-      </div>` : "" }`;
+      </div>` : "" }
+      <div class="field" style="margin-top:10px;">
+        <label>是否合格</label>
+        <div class="qual-row">
+          <span class="qual-box ${t.qualified===false?'off bad':'on'}" title="${t.qualified===false?'点击恢复为合格':'点击标记为不合格'}" onclick="toggleQual('${t.id}')">${t.qualified===false?'✗':'✓'}</span>
+          <span class="qual-tag ${t.qualified===false?'bad':''}">${t.qualified===false?'不合格':'合格'}</span>
+          <span class="qual-hint">${t.qualified===false?'已标记不合格（本月每 3 次不合格扣 1 星）':'默认合格，不合格需单独勾选'}</span>
+        </div>
+      </div>`;
 }
 
 function todoRow(t, subj, ds){
@@ -2084,6 +2108,7 @@ function todoRow(t, subj, ds){
   if(t.manualMin>0) meta.push(`<span style="color:var(--green);font-weight:700;">实际 ${t.manualMin} 分</span>`);
   if(t.wrong>0) meta.push(`<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>`);
   if(t.wrong>0) meta.push(`<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>`);
+  if(t.qualified===false) meta.push(`<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>`);
   const statusCls = running ? "run" : (t.done ? "stop" : "pause");
   const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
   const detail = `
@@ -2131,6 +2156,13 @@ function toggleCorrected(id){
   touch(t); save(); renderList(); syncDerived();
   toast(t.corrected ? "已确认：错题已订正完成" : "已取消订正确认");
 }
+/* v.96：是否合格 —— 默认合格；勾选后标记为「不合格」，计入本月不合格次数 */
+function toggleQual(id){
+  const t=getTodo(id); if(!t) return;
+  t.qualified = (t.qualified===false);        // 合格 ⇄ 不合格
+  touch(t); save(); renderList(); syncDerived();
+  toast(t.qualified ? "已恢复为合格" : "已标记为不合格");
+}
 function editField(id,key,val){
   const t=getTodo(id); if(!t) return;
   if(key==="estMin"||key==="wrong"){ t[key]=Math.max(0,parseInt(val||"0",10)||0); if(key==="wrong" && t.wrong===0) t.corrected=false; }  // 错题清零 → 订正标记失效
@@ -2160,7 +2192,8 @@ function doneRow(t, subj, ds){
     t.estMin ? `预估 ${t.estMin} 分` : "",
     sp>0 ? `用时 ${sp} 分` : "",
     t.wrong>0 ? `<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>` : "",
-    (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : ""
+    (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : "",
+    (t.qualified===false) ? `<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>` : ""
   ].filter(Boolean);
   return `<div class="todo" id="todo-${t.id}">
     <span class="stamp" id="stamp-${t.id}">已完成</span>
@@ -2870,7 +2903,7 @@ function renderMonth(){
   /* v.92：当天有阅读记录的日期，在月历格子上标一个 📖 角标（一眼看出哪天读了） */
   const readDateSet = new Set((state.reads||[]).map(r=>r.date));
   // KPI（基于当前月已过的日期）
-  let stars=0, full=0, hours=0, unfinished=0, uncorr=0;
+  let stars=0, full=0, hours=0, unfinished=0, uncorr=0, unqual=0;
   const today=new Date(); today.setHours(0,0,0,0);
   // 汇总全月（仅统计今日以前的日期，不含今日）
   for(let d=1; d<=days; d++){
@@ -2881,8 +2914,11 @@ function renderMonth(){
     s.ts.forEach(t=>{
       if(!t.done) unfinished++;                                       // 待完成：与清单一致（不含已完成的未订正）
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
+      if(t.qualified===false) unqual++;                               // v.96：不合格（默认合格，展开栏内单独勾选）
     });
   }
+  /* v.96：不合格扣星 —— 每 3 次不合格扣 1 颗星（向下取整，计入本月星星总数） */
+  const unqualStars = Math.floor(unqual / 3);
   // 额外奖励汇总（本月）：目标奖励 + 打卡奖励（均仅已完成结算） + 阅读奖励 + 额外奖励(正) − 额外惩罚(负)
   const ym = y+"-"+pad2(m+1);
   let goalStars=0, checkinStars=0, bonusStars=0, penStars=0;
@@ -2896,7 +2932,7 @@ function renderMonth(){
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负)
+  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars - unqualStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
@@ -2946,18 +2982,20 @@ function renderMonth(){
     <div class="rs-row"><span>阅读奖励</span><b class="rs-g">+${readStars}</b></div>
     <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
+    <div class="rs-row"><span>不合格扣星</span><b class="rs-pen">−${unqualStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars} − ${penStars} − ${unqualStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
   //   未完成：显示剩余补打卡天数，按剩余天数升序；已逾期、不可补打卡的沉底并置灰
   //   未订正：有错题但未确认订正（不论是否已完成，口径与月度 KPI 一致），按作业日先后
-  const unf = [], unc = [];
+  const unf = [], unc = [], unq = [];
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>=today) break;      // 仅统计今天以前的日期
     (dayStats(ymd(dt)).ts||[]).forEach(t=>{
       if(!t.done) unf.push({d:d, t:t, left:makeupDaysLeft(t)});
       if((t.wrong||0)>0 && !t.corrected) unc.push({d:d, t:t});
+      if(t.qualified===false) unq.push({d:d, t:t});     // v.96：不合格（默认合格）
     });
   }
   unf.sort((a,b)=>{
@@ -2973,7 +3011,7 @@ function renderMonth(){
         <span class="mu-title">${esc(x.t.title)}</span>
         ${right}
       </div>`;
-  let mu = `<div class="mu"><div class="mu-h">本月未完成 &amp; 未订正（不含今日及以后）<span class="mu-n">未完成 ${unf.length} · 未订正 ${unc.length}</span></div>`;
+  let mu = `<div class="mu"><div class="mu-h">本月未完成 &amp; 未订正（不含今日及以后）<span class="mu-n">未完成 ${unf.length} · 未订正 ${unc.length} · 不合格 ${unq.length}</span></div>`;
   // —— 未完成 ——
   mu += `<div class="mu-sub">未完成 <b>${unf.length}</b> 项</div>`;
   if(unf.length){
@@ -2996,6 +3034,19 @@ function renderMonth(){
     });
   } else {
     mu += `<div class="mu-empty">本月暂无未订正项 🎉</div>`;
+  }
+  // —— 不合格（v.96）——
+  mu += `<div class="mu-sub bad">不合格 <b>${unq.length}</b> 次</div>`;
+  if(unq.length){
+    unq.forEach(x=>{
+      mu += muRow(x, `<span class="mu-left">不合格</span><span class="mu-go">去查看 ›</span>`);
+    });
+    // 扣星说明：每 3 次不合格扣 1 颗星
+    const toNext = 3 - (unq.length % 3);
+    mu += `<div class="qual-mu-note">本月已扣 <b>${unqualStars}</b> 颗星（每 3 次不合格扣 1 颗）${unq.length%3 ? ` · 再不合格 ${toNext} 次再扣 1 颗` : ""}</div>`;
+  } else {
+    mu += `<div class="mu-empty">本月暂无不合格项 🎉</div>`;
+    mu += `<div class="qual-mu-note ok">每 3 次不合格扣 1 颗星（本月 0 次，不扣星）</div>`;
   }
   mu += `</div>`;
   grid += mu + rewardBlock;   // 未完成&未订正（mu）排在未额外奖励统计（rewardBlock）之上；阅读统计板块已迁到「奖励」页（v.94）
@@ -3929,10 +3980,10 @@ function parseCSV(text){
 }
 function exportExcel(){
   try{
-    const head=["日期","科目","作业内容","具体内容","预估(分)","错题(道)","订正","状态","开始","结束","用时(分)"];
+    const head=["日期","科目","作业内容","具体内容","预估(分)","错题(道)","订正","合格","状态","开始","结束","用时(分)"];
     const rows=[head];
     state.todos.forEach(t=>{
-      rows.push([t.date, t.subject, t.title, t.detail||"", t.estMin||0, t.wrong||0, t.corrected?"已订正":"未订正", t.done?"已完成":"未开始", t.startClock||"", t.endClock||"", Math.round(recMs(t)/60000)]);
+      rows.push([t.date, t.subject, t.title, t.detail||"", t.estMin||0, t.wrong||0, t.corrected?"已订正":"未订正", t.qualified===false?"不合格":"合格", t.done?"已完成":"未开始", t.startClock||"", t.endClock||"", Math.round(recMs(t)/60000)]);
     });
     const csv="﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
     const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
@@ -3958,6 +4009,7 @@ function importExcel(){
         t.estMin=parseInt(c[idx["预估(分)"]]!=null?c[idx["预估(分)"]]:c[idx["预估"]]||"0",10)||0;
         t.wrong=parseInt(c[idx["错题(道)"]]!=null?c[idx["错题(道)"]]:c[idx["错题"]]||"0",10)||0;
         t.corrected=((c[idx["订正"]]||"").indexOf("已订正")>=0);
+        t.qualified=((c[idx["合格"]]||"").indexOf("不合格")<0);   // v.96：无「合格」列或值为「合格」→ 合格
         t.done=((c[idx["状态"]]||"").indexOf("完成")>=0);
         t.startClock=(c[idx["开始"]]||"").trim();
         t.endClock=(c[idx["结束"]]||"").trim();
@@ -4116,7 +4168,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.95";
+const APP_VERSION = "2026.09.10.96";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
