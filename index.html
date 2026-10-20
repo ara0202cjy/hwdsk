@@ -345,6 +345,43 @@
   .hw-empty{font-size:12px; color:var(--muted);}
   .hw-est{font-size:11px; color:#8a7d5a; background:#ece3cf; border-radius:999px; padding:1px 6px; margin-left:2px; font-weight:700;}
 
+  /* ===== 阅读栏（v.91）：独立于作业清单，不计入完成 / 未完成结算 ===== */
+  .read-card{--rc:#8A6FB5;}
+  .read-head{font-size:15px; font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; gap:8px;}
+  .read-note{font-size:11.5px; color:var(--muted); font-weight:600; background:#f4efe4; border-radius:999px; padding:2px 8px;}
+  /* 二选一开关组：中文/英文、虚构/非虚构 */
+  .seg-pair{display:inline-flex; background:#f1ece1; border-radius:10px; padding:3px; gap:3px; flex:0 0 auto;}
+  .seg-pair .rp{border:none; background:none; padding:7px 13px; border-radius:8px; font-size:13.5px; font-weight:700; color:#6b655b; cursor:pointer;}
+  .seg-pair .rp.on{background:var(--rc,#8A6FB5); color:#fff;}
+  .read-form{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px;}
+  .read-min{width:76px; flex:0 0 76px; border:1.5px solid var(--line); border-radius:12px; padding:10px; font-size:15px; background:#fcfaf5;}
+  .read-book{flex:1 1 120px; min-width:100px; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-size:15px; background:#fcfaf5;}
+  .read-plus{width:42px; height:42px; flex:0 0 42px; border-radius:12px; background:var(--rc,#8A6FB5); color:#fff; font-size:22px; display:flex; align-items:center; justify-content:center;}
+  .read-plus:active{transform:scale(.94);}
+  /* 当日阅读条目 */
+  .read-list{margin-bottom:10px;}
+  .read-item{display:flex; align-items:center; gap:6px; padding:9px 11px; background:#f7f4ee; border:1px solid var(--line); border-radius:12px; margin-bottom:6px; font-size:13.5px;}
+  .read-item .ri-main{flex:1 1 auto; min-width:0; color:var(--ink); font-weight:600;}
+  .read-item .ri-tag{font-size:11px; font-weight:700; border-radius:999px; padding:1px 7px; background:#ece7da; color:#7a705c; white-space:nowrap;}
+  .read-item .ri-book{font-size:12.5px; color:var(--muted); font-weight:600;}
+  .read-del{font-style:normal; font-size:11px; width:19px; height:19px; line-height:19px; text-align:center; border-radius:50%; color:#fff; background:#c97b7b; cursor:pointer; flex:0 0 19px;}
+  .read-empty{font-size:12.5px; color:var(--muted); padding:2px 0 6px;}
+  /* 阅读统计（累计） */
+  .read-stats{background:linear-gradient(135deg,#f6f1ff,#efe7fb); border:1.5px solid #e3d8f2; border-radius:14px; padding:11px 13px; margin-top:4px;}
+  .rs-line{font-size:13px; color:var(--ink); font-weight:700; line-height:1.9;}
+  .rs-line .rs-big{font-size:15.5px; color:var(--rc,#8A6FB5);}
+  .rs-bar{display:flex; height:8px; border-radius:999px; overflow:hidden; margin:5px 0 4px; background:#e7e0d5;}
+  .rs-bar i{display:block; height:100%;}
+  .rs-zh{background:#8A6FB5;} .rs-en{background:#6B8E5A;}
+  .rs-fic{background:#C97BB0;} .rs-non{background:#5B7C8A;}
+  .rs-legend{font-size:11.5px; color:#6b655b; font-weight:700; display:flex; gap:10px; flex-wrap:wrap;}
+  .rs-legend span{display:inline-flex; align-items:center; gap:4px;}
+  .rs-legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
+  /* 阅读奖励徽章（单月阅读天数 > 20 → 该月 +5 星） */
+  .read-award{margin-top:9px; font-size:12.5px; font-weight:700; border-radius:12px; padding:8px 11px; display:flex; align-items:center; gap:6px;}
+  .read-award.ok{background:#fff6e6; border:1.5px solid #f0d9a8; color:var(--sun);}
+  .read-award.no{background:#f4efe4; border:1px solid var(--line); color:var(--muted);}
+
   /* ===== 待办事项 ===== */
   .task-add{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
   .task-add .seg3{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:10px;}
@@ -1025,6 +1062,9 @@ function load(){
   if(!state._delHW) state._delHW = {};        // 常用词删除墓碑：跨端同步删除
   if(!Array.isArray(state.rewards)) state.rewards = [];   // 奖励（目标/劳动/惩罚），随作业一起多端同步
   if(!state._delR) state._delR = {};          // 奖励删除墓碑：跨端同步删除
+  /* v.91 阅读栏：独立于作业清单（不计入完成 / 未完成结算），单独统计阅读天数与时长 */
+  if(!Array.isArray(state.reads)) state.reads = [];       // 阅读记录：{id,date,minutes,lang,fic,book}
+  if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   // 兼容旧数据：补齐 done 字段（目标默认未完成；劳动/惩罚默认已完成）
   (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
@@ -1657,6 +1697,10 @@ function renderList(){
     html += `</div>`;
   });
 
+  /* v.91：阅读栏 —— 排在所有科目卡之后（清单最后一个栏目项）。
+     独立于 state.todos，不计入完成 / 未完成结算，只做阅读统计与阅读奖励。 */
+  html += readCardHtml(ds);
+
   // 添加作业统一卡（v.85：设置模式下支持科目与常用词拖拽排序）
   html += `<div class="card">
     <div class="add-title">
@@ -1826,6 +1870,132 @@ function doAdd(){
   addTodo(addSubj, v, { estMin:est, hwId:_fillHwId||null });
   _fillHwId = null;
   $("addInput").value=""; $("addEst").value=""; toast("已添加 · "+addSubj); renderList();
+}
+
+/* ============ 阅读栏（v.91） ============
+   独立于作业清单：阅读记录存 state.reads，不进 state.todos，
+   因此完全不参与「完成 / 未完成」结算（不影响星星、待完成、待订正、时长统计）。
+   统计口径：累计阅读天数与小时数、中/英 与 虚构/非虚构 的时长占比；
+   奖励口径：单月阅读天数「超过 20 天」→ 该月阅读奖励 +5 星，计入本月星星总数。 */
+const READ_LANG = { zh:"中文", en:"英文" };
+const READ_FIC  = { fic:"虚构", non:"非虚构" };
+const READ_REWARD_DAYS  = 20;    // 超过该天数（即 ≥21 天）才给奖
+const READ_REWARD_STARS = 5;
+let addReadLang = "zh", addReadFic = "fic";
+
+function readsOf(dateStr){ return (state.reads||[]).filter(r=>r.date===dateStr); }
+/* 阅读记录删除墓碑：跨端同步删除（同 _del / _delHW 语义） */
+function tombstoneRead(id){
+  if(!id) return;
+  state._delRd = state._delRd||{};
+  state._delRd[id] = Date.now();
+}
+function addRead(){
+  const mEl=$("readMin"), bEl=$("readBook");
+  const minutes = Math.max(0, parseInt((mEl&&mEl.value)||"0",10)||0);
+  if(minutes<=0){ toast("请填写阅读时间（分钟）"); return; }
+  const book = (bEl && bEl.value) ? bEl.value.trim() : "";
+  const r = { id:uid(), date:ymd(viewDate), minutes:minutes, lang:addReadLang, fic:addReadFic, book:book, _u:Date.now() };
+  state.reads = state.reads||[]; state.reads.push(r);
+  if(mEl) mEl.value=""; if(bEl) bEl.value="";
+  save(); renderList(); syncDerived();
+  toast("已记录阅读 "+minutes+" 分钟");
+}
+function delRead(id){
+  tombstoneRead(id);
+  state.reads = (state.reads||[]).filter(x=>x.id!==id);
+  save(); renderList(); syncDerived();
+}
+/* 累计阅读统计（全部记录）：天数、总分钟、中英 / 虚实的分钟数 */
+function readStats(){
+  const rs = state.reads||[];
+  const days = new Set(rs.map(r=>r.date)).size;
+  let totalMin=0, zhMin=0, enMin=0, ficMin=0, nonMin=0;
+  rs.forEach(r=>{
+    const m = Math.max(0, parseInt(r.minutes||"0",10)||0);
+    totalMin += m;
+    if(r.lang==="en") enMin += m; else zhMin += m;
+    if(r.fic==="non") nonMin += m; else ficMin += m;
+  });
+  return { days:days, totalMin:totalMin, zhMin:zhMin, enMin:enMin, ficMin:ficMin, nonMin:nonMin };
+}
+/* 某月（"YYYY-MM"）的阅读天数（按日期去重） */
+function readDaysInMonth(ym){
+  const set = new Set();
+  (state.reads||[]).forEach(r=>{ if((r.date||"").slice(0,7)===ym) set.add(r.date); });
+  return set.size;
+}
+/* 某月阅读奖励星数：单月阅读天数超过 20 天 → +5 星（计入该月星星总数） */
+function readRewardStars(ym){ return readDaysInMonth(ym) > READ_REWARD_DAYS ? READ_REWARD_STARS : 0; }
+/* 二选一开关：只切按钮高亮，不重渲染（避免清掉已填的分钟 / 书目） */
+function pickReadLang(v){
+  addReadLang=v;
+  const p=$("readLangPair"); if(!p) return;
+  p.querySelectorAll(".rp").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+}
+function pickReadFic(v){
+  addReadFic=v;
+  const p=$("readFicPair"); if(!p) return;
+  p.querySelectorAll(".rp").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+}
+/* 阅读卡 HTML（纯拼接，供 renderList 调用；统计为累计口径，条目为当日） */
+function readCardHtml(ds){
+  const list = readsOf(ds);
+  const st = readStats();
+  const hours = (st.totalMin/60).toFixed(1);
+  const pct = a => st.totalMin>0 ? Math.round(a/st.totalMin*100) : 0;
+  const zhP=pct(st.zhMin),  enP  = st.totalMin>0 ? 100-zhP  : 0;
+  const ficP=pct(st.ficMin), nonP = st.totalMin>0 ? 100-ficP : 0;
+  const ym = (ds||"").slice(0,7);
+  const mdays = readDaysInMonth(ym);
+  const earned = readRewardStars(ym) > 0;
+  const need = Math.max(0, READ_REWARD_DAYS + 1 - mdays);
+  let html = `<div class="card read-card">
+    <div class="read-head">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A6FB5" stroke-width="2.2"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      阅读
+      <span class="read-note">不计入完成结算</span>
+    </div>
+    <div class="read-form">
+      <input id="readMin" class="read-min" type="number" min="0" inputmode="numeric" placeholder="分钟" />
+      <span class="seg-pair" id="readLangPair">
+        <button class="rp${addReadLang==="zh"?" on":""}" data-v="zh" onclick="pickReadLang('zh')">中文</button>
+        <button class="rp${addReadLang==="en"?" on":""}" data-v="en" onclick="pickReadLang('en')">英文</button>
+      </span>
+      <span class="seg-pair" id="readFicPair">
+        <button class="rp${addReadFic==="fic"?" on":""}" data-v="fic" onclick="pickReadFic('fic')">虚构</button>
+        <button class="rp${addReadFic==="non"?" on":""}" data-v="non" onclick="pickReadFic('non')">非虚构</button>
+      </span>
+      <input id="readBook" class="read-book" placeholder="书目名称（选填）" />
+      <button class="read-plus" onclick="addRead()">+</button>
+    </div>`;
+  if(list.length){
+    html += `<div class="read-list">`;
+    list.forEach(r=>{
+      html += `<div class="read-item">
+        <span class="ri-main">${r.minutes} 分钟</span>
+        <span class="ri-tag">${READ_LANG[r.lang]||"中文"}</span>
+        <span class="ri-tag">${READ_FIC[r.fic]||"虚构"}</span>
+        ${r.book?`<span class="ri-book">《${esc(r.book)}》</span>`:""}
+        <i class="read-del" title="删除本条阅读记录" onclick="delRead('${r.id}')">✕</i>
+      </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="read-empty">今日暂无阅读记录，填部分钟后点 ＋ 即可记录</div>`;
+  }
+  html += `<div class="read-stats">
+      <div class="rs-line">累计阅读 <span class="rs-big">${st.days}</span> 天 <span class="rs-big">${hours}</span> 小时</div>
+      <div class="rs-bar"><i class="rs-zh" style="width:${zhP}%"></i><i class="rs-en" style="width:${enP}%"></i></div>
+      <div class="rs-legend"><span><i style="background:#8A6FB5"></i>中文 ${zhP}%</span><span><i style="background:#6B8E5A"></i>英文 ${enP}%</span></div>
+      <div class="rs-bar" style="margin-top:8px;"><i class="rs-fic" style="width:${ficP}%"></i><i class="rs-non" style="width:${nonP}%"></i></div>
+      <div class="rs-legend"><span><i style="background:#C97BB0"></i>虚构 ${ficP}%</span><span><i style="background:#5B7C8A"></i>非虚构 ${nonP}%</span></div>
+    </div>`;
+  html += earned
+    ? `<div class="read-award ok">🌟 本月阅读 ${mdays} 天，已达成阅读奖励 <b>+${READ_REWARD_STARS} 星</b>（计入本月星星）</div>`
+    : `<div class="read-award no">本月已阅读 ${mdays} 天，再读 ${need} 天（累计超过 ${READ_REWARD_DAYS} 天）可得阅读奖励 +${READ_REWARD_STARS} 星</div>`;
+  html += `</div>`;
+  return html;
 }
 
 /* 展开后可编辑的字段：具体内容 / 预估时间 / 错题数量（未完成与已完成共用） */
@@ -2668,6 +2838,8 @@ function renderMonth(){
   // 额外奖励汇总（本月）：目标奖励 + 打卡奖励（均仅已完成结算） + 劳动奖励 + 额外奖励(正) − 额外惩罚(负)
   const ym = y+"-"+pad2(m+1);
   let goalStars=0, checkinStars=0, laborStars=0, bonusStars=0, penStars=0;
+  /* v.91：阅读奖励 —— 单月阅读天数超过 20 天 → +5 星，计入本月星星总数 */
+  const readStars = readRewardStars(ym);
   (state.rewards||[]).forEach(r=>{
     if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标/打卡：完成之月；劳动/奖惩：归属月）
     if(!rewardDone(r)) return;                 // 目标/打卡未完成不结算；劳动/奖惩默认完成
@@ -2677,7 +2849,7 @@ function renderMonth(){
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + checkinStars + laborStars + bonusStars - penStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 劳动 + 额外奖励(正) − 额外惩罚(负)
+  const monthStars = stars + goalStars + checkinStars + laborStars + readStars + bonusStars - penStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 劳动 + 阅读 + 额外奖励(正) − 额外惩罚(负)
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
@@ -2724,9 +2896,10 @@ function renderMonth(){
     <div class="rs-row"><span>目标奖励</span><b class="rs-g">+${goalStars}</b></div>
     <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${checkinStars}</b></div>
     <div class="rs-row"><span>劳动奖励</span><b class="rs-g">+${laborStars}</b></div>
+    <div class="rs-row"><span>阅读奖励</span><b class="rs-g">+${readStars}</b></div>
     <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${laborStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${laborStars} + ${readStars} + ${bonusStars} − ${penStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
@@ -3427,7 +3600,7 @@ function stampLocalRev(obj, rev){
   const now = Date.now(), ids = new Set();
   for(const id in localDirty){ if(now - localDirty[id] < LOCAL_DIRTY_TTL) ids.add(id); }
   const stamp = (arr)=>{ (arr||[]).forEach(x=>{ if(x && x.id && ids.has(x.id)) x._rev = rev; }); };
-  stamp(obj.todos); stamp(obj.tasks); stamp(obj.masters); stamp(obj.rewards);
+  stamp(obj.todos); stamp(obj.tasks); stamp(obj.masters); stamp(obj.rewards); stamp(obj.reads);
   if(obj.hw) subjNames().forEach(s=> stamp(obj.hw[s]));
 }
 /* 折叠循环实例：同一 masterId + date 只允许一条，避免多端各自生成不同 id 导致「同日重复」
@@ -3491,6 +3664,7 @@ function mergeState(cloud, local){
   const delM = mergeDel(cloud._delM, local._delM);
   const delHW = mergeDel(cloud._delHW, local._delHW);
   const delR = mergeDel(cloud._delR, local._delR);
+  const delRd = mergeDel(cloud._delRd, local._delRd);   // v.91：阅读记录删除墓碑
   const masters = mergeItems(cloud.masters||[], local.masters||[], {}).filter(m=>m && !delM[m.id]);
   const hw = mergeGroups(cloud.hw, local.hw);
   const hwKeys = new Set(Object.keys(hw).concat(subjNames()));
@@ -3510,7 +3684,8 @@ function mergeState(cloud, local){
     masters,
     hw, _delHW: delHW,
     rewards: mergeItems(cloud.rewards||[], local.rewards||[], delR),
-    _del: del, _delM: delM, _delR: delR,
+    reads: mergeItems(cloud.reads||[], local.reads||[], delRd),      // v.91：阅读记录按条目合并
+    _del: del, _delM: delM, _delR: delR, _delRd: delRd,
     _syncedAt: Math.max(cloud._syncedAt||0, local._syncedAt||0)
   };
   if(subjects){
@@ -3552,7 +3727,7 @@ async function writeCloud(obj, expectRev){
 /* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据；v.80 纳入 subjects（排除其 _u） */
 function dataSig(s){
   const subs = Array.isArray(s&&s.subjects) ? s.subjects.map(x=>({name:x.name,color:x.color,arc:!!x.arc})) : null;
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, subs ]);
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
 function protectMerged(merged){
@@ -3566,8 +3741,8 @@ function protectMerged(merged){
   }
   if(keep.size===0) return merged;
   const localById = {};
-  ['todos','tasks','masters','rewards'].forEach(k=>{ (state[k]||[]).forEach(x=>{ if(x&&x.id) localById[x.id]=x; }); });
-  ['todos','tasks','masters','rewards'].forEach(k=>{ if(Array.isArray(merged[k])) merged[k]=merged[k].map(x=> (x&&keep.has(x.id)&&localById[x.id]) ? localById[x.id] : x); });
+  ['todos','tasks','masters','rewards','reads'].forEach(k=>{ (state[k]||[]).forEach(x=>{ if(x&&x.id) localById[x.id]=x; }); });
+  ['todos','tasks','masters','rewards','reads'].forEach(k=>{ if(Array.isArray(merged[k])) merged[k]=merged[k].map(x=> (x&&keep.has(x.id)&&localById[x.id]) ? localById[x.id] : x); });
   if(merged.hw && state.hw) new Set(Object.keys(merged.hw).concat(Object.keys(state.hw))).forEach(s=>{ const lm=new Map((state.hw[s]||[]).map(c=>[c.id,c])); if(Array.isArray(merged.hw[s])) merged.hw[s]=merged.hw[s].map(c=> (c&&keep.has(c.id)&&lm.has(c.id)) ? lm.get(c.id) : c); });
   return merged;
 }
@@ -3904,7 +4079,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.90";
+const APP_VERSION = "2026.09.10.91";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
