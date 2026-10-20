@@ -384,12 +384,8 @@
   .read-award{margin-top:9px; font-size:12.5px; font-weight:700; border-radius:12px; padding:9px 11px; line-height:1.7;}
   .read-award.ok{background:#fff6e6; border:1.5px solid #f0d9a8; color:var(--sun);}
   .read-award.no{background:#f4efe4; border:1px solid var(--line); color:var(--muted);}
-  /* v.93：月度统计页的「阅读统计（本月）」区块 */
-  .rd-stat{background:linear-gradient(135deg,#f6f1ff,#efe7fb); border:1.5px solid #e3d8f2; border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
-  .rd-h{font-size:15px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:8px; margin-bottom:10px;}
-  .rd-m{font-size:11.5px; font-weight:700; color:#8A6FB5; background:#fff; border:1px solid #e3d8f2; border-radius:999px; padding:2px 9px; margin-left:auto;}
-  .rd-kv{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:#6b655b; font-weight:700; padding:3px 0;}
-  .rd-kv b{font-size:15px; font-weight:800; color:var(--ink);}
+  /* v.95：阅读奖励卡片（从「阅读统计」旧区块改为 rw-card 样式，与该页其他卡片统一） */
+  .rd-m{font-size:11.5px; font-weight:700; color:#8A6FB5; background:#fff; border:1px solid #e3d8f2; border-radius:999px; padding:2px 9px; flex:0 0 auto;}
   .rd-bar{display:flex; height:8px; border-radius:999px; overflow:hidden; margin:8px 0 4px; background:#e7e0d5;}
   .rd-bar i{display:block; height:100%;}
 
@@ -504,6 +500,7 @@
   .rw-card.penalty{border-left:4px solid var(--red);}
   .rw-card.goal{border-left:4px solid var(--sun);}
   .rw-card.checkin{border-left:4px solid var(--sun-light);}
+  .rw-card.read{border-left:4px solid #8A6FB5;}
   .rw-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
   .rw-h-left{display:flex; align-items:center; gap:10px; min-width:0;}
   .rw-ic{font-size:22px; font-weight:800; line-height:1; flex:0 0 auto;}
@@ -2030,21 +2027,20 @@ function readMonthBlock(ym){
   const days = st.days;
   const earned = readRewardStars(ym) > 0;
   const need = Math.max(0, READ_REWARD_DAYS - days);
-  const yTxt = (ym||"").slice(0,4)+" 年 "+parseInt((ym||"").slice(5,7),10)+" 月";
-  return `<div class="card rd-stat">
-    <div class="rd-h">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A6FB5" stroke-width="2.2"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      阅读统计（本月）<span class="rd-m">${yTxt}</span>
+  const label = (ym||"").slice(0,4)+"年"+parseInt((ym||"").slice(5,7),10)+"月";
+  return `<div class="rw-card read">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:#8A6FB5">📖</span><div><div class="rw-name">阅读奖励</div><div class="rw-desc">阅读天数≥${READ_REWARD_DAYS}天奖励+${READ_REWARD_STARS}星（计入本月星星）</div></div></div>
+      <div class="rd-m">${label}</div>
     </div>
-    <div class="rd-kv"><span>阅读天数</span><b>${days} 天</b></div>
-    <div class="rd-kv"><span>阅读时长</span><b>${readDurText(st.totalMin)}</b></div>
+    <div class="rw-total">阅读天数 <b>${days} 天</b> · 阅读时长 <b>${readDurText(st.totalMin)}</b></div>
     <div class="rd-bar"><i class="rs-zh" style="width:${zhP}%"></i><i class="rs-en" style="width:${enP}%"></i></div>
     <div class="rs-legend"><span><i style="background:#8A6FB5"></i>中文 ${zhP}%</span><span><i style="background:#6B8E5A"></i>英文 ${enP}%</span></div>
     <div class="rd-bar" style="margin-top:8px;"><i class="rs-fic" style="width:${ficP}%"></i><i class="rs-non" style="width:${nonP}%"></i></div>
     <div class="rs-legend"><span><i style="background:#C97BB0"></i>虚构 ${ficP}%</span><span><i style="background:#5B7C8A"></i>非虚构 ${nonP}%</span></div>
     <div class="read-award ${earned?"ok":"no"}">${earned
-      ? `🌟 本月阅读 ${days} 天，已达成阅读奖励 <b>+${READ_REWARD_STARS} 星</b>（计入本月星星）`
-      : `本月已阅读 ${days} 天，再读 ${need} 天（阅读天数 ≥ ${READ_REWARD_DAYS} 天）可得阅读奖励 +${READ_REWARD_STARS} 星`}</div>
+      ? `🌟 已达成阅读奖励 <b>+${READ_REWARD_STARS} 星</b>（计入本月星星）`
+      : `${label}已阅读 ${days} 天，再读 ${need} 天（阅读天数 ≥ ${READ_REWARD_DAYS} 天）可得 +${READ_REWARD_STARS} 星`}</div>
   </div>`;
 }
 
@@ -4120,7 +4116,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.94";
+const APP_VERSION = "2026.09.10.95";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
