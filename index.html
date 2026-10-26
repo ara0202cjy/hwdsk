@@ -1831,6 +1831,51 @@ function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发�
    stats 缺省视为 true（统计）——保持 v.97 之前「所有作业都计入统计栏」的默认行为；
    新词由 addHW/editHW 让用户选择，非通过常用词直接添加的清单项默认不统计（见 doAdd）。 */
 function hwItem(x){ if(typeof x==="string") return {t:x, e:0, stats:true}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0), stats: x && x.stats===false ? false : true}; }
+
+/* ===== v.99：统计口径「按最近的常用词定义」实时判定 =====
+   背景：v.97/v.98 的 stats 是「添加当时的快照」。用户改了常用词的 统计/不统计 后，
+   历史作业在 年/月/周 统计里不会跟着变。这里改为：统计时**优先读取该作业对应的最新常用词定义**
+   （先按 hwId 精确关联，旧数据按「科目+标题」兜底匹配），匹配不到才回落到条目自身的 stats 快照。
+   这样任何账户（含 lvcheng）打开统计栏，年/月/周 都会按当前常用词定义呈现。 */
+function hwStatsLookup(subj, hwId, title){
+  const arr = ((state.hw||{})[subj||""])||[];
+  let hit = null;
+  if(hwId) hit = arr.find(x=>x && x.id===hwId) || null;
+  if(!hit) hit = arr.find(x=> hwItem(x).t === (title||"")) || null;
+  return hit ? (hwItem(hit).stats !== false) : null;   // null = 无对应常用词
+}
+function todoCounted(t){
+  if(!t) return false;
+  const byHW = hwStatsLookup(t.subject, t.hwId, t.title);
+  if(byHW !== null) return byHW;          // 有常用词定义 → 以最新定义为准
+  return t.stats !== false;                // 否则沿用条目自身的统计快照
+}
+/* 把「最新常用词定义」写回作业条目（持久化 + 参与云同步）。返回实际改动条数。 */
+function applyStatsFromHW(target){
+  const S = target || state;
+  if(!S) return 0;
+  // 常用词一律取「目标对象」的 hw（合并场景下是合并结果，而非旧 state）
+  let n = 0;
+  (S.todos||[]).forEach(t=>{
+    if(!t) return;
+    const arr = ((S.hw||{})[t.subject||""])||[];
+    let hit = null;
+    if(t.hwId) hit = arr.find(x=>x && x.id===t.hwId) || null;
+    if(!hit) hit = arr.find(x=> hwItem(x).t === (t.title||"")) || null;
+    if(!hit) return;                       // 无对应的常用词定义 → 保持原值
+    const st = hwItem(hit).stats !== false;
+    if(t.stats !== st){ t.stats = st; t._u = Date.now(); markLocal(t.id); n++; }
+  });
+  return n;
+}
+/* 设置面板里的「立即按常用词重算」 */
+function recalcStatsFromHW(){
+  const n = applyStatsFromHW(state);
+  save();
+  refreshAll();
+  closeSheet();
+  toast(n>0 ? ("已按常用词重算统计口径 · 更新 "+n+" 条") : "统计口径已是最新，无需调整");
+}
 function renderHWChips(){
   const box=$("hwChips"); if(!box) return;
   /* v.85：按本地记忆的顺序展示常用词（orderHw）；renderHWChips 还被单独调用（选科目/编辑），
@@ -2898,7 +2943,7 @@ function renderSummary(){
   const groups = {};
   days.forEach(ds=>{
     todosOf(ds).forEach(t=>{
-      if(t.stats===false) return;     // v.97：不计入统计栏的作业不出现在周/月/年清单（其余结算不变）
+      if(!todoCounted(t)) return;     // v.99：按「最新常用词定义」判定是否计入统计栏（无对应词时回落到条目 stats 快照）
       const key = (t.subject||"其他")+"||"+(t.title||"(未命名)");
       let g = groups[key];
       if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
@@ -3740,6 +3785,7 @@ async function syncPull(mode){
     if(!state._delR) state._delR = {};           // 奖励删除墓碑
     (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
     state.masters = state.masters.filter(m=>m && !((state._delM||{})[m.id]));   // 应用母版删除墓碑
+    try{ applyStatsFromHW(state); }catch(e){}   // v.99：下载后同样按最新常用词定义重算统计口径
     saveLocal(); refreshAll(); renderTasks();
     const n = (state.todos||[]).length;
     syncStatus("已同步云端 "+n+" 条作业","ok");
@@ -3896,6 +3942,8 @@ function mergeState(cloud, local){
     merged.subjects._u = Math.max((local.subjects&&local.subjects._u)||0, (cloud.subjects&&cloud.subjects._u)||0);
   }
   merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
+  /* v.99：合并后按「最新常用词定义」把历史作业的统计口径写回（标记本地修改 → 随本轮同步上传云端） */
+  try{ applyStatsFromHW(merged); }catch(e){}
   return merged;
 }
 /* 读取云端文件，返回解析后的对象；无效/缺失返回 null */
@@ -4073,6 +4121,7 @@ function openSettings(){
       </div>
       <div class="sync-status" id="syncStatus"></div>
     </div>
+    <div class="opt" onclick="recalcStatsFromHW()"><span>按常用词重算统计口径</span><span class="sub">年 / 月 / 周统计跟随最新常用词</span></div>
     <div class="opt" onclick="exportExcel()"><span>导出 Excel 数据</span><span class="sub">CSV · 可用 Excel 打开</span></div>
     <div class="opt" onclick="importExcel()"><span>导入 Excel 数据</span><span class="sub">选择 .csv 文件</span></div>
     <div class="opt danger" id="holdOpt"><div class="hold" id="holdBtn"><div class="fill" id="holdFill"></div>长按 3 秒清空全部数据</div></div>`;
@@ -4282,7 +4331,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.26.98";
+const APP_VERSION = "2026.10.26.99";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
