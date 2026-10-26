@@ -339,6 +339,11 @@
   .add-row input{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px 13px; font-size:16px; background:#fcfaf5;}
   .add-row .plus{width:46px; height:46px; border-radius:12px; background:var(--sun); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; flex:0 0 46px;}
   .add-row .plus:active{transform:scale(.94);}
+  .add-row .seg-pair.add-stats{--rc:var(--ink); flex:0 0 auto;}
+  /* v.97：添加栏第二行（预估分 + 是否计入统计栏） */
+  .add-row2{display:flex; gap:8px; align-items:center; margin-top:8px;}
+  .add-row2 .add-est{flex:0 0 62px;}
+  .add-stats-hint{font-size:11.5px; color:var(--muted); font-weight:600;}
   /* ===== 高频词 / 常用词（按科目分组） ===== */
   .hw-wrap{margin-top:10px; border-top:1px dashed var(--line); padding-top:10px;}
   .hw-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
@@ -393,9 +398,12 @@
   .rs-legend span{display:inline-flex; align-items:center; gap:4px;}
   .rs-legend i{width:8px; height:8px; border-radius:50%; display:inline-block;}
   /* 阅读奖励徽章（单月阅读天数 > 20 → 该月 +5 星） */
-  .read-award{margin-top:9px; font-size:12.5px; font-weight:700; border-radius:12px; padding:9px 11px; line-height:1.7;}
-  .read-award.ok{background:#fff6e6; border:1.5px solid #f0d9a8; color:var(--sun);}
-  .read-award.no{background:#f4efe4; border:1px solid var(--line); color:var(--muted);}
+  /* v.97：阅读奖励卡片底部改罗列书目；原「可得+5星」提示行(read-award)已移除 */
+  .read-books{margin-top:10px;}
+  .read-books .rb-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
+  .read-books .rb-list{display:flex; flex-wrap:wrap; gap:6px;}
+  .read-books .rb-item{font-size:12.5px; color:#5b4d6e; background:rgba(138,111,181,.12); border-radius:8px; padding:3px 9px; line-height:1.5;}
+  .read-books-empty{margin-top:10px; font-size:11.5px; color:var(--muted); background:#f4efe4; border:1px solid var(--line); border-radius:10px; padding:8px 10px;}
   /* v.95：阅读奖励卡片（从「阅读统计」旧区块改为 rw-card 样式，与该页其他卡片统一） */
   .rd-m{font-size:11.5px; font-weight:700; color:#8A6FB5; background:#fff; border:1px solid #e3d8f2; border-radius:999px; padding:2px 9px; flex:0 0 auto;}
   .rd-bar{display:flex; height:8px; border-radius:999px; overflow:hidden; margin:8px 0 4px; background:#e7e0d5;}
@@ -428,6 +436,8 @@
   .task-due.over{color:#b3402f; font-weight:700;}
   .task-del{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--muted); border-radius:8px;}
   .task-del:active{background:#f1ece1;}
+  .task-edit{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--ink-2); border-radius:8px;}
+  .task-edit:active{background:#e7efea;}
 
   /* ===== 作业统计 甘特 ===== */
   .gantt{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
@@ -526,6 +536,9 @@
   .rw-total .rs-g{color:var(--green); font-weight:800;}
   .rw-total .rs-pen{color:var(--red); font-weight:800;}
   .rw-total .rs-muted{color:#c8761f; font-weight:800;}
+  /* v.97：阅读奖励卡片（rw-card.read）上方「阅读天数 X 天 · 阅读时长 X」字号加大 */
+  .rw-card.read .rw-total{font-size:15px; color:var(--text); font-weight:600; margin:10px 0 6px;}
+  .rw-card.read .rw-total b{font-size:18px; color:var(--ink);}
   .rw-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid #eee5d6;}
   .rw-row .rw-main{flex:1; min-width:0;}
   .rw-title{font-size:14px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -554,6 +567,8 @@
   .rw-row.checkin.overdue .rw-title{color:var(--muted); text-decoration:line-through;}
   .rw-count{font-size:12px; font-weight:700; color:#c8761f; background:#fdf0e4; border-radius:6px; padding:1px 6px;}
   .ck-btns{display:flex; gap:6px; flex:0 0 auto;}
+  .ck-dates{display:flex; flex-wrap:wrap; gap:4px; margin-top:7px;}
+  .ck-date{display:inline-block; font-size:10.5px; line-height:1.5; padding:1px 6px; border-radius:7px; background:#f4efe4; color:#6b655b; border:1px solid var(--line);}
   .ck-btn{padding:7px 12px; border:1px solid var(--sun); border-radius:8px; background:#fff; color:var(--sun); font-size:13px; font-weight:800; cursor:pointer;}
   .ck-btn.minus{border-color:#cfc6b4; color:var(--muted);}
   .ck-btn:active{opacity:.8;}
@@ -1096,6 +1111,8 @@ function load(){
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
   (state.todos||[]).forEach(t=>{ if(t && typeof t.qualified==="undefined") t.qualified = true; });
+  /* v.97：兼容旧数据 —— 未标记「是否统计」的作业一律视为计入统计 */
+  (state.todos||[]).forEach(t=>{ if(t && typeof t.stats==="undefined") t.stats = true; });
   // 兼容旧数据：补齐 done 字段（目标默认未完成；额外奖惩默认已完成）
   (state.rewards||[]).forEach(r=>{ if(typeof r.done==="undefined"){ r.done = (r.type!=="goal") ? true : (!!r.on); } });
   /* 迁移：旧版常用词存于独立 localStorage 键 wb_hwdsk_hw_v1，并入 state.hw 一并同步 */
@@ -1124,6 +1141,7 @@ function mkTodo(date, subject, title, o={}){
     id:uid(), date:ymd(date), subject, title,
     detail:"", estMin:0, wrong:0, done:false,
     qualified:true,               // v.96：是否合格（默认合格；不合格需在展开栏内单独勾选）
+    stats:true,                   // v.97：是否计入「统计栏」周/月/年清单（默认计入；其余结算不变）
     makeup:false, completedOn:null, dinged:false, corrected:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示 / 订正是否完成
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null,
@@ -1771,7 +1789,8 @@ function renderList(){
     html += `</div>`;
   }
   html += `
-    <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><button class="plus" onclick="doAdd()">+</button></div>
+    <div class="add-row"><input id="addInput" placeholder="输入作业内容…" /><button class="plus" onclick="doAdd()">+</button></div>
+    <div class="add-row2"><input id="addEst" class="add-est" type="number" min="0" inputmode="numeric" placeholder="预估分" /><span class="seg-pair add-stats" id="addStatsPair" title="是否计入「统计栏」的周/月/年清单（不影响每日清单与星星结算）"><button class="rp ${addStats?'on':''}" data-v="1" onclick="setAddStats(true)">统计</button><button class="rp ${!addStats?'on':''}" data-v="0" onclick="setAddStats(false)">不统计</button></span><span class="add-stats-hint">是否计入统计栏</span></div>
     <div id="hwWrap" class="hw-wrap">
       <div class="hw-head"><span class="hw-label">常用词 · <span id="hwSubj">语文</span>（点词填入输入框）</span>${editHWOn && (loadHW()[addSubj]||[]).length<15?'<button id="hwAddBtn" class="hw-add" onclick="addHW()">＋ 添加</button>':''}<button class="hw-set${editHWOn?' on':''}" title="设置：显示常用词的添加 / 修改 / 删除" onclick="toggleEditHW()">${gearSvg()}</button></div>
       <div id="hwChips" class="hw-chips"></div>
@@ -1784,6 +1803,8 @@ function renderList(){
 }
 
 let addSubj = "语文";
+let addStats = true;    // v.97：「是否计入统计栏」开关（true=计入周/月/年清单；false=仅每日清单与结算）
+function setAddStats(v){ addStats = !!v; const p=$("addStatsPair"); if(p) p.querySelectorAll(".rp").forEach(b=>b.classList.toggle("on", (b.dataset.v==="1")===addStats)); }
 let editHWOn = false;   // 常用词「设置」开关：开启后显示添加 / 修改 / 删除
 function toggleEditHW(){ editHWOn=!editHWOn; renderList(); }
 let editBooks = new Set();   // 当前处于“设置”状态的作业本（科目名），用于显示各项的修改/删除/固定按钮
@@ -1898,8 +1919,9 @@ function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
   /* v.80：若内容来自常用词（fillHW 记过 hwId），把 hwId 写入 todo，供「改名常用词级联更新已添加项」使用 */
-  addTodo(addSubj, v, { estMin:est, hwId:_fillHwId||null });
+  addTodo(addSubj, v, { estMin:est, hwId:_fillHwId||null, stats:addStats });
   _fillHwId = null;
+  addStats = true;   // 重置为默认（下一次添加默认计入统计栏）
   $("addInput").value=""; $("addEst").value=""; toast("已添加 · "+addSubj); renderList();
 }
 
@@ -2041,9 +2063,13 @@ function readMonthBlock(ym){
   const zhP = pct(st.zhMin), enP  = st.totalMin>0 ? 100-zhP : 0;
   const ficP = pct(st.ficMin), nonP = st.totalMin>0 ? 100-ficP : 0;
   const days = st.days;
-  const earned = readRewardStars(ym) > 0;
-  const need = Math.max(0, READ_REWARD_DAYS - days);
   const label = (ym||"").slice(0,4)+"年"+parseInt((ym||"").slice(5,7),10)+"月";
+  /* v.97：底部「可得 +5 星」提示行删除，改为罗列本月阅读书目（去重，保留顺序；未填书目的记录不计入） */
+  const books = [], seen = {};
+  readsInMonth(ym).forEach(r=>{ const b=(r.book||"").trim(); if(b && !seen[b]){ seen[b]=1; books.push(b); } });
+  const bookHtml = books.length
+    ? `<div class="read-books"><div class="rb-h">本月阅读书目（${books.length}）</div><div class="rb-list">${books.map(b=>`<span class="rb-item">《${esc(b)}》</span>`).join("")}</div></div>`
+    : `<div class="read-books-empty">本月暂未填写书目（在每日阅读栏填「书目名称」后在此罗列）</div>`;
   return `<div class="rw-card read">
     <div class="rw-head">
       <div class="rw-h-left"><span class="rw-ic" style="color:#8A6FB5">📖</span><div><div class="rw-name">阅读奖励</div><div class="rw-desc">阅读天数≥${READ_REWARD_DAYS}天奖励+${READ_REWARD_STARS}星（计入本月星星）</div></div></div>
@@ -2054,9 +2080,7 @@ function readMonthBlock(ym){
     <div class="rs-legend"><span><i style="background:#8A6FB5"></i>中文 ${zhP}%</span><span><i style="background:#6B8E5A"></i>英文 ${enP}%</span></div>
     <div class="rd-bar" style="margin-top:8px;"><i class="rs-fic" style="width:${ficP}%"></i><i class="rs-non" style="width:${nonP}%"></i></div>
     <div class="rs-legend"><span><i style="background:#C97BB0"></i>虚构 ${ficP}%</span><span><i style="background:#5B7C8A"></i>非虚构 ${nonP}%</span></div>
-    <div class="read-award ${earned?"ok":"no"}">${earned
-      ? `🌟 已达成阅读奖励 <b>+${READ_REWARD_STARS} 星</b>（计入本月星星）`
-      : `${label}已阅读 ${days} 天，再读 ${need} 天（阅读天数 ≥ ${READ_REWARD_DAYS} 天）可得 +${READ_REWARD_STARS} 星`}</div>
+    ${bookHtml}
   </div>`;
 }
 
@@ -2619,6 +2643,7 @@ function taskRow(t){
   const dueHtml = t.due? `<span class="task-due ${dl.over&&!t.done?'over':''}" onclick="openDuePicker('${t.id}')">截止 ${dl.txt}${dl.over&&!t.done?' · 已逾期':''}</span>`
                       : `<span class="task-due" onclick="openDuePicker('${t.id}')">无截止</span>`;
   const delBtn = t.done? "" : `<button class="task-del" onclick="delTask('${t.id}')" aria-label="删除"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 7h14M10 7V5h4v2M6 7l1 12h10l1-12" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+  const editBtn = `<button class="task-edit" onclick="editTaskTitle('${t.id}')" aria-label="编辑">${penSvg()}</button>`;
   return `<div class="task-row ${t.done?'done':''}">
     <button class="chk ${t.done?'done':''}" onclick="toggleTask('${t.id}')">${chkSvg(t.done)}</button>
     <div class="task-main">
@@ -2628,12 +2653,20 @@ function taskRow(t){
         ${dueHtml}
       </div>
     </div>
-    ${delBtn}
+    ${editBtn}${delBtn}
   </div>`;
 }
 function pickAddPri(p){ addPri=p; renderTasks(); }
 function commitTask(){ const v=$("taskInput").value; if(!v||!v.trim()){ toast("请输入内容"); return; } addTask(v, addDue, addPri); addDue=null; addPri=2; }
 function cyclePri(id){ const t=getTask(id); if(!t) return; setTaskPri(id, t.priority>=3?1:t.priority+1); }
+/* v.97：待办事项可再编辑 —— ✎ 修改内容（优先级 / 截止时间仍点标签直接改） */
+async function editTaskTitle(id){
+  const t=getTask(id); if(!t) return;
+  const v = await askInput({ title:"编辑待办", label:"内容", value:t.title, placeholder:"输入待办内容…" });
+  if(v==null) return; const s=v.trim(); if(!s) return;
+  t.title = s; touch(t); save(); renderTasks();
+  toast("待办已更新");
+}
 function openDuePicker(id, oy, om){
   const t = id? getTask(id): null;
   // 传入 y,m 时用其定位月份（new Date 自动处理 m<0 / m>11 的跨年溢出）
@@ -2804,6 +2837,7 @@ function renderSummary(){
   const groups = {};
   days.forEach(ds=>{
     todosOf(ds).forEach(t=>{
+      if(t.stats===false) return;     // v.97：不计入统计栏的作业不出现在周/月/年清单（其余结算不变）
       const key = (t.subject||"其他")+"||"+(t.title||"(未命名)");
       let g = groups[key];
       if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
@@ -3078,14 +3112,14 @@ function addReward(type, content, stars, o={}){
   const ym = o.month || ymd(new Date()).slice(0,7);
   const r = { id:uid(), type, content:(content||"").trim(), stars:Math.max(1, stars|0||1),
               done:(type!=="goal" && type!=="checkin"), month:ym, added:ym, deadline:(o.deadline||null),
-              target:(type==="checkin" ? Math.max(1, o.target|0||1) : undefined), count:(type==="checkin" ? 0 : undefined), _u:Date.now() };
+              target:(type==="checkin" ? Math.max(1, o.target|0||1) : undefined), count:(type==="checkin" ? 0 : undefined), dates:(type==="checkin" ? [] : undefined), _u:Date.now() };
   state.rewards = state.rewards || [];
   state.rewards.push(r); save(); renderReward(); renderMonth(); toast("已添加奖励");
 }
 function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
 // 打卡奖励：卡片「打卡 +1」/「−1」；次数达 target 自动完成并结算到完成之月
-function checkinPlus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=(r.count||0)+1; if(r.count>=r.target && !r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } touch(r); save(); renderReward(); renderMonth(); }
-function checkinMinus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=Math.max(0,(r.count||0)-1); if(r.count<r.target){ r.done=false; delete r.doneMonth; } touch(r); save(); renderReward(); renderMonth(); }
+function checkinPlus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=(r.count||0)+1; (r.dates=r.dates||[]).push(ymd(new Date())); if(r.count>=r.target && !r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } touch(r); save(); renderReward(); renderMonth(); }
+function checkinMinus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=Math.max(0,(r.count||0)-1); if(r.dates && r.dates.length) r.dates.pop(); if(r.count<r.target){ r.done=false; delete r.doneMonth; } touch(r); save(); renderReward(); renderMonth(); }
 function delReward(id){ const r=getReward(id); if(!r) return; state._delR=state._delR||{}; state._delR[id]=Date.now(); state.rewards=state.rewards.filter(x=>x.id!==id); save(); renderReward(); renderMonth(); toast("已删除"); }
 function shiftRewardMonth(d){ rewardView.setMonth(rewardView.getMonth()+d); renderReward(); }
 // 每类奖励卡片的「编辑开关」：开启后该卡内每项才显示 编辑/删除 按钮
@@ -3283,10 +3317,14 @@ function checkinRow(r, showEdit){
   if(r.done){ cls="done"; statusTag="已完成"; statusCls="st-done"; }
   else if(r.deadline && r.deadline < ymd(new Date())){ cls="overdue"; statusTag="已逾期"; statusCls="st-ov"; }
   else { cls="active"; statusTag="待结算"; statusCls="st-pend"; }
+  /* v.97：紧凑展示具体打卡日期（MM-DD），最多显示已打卡次数条；旧数据无 dates 则不显示 */
+  const ds = (r.dates||[]).slice(0, cnt);
+  const datesHtml = ds.length ? `<div class="ck-dates">${ds.map(d=>`<span class="ck-date">${d.slice(5)}</span>`).join("")}</div>` : "";
   return `<div class="rw-row checkin ${cls}">
     <div class="rw-main">
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-count">${cnt}/${tgt}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
+      ${datesHtml}
     </div>
     <div class="ck-btns">
       <button class="ck-btn" onclick="checkinPlus('${r.id}')">打卡 +1</button>
@@ -4168,7 +4206,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.09.10.96";
+const APP_VERSION = "2026.10.26.97";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
