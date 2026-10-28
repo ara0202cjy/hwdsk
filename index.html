@@ -384,17 +384,13 @@
   /* v.93：每日卡只显示当日时长 */
   .read-today{font-size:12.5px; color:var(--muted); font-weight:700; padding:6px 2px 0;}
   .read-today b{color:#8A6FB5; font-size:13.5px;}
-  /* v.101：最近续读 —— 逐本续读，分钟可在 pill 上改；多本两行内 */
+  /* v.102：最近续读 —— 只显示书目（2 行内），点书名预填上方表单（书目/中英文/虚构非虚构） */
   .read-cont{margin-top:6px; padding-top:11px; border-top:1px dashed var(--line);}
   .read-cont .rc-h{font-size:12.5px; font-weight:800; color:var(--ink); margin-bottom:7px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
   .read-cont .rc-sub{font-size:11px; font-weight:600; color:var(--muted);}
   .read-cont .rc-list{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:8px;}
-  .read-cont .rc-pill{display:inline-flex; align-items:center; gap:4px; border:1.5px solid #e3d8f2; background:#f6f1ff; color:#6f5599; border-radius:999px; padding:5px 11px 5px 8px; font-size:12.5px; font-weight:700; line-height:1; white-space:nowrap;}
-  .read-cont .rc-go{display:inline-flex; align-items:center; gap:3px; cursor:pointer; padding:1px 2px;}
-  .read-cont .rc-go:active{opacity:.55;}
-  .read-cont .rc-min{width:34px; border:1px solid #d7c8ee; background:#fff; color:#6f5599; border-radius:6px; font-size:12px; font-weight:800; padding:2px 1px; text-align:center; -moz-appearance:textfield;}
-  .read-cont .rc-min::-webkit-outer-spin-button,.read-cont .rc-min::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
-  .read-cont .rc-min:focus{outline:none; border-color:#8A6FB5;}
+  .read-cont .rc-pill{display:inline-flex; align-items:center; border:1.5px solid #e3d8f2; background:#f6f1ff; color:#6f5599; border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:700; cursor:pointer; line-height:1; white-space:nowrap;}
+  .read-cont .rc-pill:active{transform:scale(.96);}
   .read-item .ri-cont{font-size:10.5px; font-weight:800; border-radius:999px; padding:1px 7px; background:#f6f1ff; color:#6f5599; white-space:nowrap; border:1px solid #e3d8f2;}
   /* 阅读统计（累计） */
   .read-stats{background:linear-gradient(135deg,#f6f1ff,#efe7fb); border:1.5px solid #e3d8f2; border-radius:14px; padding:11px 13px; margin-top:4px;}
@@ -2036,6 +2032,7 @@ function addRead(){
   if(minutes<=0){ toast("请填写阅读时间（分钟）"); return; }
   const book = readForm.book.trim();
   const r = { id:uid(), date:ymd(viewDate), minutes:minutes, lang:addReadLang, fic:addReadFic, book:book, _u:Date.now() };
+  if(_pendingCont){ r.cont = true; _pendingCont = false; }   // v.102：续读预填来源 → 标记续读
   state.reads = state.reads||[]; state.reads.push(r);
   readForm.min=""; readForm.book="";                        // v.92：记录后清空缓存
   if(mEl) mEl.value=""; if(bEl) bEl.value="";
@@ -2105,20 +2102,19 @@ function recentBooks(n){
   return arr.slice(0, n||3);
 }
 let _recentCache = [];     // v.100：render 时缓存，供 continueRecent(i) 索引
-/* v.100：续读一本（标记为「未读完续读」）。今日已记录同书则跳过。 */
-function continueBook(b){
-  if(!b || !b.book) return;
-  const ds=ymd(viewDate);
-  if((state.reads||[]).some(r=>r.date===ds && (r.book||"").trim()===b.book)){
-    toast("今日已记录《"+b.book+"》"); return;
-  }
-  const mins=b.minutes>0 ? b.minutes : 30;   // 续读默认沿用末次时长，无则 30 分钟
-  const r={ id:uid(), date:ds, minutes:mins, lang:b.lang||"zh", fic:b.fic||"fic", book:b.book, cont:true, _u:Date.now() };
-  state.reads=state.reads||[]; state.reads.push(r);
-  save(); renderList(); syncDerived();
-  toast("已续读《"+b.book+"》 "+mins+" 分钟");
+let _pendingCont = false;  // v.102：续读预填标记——下次 addRead 落库时记 cont:true
+/* v.102：点书名 → 预填上方表单（书目 + 中英文 + 虚构非虚构），不打秒添加；
+   用户填分钟后点 ＋ 才真正添加（保留「续读」标记）。 */
+function continueRecent(i){
+  const b=_recentCache[i]; if(!b || !b.book) return;
+  readForm.book = b.book;
+  addReadLang  = b.lang||"zh";
+  addReadFic   = b.fic||"fic";
+  _pendingCont = true;
+  renderList();                              // 重渲染使表单（书目/中英文/虚构非虚构）回填
+  const bEl=$("readBook"); if(bEl){ bEl.focus(); }
+  toast("已填入《"+b.book+"》，请填分钟后点 ＋");
 }
-function continueRecent(i){ continueBook(_recentCache[i]); }
 /* 阅读卡 HTML（纯拼接，供 renderList 调用）
    v.93：卡内**只统计当日** —— 当天条目 + 「今日阅读：X 小时 Y 分钟」；
    累计天数 / 中英·虚实比例条 / 阅读奖励提示全部移入「月度统计」页。 */
@@ -2161,13 +2157,13 @@ function readCardHtml(ds){
   } else {
     html += `<div class="read-empty">今日暂无阅读记录，填部分钟后点 ＋ 即可记录</div>`;
   }
-  /* v.101：最近续读 —— 逐本点书名续读，分钟可在 pill 上改；多本两行内（最多 4 本） */
+  /* v.102：最近续读 —— 只显示书目（2 行内），点书名预填上方表单 */
   _recentCache = recentBooks(4);
   if(_recentCache.length){
     html += `<div class="read-cont">
-      <div class="rc-h">最近续读 <span class="rc-sub">未读完 · 点书名续读 · 分钟可改</span></div>
+      <div class="rc-h">最近续读 <span class="rc-sub">点书名预填上方表单 · 填分钟后点 ＋</span></div>
       <div class="rc-list">` +
-      _recentCache.map((b,i)=>`<div class="rc-pill"><span class="rc-go" onclick="continueRecent(${i})" title="续读《${esc(b.book)}》">⟳ 《${esc(b.book)}》</span><input class="rc-min" type="number" min="0" inputmode="numeric" value="${b.minutes>0?b.minutes:30}" oninput="_recentCache[${i}].minutes=Math.max(0,parseInt(this.value||'0',10)||0)" /> 分</div>`).join("") +
+      _recentCache.map((b,i)=>`<button class="rc-pill" onclick="continueRecent(${i})" title="续读《${esc(b.book)}》">《${esc(b.book)}》</button>`).join("") +
       `</div>
     </div>`;
   }
@@ -4382,7 +4378,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.28.101";
+const APP_VERSION = "2026.10.28.102";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
