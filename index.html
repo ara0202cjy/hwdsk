@@ -400,6 +400,7 @@
   .bailan-card .bl-title{ font-size:14px; font-weight:800; color:#5E4F59; }
   .bailan-card .bl-count{ font-size:12px; font-weight:800; color:#5E4F59; background:#fff; border:1px solid #D8CDD2; border-radius:999px; padding:2px 10px; }
   .bailan-card .bl-note{ font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:10px; }
+  .bailan-card .bl-tip{ font-size:11px; color:#9C8E93; background:#F4F0EC; border:1px dashed #D8CFC9; border-radius:8px; padding:6px 8px; margin-bottom:10px; line-height:1.5; }
   .bailan-btn{ width:100%; border:none; border-radius:11px; padding:13px; font-size:15px; font-weight:800; cursor:pointer; letter-spacing:.5px; -webkit-tap-highlight-color:transparent; }
   .bailan-btn:not(.dis):not(.cancel){ background:#877484; color:#FBF8F9; box-shadow:0 3px 9px rgba(135,116,132,.22); }
   .bailan-btn:not(.dis):not(.cancel):active{ transform:translateY(1px); background:#7A6978; }
@@ -1454,32 +1455,32 @@ function latestExpireMonth(){
 }
 function toggleBailanToday(){
   const ds = todayStr();
+  const wasToday = ymd(viewDate)===ds;          // 是否正停留在今天视图
   if(isBailanDay(ds)){
     const cid = state.bailan.usedDays[ds];
     const c = state.bailan.cards.find(x=>x.id===cid); if(c) c.spent=false;
     delete state.bailan.usedDays[ds];
-    renderList(); toast("已取消今日摆烂，归还 1 张摆烂卡");   // 先刷新界面，确保点击必有可见反馈
-    try{ save(); }catch(e){}                                 // 保存失败（如隐私模式存储受限）也不影响界面
+    if(wasToday){ renderList(); } else { gotoToday(); }   // 不在今天视图时跳回今天，让横幅与灰显可见
+    toast("已取消今日摆烂，归还 1 张摆烂卡");
+    try{ save(); }catch(e){}
   } else {
     const card = availBailanCards()[0];
     if(!card){ toast("无可用摆烂卡"); return; }
     card.spent = true;
     state.bailan.usedDays[ds] = card.id;
-    renderList(); toast("今日摆烂！已消耗 1 张摆烂卡");       // 先刷新界面，确保点击必有可见反馈
-    try{ save(); }catch(e){}                                   // 保存失败也不影响界面
+    if(wasToday){ renderList(); } else { gotoToday(); }   // 关键：跳回今天，顶部「今日摆烂！」横幅 + 科目灰显，反应一目了然
+    toast("今日摆烂！已消耗 1 张摆烂卡");
+    try{ save(); }catch(e){}
   }
 }
 function bailanDaysInRange(days){ return days.filter(ds=>isBailanDay(ds)).length; }
 function bailanCardHtml(ds){
-  const isToday = ds===todayStr();
-  const on = isBailanDay(ds);
+  /* 摆烂卡始终针对「今天」操作 —— 不再因查看别的日期而退化成死按钮（此前非今天视图点击只跳回今天、不摆烂，用户以为“没反应”） */
+  const on = isBailanDay(todayStr());
   const avail = availBailanCount();
   const expire = latestExpireMonth();
   let btn;
-  if(!isToday){
-    btn = on ? `<button class="bailan-btn dis" disabled>该日已摆烂（历史）</button>`
-             : `<button class="bailan-btn gotoday" onclick="gotoToday()">摆烂仅限当天 · 点此回到今天</button>`;
-  } else if(on){
+  if(on){
     btn = `<button class="bailan-btn cancel" onclick="toggleBailanToday()">取消摆烂</button>`;
   } else if(avail>0){
     btn = `<button class="bailan-btn" onclick="toggleBailanToday()">今日摆烂（消耗 1 张）</button>`;
@@ -1489,9 +1490,12 @@ function bailanCardHtml(ds){
   const expTxt = expire==="—" ? "—" : (expire.replace("-","年")+"月");
   const cardCls = on ? "card bailan-card bailan-on" : "card bailan-card";
   const titleTxt = on ? "🌫 已摆烂（今日）" : "🌫 摆烂卡";
+  /* 若当前不在今天视图，提示摆烂针对今天（按钮仍可直接操作今天） */
+  const extra = (ds!==todayStr()) ? `<div class="bl-tip">※ 摆烂针对「今天」，当前在看 ${ds}</div>` : "";
   return `<div class="${cardCls}">
     <div class="bl-head"><span class="bl-title">${titleTxt}</span><span class="bl-count">可用 × ${avail}</span></div>
     <div class="bl-note">每月 1 日发放 2 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
+    ${extra}
     ${btn}
   </div>`;
 }
@@ -4498,7 +4502,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.29.105";
+const APP_VERSION = "2026.10.29.106";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
