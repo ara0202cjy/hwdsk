@@ -1445,6 +1445,22 @@ function issueBailanIfNeeded(){
 }
 function availBailanCards(){ const cm=monthStrOf(new Date()); return state.bailan.cards.filter(c=>!c.spent && c.expire>=cm); }
 function availBailanCount(){ return availBailanCards().length; }
+/* v.108：同步合并摆烂卡数据 —— mergeState 整体替换 state 时若不含 bailan 会把摆烂卡弄丢（同步成功后按钮失灵的根因）。
+   合并策略：cards 按 id 合并、spent 取「或」（任一端消耗即消耗）；usedDays 并集；issuedMonth 取较新月份。 */
+function mergeBailan(cloudB, localB){
+  if(!cloudB) return localB || null;
+  if(!localB) return cloudB || null;
+  const cards = []; const byId = {};
+  (localB.cards||[]).forEach(c=>{ if(c&&c.id){ byId[c.id]=c; cards.push(c); } });
+  (cloudB.cards||[]).forEach(c=>{
+    if(c&&c.id){ if(byId[c.id]) byId[c.id].spent = !!(byId[c.id].spent||c.spent); else cards.push(c); }
+  });
+  return {
+    cards,
+    usedDays: Object.assign({}, cloudB.usedDays||{}, localB.usedDays||{}),
+    issuedMonth: (String(cloudB.issuedMonth||"") > String(localB.issuedMonth||"")) ? cloudB.issuedMonth : localB.issuedMonth
+  };
+}
 function isBailanDay(ds){ return !!(state.bailan && state.bailan.usedDays && state.bailan.usedDays[ds]); }
 function todayStr(){ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); }
 function latestExpireMonth(){
@@ -4108,6 +4124,8 @@ function mergeState(cloud, local){
     merged.subjects._u = Math.max((local.subjects&&local.subjects._u)||0, (cloud.subjects&&cloud.subjects._u)||0);
   }
   merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
+  const bailan = mergeBailan(cloud.bailan, local.bailan);   // v.108：摆烂卡随同步合并，避免 applyMerged 整体替换 state 后丢失
+  if(bailan) merged.bailan = bailan;
   /* v.99：合并后按「最新常用词定义」把历史作业的统计口径写回（标记本地修改 → 随本轮同步上传云端） */
   try{ applyStatsFromHW(merged); }catch(e){}
   return merged;
@@ -4143,7 +4161,7 @@ async function writeCloud(obj, expectRev){
 /* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据；v.80 纳入 subjects（排除其 _u） */
 function dataSig(s){
   const subs = Array.isArray(s&&s.subjects) ? s.subjects.map(x=>({name:x.name,color:x.color,arc:!!x.arc})) : null;
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs ]);
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
 function protectMerged(merged){
@@ -4166,6 +4184,7 @@ function applyMerged(merged){
   const before = dataSig(state);
   state = merged;
   ensureSubjects();          // v.80：科目表缺失时回退默认，避免变量名报错
+  ensureBailan();            // v.108：兜底——旧云端数据无 bailan 时初始化，防摆烂按钮同步后失灵
   saveLocal();
   if(dataSig(state) !== before){ pruneTombstones(); refreshAll(); renderTasks(); }
 }
@@ -4497,7 +4516,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.29.107";
+const APP_VERSION = "2026.10.29.108";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
