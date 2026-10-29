@@ -392,6 +392,20 @@
   .read-cont .rc-pill{display:inline-flex; align-items:center; border:1.5px solid #e3d8f2; background:#f6f1ff; color:#6f5599; border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:700; cursor:pointer; line-height:1; white-space:nowrap;}
   .read-cont .rc-pill:active{transform:scale(.96);}
   .read-item .ri-cont{font-size:10.5px; font-weight:800; border-radius:999px; padding:1px 7px; background:#f6f1ff; color:#6f5599; white-space:nowrap; border:1px solid #e3d8f2;}
+  /* v.103：摆烂卡 */
+  .bailan-banner{ background:#ececec; color:#7a7a7a; border-radius:10px; padding:10px 12px; font-size:15px; font-weight:800; text-align:center; letter-spacing:2px; margin-bottom:10px;}
+  .bailan-gray{ opacity:.4; filter:grayscale(1); pointer-events:none; }
+  .bailan-card{ border:1.5px solid #e3d8f2; background:linear-gradient(135deg,#fff,#f6f1ff); }
+  .bailan-card .bl-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .bailan-card .bl-title{ font-size:14px; font-weight:800; color:var(--pp-d); }
+  .bailan-card .bl-count{ font-size:12px; font-weight:800; color:var(--pp-d); background:#fff; border:1px solid #e3d8f2; border-radius:999px; padding:2px 10px; }
+  .bailan-card .bl-note{ font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:10px; }
+  .bailan-btn{ width:100%; border:none; border-radius:11px; padding:11px; font-size:14px; font-weight:800; cursor:pointer; }
+  .bailan-btn:not(.dis):not(.cancel){ background:var(--pp); color:#fff; }
+  .bailan-btn.cancel{ background:#e7e2ef; color:var(--muted); }
+  .bailan-btn.dis{ background:#f1f1f1; color:#bcbcbc; cursor:not-allowed; }
+  .cal-cell.bailan{ background:#f1f1f1; color:#bdbdbd; }
+  .cal-cell.bailan .bl-tag{ font-size:9px; color:#9a9a9a; font-weight:800; margin-top:1px; }
   /* 阅读统计（累计） */
   .read-stats{background:linear-gradient(135deg,#f6f1ff,#efe7fb); border:1.5px solid #e3d8f2; border-radius:14px; padding:11px 13px; margin-top:4px;}
   .rs-line{font-size:13px; color:var(--ink); font-weight:700; line-height:1.9;}
@@ -1128,6 +1142,7 @@ function load(){
   if(!Array.isArray(state.reads)) state.reads = [];       // 阅读记录：{id,date,minutes,lang,fic,book}
   if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
+  ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
   /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
   (state.todos||[]).forEach(t=>{ if(t && typeof t.qualified==="undefined") t.qualified = true; });
   /* v.97：兼容旧数据 —— 未标记「是否统计」的作业一律视为计入统计 */
@@ -1397,6 +1412,82 @@ const MIN_STAT_MS = 60000;
 /* 实际记录时长：手动输入（manualMin）优先；未手动输入时取计时器真实累计 spentOf */
 function recMs(t){ return (t && t.manualMin && t.manualMin>0) ? t.manualMin*60000 : spentOf(t); }
 function isTimed(t){ return recMs(t) >= MIN_STAT_MS; }
+/* ===== v.103：摆烂卡 =====
+   数据模型 state.bailan = { cards:[{id,issue:'YYYY-MM',expire:'YYYY-MM',spent:false}], usedDays:{'YYYY-MM-DD':cardId}, issuedMonth:'YYYY-MM' }
+   - 每月 1 日发放 2 张（首次打开当月即发放；跨月自动补发），有效期 2 个月（含发放月与次月），过期清零。
+   - usedDays 标记摆烂日（值=消耗的卡 id，便于取消时归还）。
+   - 摆烂日视为「当日无任何任务」：不发星、各项个数清零、不计入任何统计。 */
+function monthStrOf(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1); }
+function addMonthsStr(ym, n){
+  let [y,m] = ym.split("-").map(Number); m += n;
+  while(m>12){ m-=12; y++; } while(m<1){ m+=12; y--; }
+  return y+"-"+pad2(m);
+}
+function ensureBailan(){
+  if(!state.bailan) state.bailan = { cards:[], usedDays:{}, issuedMonth:null };
+  if(!Array.isArray(state.bailan.cards)) state.bailan.cards = [];
+  if(!state.bailan.usedDays) state.bailan.usedDays = {};
+  if(typeof state.bailan.issuedMonth==="undefined") state.bailan.issuedMonth = null;
+  issueBailanIfNeeded();
+}
+function issueBailanIfNeeded(){
+  const cm = monthStrOf(new Date());
+  // 清理过期卡（expire < 当前月）：过期清零
+  state.bailan.cards = state.bailan.cards.filter(c => c.expire >= cm);
+  if(state.bailan.issuedMonth !== cm){
+    for(let i=0;i<2;i++) state.bailan.cards.push({ id:uid(), issue:cm, expire:addMonthsStr(cm,1), spent:false });
+    state.bailan.issuedMonth = cm;
+  }
+}
+function availBailanCards(){ const cm=monthStrOf(new Date()); return state.bailan.cards.filter(c=>!c.spent && c.expire>=cm); }
+function availBailanCount(){ return availBailanCards().length; }
+function isBailanDay(ds){ return !!(state.bailan && state.bailan.usedDays && state.bailan.usedDays[ds]); }
+function todayStr(){ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); }
+function latestExpireMonth(){
+  const cm = monthStrOf(new Date());
+  const cs = state.bailan.cards.filter(c=>c.expire>=cm);
+  if(!cs.length) return "—";
+  return cs.reduce((a,c)=> c.expire>a?c.expire:a, cs[0].expire);
+}
+function toggleBailanToday(){
+  const ds = todayStr();
+  if(isBailanDay(ds)){
+    const cid = state.bailan.usedDays[ds];
+    const c = state.bailan.cards.find(x=>x.id===cid); if(c) c.spent=false;
+    delete state.bailan.usedDays[ds];
+    save(); renderList(); toast("已取消今日摆烂，归还 1 张摆烂卡");
+  } else {
+    const card = availBailanCards()[0];
+    if(!card){ toast("无可用摆烂卡"); return; }
+    card.spent = true;
+    state.bailan.usedDays[ds] = card.id;
+    save(); renderList(); toast("今日摆烂！已消耗 1 张摆烂卡");
+  }
+}
+function bailanDaysInRange(days){ return days.filter(ds=>isBailanDay(ds)).length; }
+function bailanCardHtml(ds){
+  const isToday = ds===todayStr();
+  const on = isBailanDay(ds);
+  const avail = availBailanCount();
+  const expire = latestExpireMonth();
+  let btn;
+  if(!isToday){
+    btn = on ? `<button class="bailan-btn dis" disabled>该日已摆烂（历史）</button>`
+             : `<button class="bailan-btn dis" disabled>仅当天可摆烂</button>`;
+  } else if(on){
+    btn = `<button class="bailan-btn cancel" onclick="toggleBailanToday()">取消摆烂</button>`;
+  } else if(avail>0){
+    btn = `<button class="bailan-btn" onclick="toggleBailanToday()">今日摆烂（消耗 1 张）</button>`;
+  } else {
+    btn = `<button class="bailan-btn dis" disabled>无可用摆烂卡</button>`;
+  }
+  const expTxt = expire==="—" ? "—" : (expire.replace("-","年")+"月");
+  return `<div class="card bailan-card">
+    <div class="bl-head"><span class="bl-title">🌫 摆烂卡</span><span class="bl-count">可用 × ${avail}</span></div>
+    <div class="bl-note">每月 1 日发放 2 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
+    ${btn}
+  </div>`;
+}
 /* 有效计时分钟数组：剔除不足 1 分钟（疑似未计时）与明显过长（>3×中位数，疑似忘记按完成） */
 function validMinutes(todos){
   const ms = todos.map(t=>recMs(t)/60000).filter(m=> m>=1);
@@ -1408,6 +1499,7 @@ function validMinutes(todos){
   return ms.filter(m=> m<=cap);
 }
 function dayStats(dateStr){
+  if(isBailanDay(dateStr)) return {ts:[], done:0, total:0, totalMin:0, wrongSum:0, maxEnd:null, timedN:0, validN:0, untimedN:0, allDone:false};  // v.103：摆烂日视为无任务
   const ts = todosOf(dateStr);
   const done = ts.filter(t=>t.done).length;
   const timedAll = ts.filter(isTimed);              // 仅真正计时过的进用时统计
@@ -1436,6 +1528,7 @@ const STAR_LATE_DAYS  = 2;              // D+2 天内完成 → 1 星
 const STAR_DEADLINE_MIN = 21*60;        // 21:00 前结束 → +1 星
 const STAR_WRONG_LT   = 5;              // 错题少于 5 题 → +1 星
 function dayStars(dateStr){
+  if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, settled:false, pending:false, total:0};  // v.103：摆烂日不发星
   const s = dayStats(dateStr);
   const ts = s.ts || [];
   const total = ts.length;
@@ -1675,6 +1768,8 @@ function orderHw(arr, ids){
    输入当日清单 ts，返回计数与时长（混合口径：计时项用真实用时，未计时用预估分）。
    注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
 function dayListStats(ts, dsStr){
+  // v.103：摆烂日视为无任务 —— 各项个数与时长全部清零
+  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, laterEst:0, undoneEst:0, madeUpEst:0, workEst:0 };
   // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
   const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
   const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日清单按时完成（非补做）
@@ -1733,7 +1828,13 @@ function renderList(){
 
   // 顶部统计栏与四时长摘要：统计计算已抽为 dayStats()（纯函数，便于单测）
   const dsStr = ymd(viewDate);
-  let html = dayStatsHtml(dayListStats(ts, dsStr));
+  const bailanDay = isBailanDay(ds);
+  let html = "";
+  if(bailanDay){
+    // v.103：摆烂日横幅（在当日完成等项之前）
+    html += `<div class="bailan-banner">${ ds===todayStr() ? "今日摆烂！" : "摆烂日" }</div>`;
+  }
+  html += dayStatsHtml(dayListStats(ts, dsStr));
   /* 按可变科目表（state.subjects）顺序渲染卡片；卡片头仅保留齿轮设置；归档卡置灰只读。
      注：科目改名 / 删除 / 新增 / 恢复统一在下方「添加作业」栏（需开启 subjEditOn），见 v.81/v.82。 */
   subjArr.forEach((sObj, subjIdxRender)=>{
@@ -1746,7 +1847,7 @@ function renderList(){
     const eOn = editBooks.has(subj);
     const style = ` style="--sc:${sObj.color||"#6B8E5A"}"`;
     /* v.81：科目卡内不再提供 改名 / 删除 / 新增 / 拖拽 —— 科目管理统一收敛到下方「添加作业」栏 */
-    html += `<div class="card${eOn?' editing':''}${arc?' archived':''}"${style}>
+    html += `<div class="card${eOn?' editing':''}${arc?' archived':''}${bailanDay?' bailan-gray':''}"${style}>
       <div class="card-h">
         <span class="subj-dot" style="background:${sObj.color||"#6B8E5A"}"></span>
         <span class="subj-title" style="color:${sObj.color||"#6B8E5A"}">${esc(subj)}${arc?'<i class="arc-tag">已删除</i>':""}</span>
@@ -1767,7 +1868,7 @@ function renderList(){
 
   /* v.91：阅读栏 —— 排在所有科目卡之后（清单最后一个栏目项）。
      独立于 state.todos，不计入完成 / 未完成结算，只做阅读统计与阅读奖励。 */
-  html += readCardHtml(ds);
+  html += bailanDay ? `<div class="bailan-gray">${readCardHtml(ds)}</div>` : readCardHtml(ds);
 
   // 添加作业统一卡（v.85：设置模式下支持科目与常用词拖拽排序）
   html += `<div class="card">
@@ -1814,6 +1915,9 @@ function renderList(){
       <div id="hwChips" class="hw-chips"></div>
     </div>
   </div>`;
+
+  /* v.103：摆烂卡 —— 出现在「添加作业」下方；仅当天可摆烂，消耗摆烂卡 */
+  html += bailanCardHtml(ds);
 
   $("listContent").innerHTML = html;
   renderHWChips();
@@ -2988,7 +3092,9 @@ function renderSummary(){
 
   // 收集范围内的所有作业实例，按「小项」合并（同 科目+名称 视为同一项，跨母版/一次性合并统计）
   const groups = {};
+  const bailanN = days.filter(ds=>isBailanDay(ds)).length;   // v.103：摆烂日已排除，这里仅用于提示
   days.forEach(ds=>{
+    if(isBailanDay(ds)) return;        // v.103：摆烂日视为无任务，不计入统计栏
     todosOf(ds).forEach(t=>{
       if(!todoCounted(t)) return;     // v.99：按「最新常用词定义」判定是否计入统计栏（无对应词时回落到条目 stats 快照）
       const key = (t.subject||"其他")+"||"+(t.title||"(未命名)");
@@ -3036,7 +3142,7 @@ function renderSummary(){
   const SORT_LABEL = {"doneN":"完成次数","undoneN":"未完成次数","avgMin":"平均用时","avgWrong":"平均错误"};
   const sortTip = sumSort.key ? `按 ${SORT_LABEL[sumSort.key]}${sumSort.dir>0?"升序":"降序"}（点表头切换）` : "点表头可排序";
 
-  let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次</div></div>`;
+  let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次${bailanN?` · 摆烂 ${bailanN} 天已排除`:''}</div></div>`;
   html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">${sortTip}</span></div>`;
   // 可点击排序的表头（与下方四格对齐）
   const cols=[["doneN","完成次数"],["undoneN","未完"],["avgMin","平均用时"],["avgWrong","平均错误"]];
@@ -3095,7 +3201,8 @@ function renderMonth(){
   // 汇总全月（仅统计今日以前的日期，不含今日）
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>=today) continue;   // 不含今日：今日数据仍在变动，不计入月度统计
-    const ds=ymd(dt); const st=dayStars(ds); const s=dayStats(ds);
+    const ds=ymd(dt); if(isBailanDay(ds)) continue;     // v.103：摆烂日不计入月度任何统计
+    const st=dayStars(ds); const s=dayStats(ds);
     stars += st.stars; if(st.allDone) full++; hours += s.totalMin/60;
     // 口径与作业清单严格一致：当月未完成 = 待完成（仅 !done）；当月未订正 = 待订正（有错题未订正）
     s.ts.forEach(t=>{
@@ -3143,17 +3250,22 @@ function renderMonth(){
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); const ds=ymd(dt); const st=dayStars(ds);
     const isToday = sameDay(dt, today);
+    const bl = isBailanDay(ds);
     // 星星按「获得原因」分色：当天完成(金) / 21:00 前(墨绿) / 错题<5(绿) / D+2 内完成(浅橙)
     const starTxt = st.stars>0
       ? (st.parts||[]).map(p=>`<span class="st st-${p.k}">${"★".repeat(p.n)}</span>`).join("")
       : (st.pending ? '<span class="s0">待</span>' : '<span class="s0">·</span>');
-    grid += `<div class="cal-cell ${isToday?'today':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div><div class="stars">${starTxt}</div>${readDateSet.has(ds)?'<i class="cal-read" title="当天有阅读记录">📖</i>':''}</div>`;
+    const inner = bl
+      ? `<div class="bl-tag">摆烂</div>`
+      : `<div class="stars">${starTxt}</div>${readDateSet.has(ds)?'<i class="cal-read" title="当天有阅读记录">📖</i>':''}`;
+    grid += `<div class="cal-cell ${isToday?'today':''}${bl?' bailan':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div>${inner}</div>`;
   }
   grid += `</div><div class="legend-row">
     <span><i style="background:var(--sun)"></i>当天完成 2 星</span>
     <span><i style="background:var(--ink)"></i>21:00 前 +1</span>
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
     <span><i style="background:var(--sun-light)"></i>D+2 内 1 星</span>
+    <span><i style="background:#f1f1f1;border:1px solid #ddd"></i>摆烂日（无星）</span>
     <span>📖 当天有阅读</span>
   </div>
   <div class="month-note">月度合格标准：未完成 + 未订正 ≤ 10 项</div>
@@ -3179,7 +3291,8 @@ function renderMonth(){
   const unf = [], unc = [], unq = [];
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>=today) break;      // 仅统计今天以前的日期
-    (dayStats(ymd(dt)).ts||[]).forEach(t=>{
+    const ds=ymd(dt); if(isBailanDay(ds)) continue;     // v.103：摆烂日视为无任务，不进未完成/未订正清单
+    (dayStats(ds).ts||[]).forEach(t=>{
       if(!t.done) unf.push({d:d, t:t, left:makeupDaysLeft(t)});
       if((t.wrong||0)>0 && !t.corrected) unc.push({d:d, t:t});
       if(t.qualified===false) unq.push({d:d, t:t});     // v.96：不合格（默认合格）
@@ -4378,7 +4491,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.28.102";
+const APP_VERSION = "2026.10.29.103";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
