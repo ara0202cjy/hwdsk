@@ -1434,12 +1434,21 @@ function ensureBailan(){
   if(typeof state.bailan.issuedMonth==="undefined") state.bailan.issuedMonth = null;
   issueBailanIfNeeded();
 }
+/* v.109：各月摆烂卡发放张数 —— 2026-10（上线月，已近月底）发 1 张，之后每月 2 张 */
+function bailanIssueCount(ym){ return ym==="2026-10" ? 1 : 2; }
 function issueBailanIfNeeded(){
   const cm = monthStrOf(new Date());
   // 清理过期卡（expire < 当前月）：过期清零
   state.bailan.cards = state.bailan.cards.filter(c => c.expire >= cm);
+  // v.109：矫正——旧版本当月多发（如 2026-10 发过 2 张）裁剪到应发数（只裁未消耗卡，保留前 n 张）
+  const n = bailanIssueCount(cm);
+  const unusedCur = state.bailan.cards.filter(c => c.issue===cm && !c.spent);
+  if(unusedCur.length > n){
+    const keep = new Set(unusedCur.slice(0,n).map(c=>c.id));
+    state.bailan.cards = state.bailan.cards.filter(c => !(c.issue===cm && !c.spent) || keep.has(c.id));
+  }
   if(state.bailan.issuedMonth !== cm){
-    for(let i=0;i<2;i++) state.bailan.cards.push({ id:uid(), issue:cm, expire:addMonthsStr(cm,1), spent:false });
+    for(let i=0;i<n;i++) state.bailan.cards.push({ id:uid(), issue:cm, expire:addMonthsStr(cm,1), spent:false });
     state.bailan.issuedMonth = cm;
   }
 }
@@ -3257,13 +3266,16 @@ function renderMonth(){
     <div class="kpi-cell"><div class="v g">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
   </div>`;
 
-  // 月度合格状态：未完成 + 未订正 > 10 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // 月度合格状态：未完成 + 未订正 > 上限 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // v.109：上限随当月摆烂卡使用数递减 —— 每用 1 张 −3（10→7→4→1），用满 4 张及以上须全部完成
   const badTotal = unfinished + uncorr;
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
+  const bailanUsed = bailanDaysInRange(Array.from({length:days},(_,i)=>ymd(new Date(y,m,i+1))));
+  const qualLimit = Math.max(0, 10 - 3*bailanUsed);
   let qualCls, qualTxt;
   if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
-  else if(badTotal > 10){ qualCls="qual-fail"; qualTxt="本月不合格"; }
+  else if(badTotal > qualLimit){ qualCls="qual-fail"; qualTxt="本月不合格"; }
   else { qualCls="qual-ok"; qualTxt="本月合格"; }
 
   let grid = `<div class="cal"><div class="cal-grid">`;
@@ -3290,7 +3302,9 @@ function renderMonth(){
     <span><i style="background:#f1f1f1;border:1px solid #ddd"></i>摆烂日（无星）</span>
     <span>📖 当天有阅读</span>
   </div>
-  <div class="month-note">月度合格标准：未完成 + 未订正 ≤ 10 项</div>
+  <div class="month-note">${ bailanUsed>0
+    ? `月度合格标准：未完成 + 未订正 ${qualLimit===0 ? "须全部完成" : "≤ "+qualLimit+" 项"}（本月已用摆烂卡 ${bailanUsed} 张，每张 −3）`
+    : "月度合格标准：未完成 + 未订正 ≤ 10 项" }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡 + 目标 + 阅读 + 额外奖励(正) − 额外惩罚(负) = 本月星星
@@ -4516,7 +4530,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.29.108";
+const APP_VERSION = "2026.10.29.109";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
