@@ -700,6 +700,8 @@
   .mu-dot{width:9px; height:9px; border-radius:3px; flex:0 0 auto;}
   .mu-date{font-size:11px; color:var(--muted); font-weight:700; flex:0 0 auto; min-width:36px;}
   .mu-title{flex:1; min-width:0; font-size:12.5px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* v.115：未完成项后展示该项预计时长，如 (10min) */
+  .mu-time{flex:0 0 auto; font-size:11px; color:var(--muted); font-weight:600; margin-left:2px; white-space:nowrap;}
   .mu-go{font-size:11px; color:var(--sun); font-weight:700; flex:0 0 auto;}
   /* 剩余补打卡天数 */
   .mu-left{font-size:11px; color:var(--sun); font-weight:700; flex:0 0 auto; white-space:nowrap;}
@@ -3474,10 +3476,11 @@ function renderMonth(){
     return (a.left-b.left) || (a.d-b.d);                // 可补打卡组：剩余天数升序（越急越靠前）
   });
   unc.sort((a,b)=> (a.d-b.d) || 0);                     // 未订正：作业日先后（拖得久的靠前）
-  const muRow = (x, right, cls)=>`<div class="${cls||"mu-row"}" onclick="gotoDate(${y},${m},${x.d})">
+  const muRow = (x, right, cls, mid)=>`<div class="${cls||"mu-row"}" onclick="gotoDate(${y},${m},${x.d})">
         <span class="mu-dot" style="background:${subjColor(x.t.subject)}"></span>
         <span class="mu-date">${m+1}/${x.d}</span>
         <span class="mu-title">${esc(x.t.title)}</span>
+        ${mid||""}
         ${right}
       </div>`;
   let mu = `<div class="mu"><div class="mu-h">本月未完成 &amp; 未订正（不含今日及以后）<span class="mu-n">未完成 ${unf.length} · 未订正 ${unc.length} · 不合格 ${unq.length}</span></div>`;
@@ -3490,7 +3493,9 @@ function renderMonth(){
       const right = locked
         ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
         : `<span class="mu-left">${x.left===0 ? "今天截止" : "剩 "+x.left+" 天"}</span><span class="mu-go">去完成 ›</span>`;
-      mu += muRow(x, right, cls);
+      const em = x.t.estMin||0;
+      const mid = em>0 ? `<span class="mu-time">(${em}min)</span>` : "";
+      mu += muRow(x, right, cls, mid);
     });
   } else {
     mu += `<div class="mu-empty">本月暂无未完成项 🎉</div>`;
@@ -4668,7 +4673,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.30.114";
+const APP_VERSION = "2026.10.30.115";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
