@@ -637,7 +637,7 @@
   .kpi-cell .v{font-size:20px; font-weight:800; color:var(--ink); line-height:1.1;}
   .kpi-cell .v.g{color:var(--green);}
   .kpi-cell .v.warn{color:var(--sun);}
-  .kpi-cell .k{font-size:10.5px; color:var(--muted); margin-top:4px;}
+  .kpi-cell .k{font-size:10px; color:var(--muted); margin-top:4px; line-height:1.35;}
   .cal{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px;}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
   .cal-dow{text-align:center; font-size:11px; color:var(--muted); padding:4px 0; font-weight:600;}
@@ -665,12 +665,29 @@
   .month-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .legend-row{display:flex; gap:12px; font-size:11px; color:var(--muted); margin-top:10px; flex-wrap:wrap;}
   .legend-row i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:-1px; background:var(--sun);}
-  .month-note{ font-size:12.5px; font-weight:700; color:var(--sun); margin-top:8px; padding:9px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
+  .month-note{ font-size:11.5px; font-weight:600; color:var(--muted); margin-top:6px; padding:8px 10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); line-height:1.5; }
+  /* v.112：本月合格标准（大字突出）+ 灰色细则 */
+  .month-std{ margin-top:8px; padding:13px 14px 11px; background:var(--card); border-radius:12px; text-align:center; box-shadow:var(--shadow); }
+  .month-std .ms-main{ font-size:17px; font-weight:800; color:var(--ink); letter-spacing:.2px; }
+  .month-std .ms-main b{ font-size:27px; font-weight:800; color:#3F4A66; margin:0 2px; letter-spacing:0; }
+  .month-std .ms-sub{ font-size:12px; font-weight:700; color:var(--muted); margin-top:4px; }
   /* 本月合格状态：合格=绿 / 不合格=橙 / 未结束=灰 */
   .month-qual{ font-size:13.5px; font-weight:800; letter-spacing:.5px; margin-top:8px; padding:10px; background:var(--card); border-radius:10px; text-align:center; box-shadow:var(--shadow); }
   .month-qual.qual-ok{ color:var(--green); }
   .month-qual.qual-fail{ color:var(--sun); }
   .month-qual.qual-pending{ color:var(--muted); }
+  /* v.112：奖励栏「晚睡统计」环形图 */
+  .ns-body{ display:flex; align-items:center; gap:16px; margin-top:8px; }
+  .ns-donut-wrap{ position:relative; width:104px; height:104px; flex:none; }
+  .ns-donut{ width:104px; height:104px; display:block; }
+  .ns-mid{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ns-mid b{ font-size:19px; font-weight:800; color:#3F4A66; line-height:1.1; }
+  .ns-mid span{ font-size:10px; font-weight:700; color:var(--muted); margin-top:2px; }
+  .ns-legend{ flex:1; font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.95; }
+  .ns-li{ display:flex; align-items:center; gap:6px; }
+  .ns-li i{ width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+  .ns-li b{ font-size:14px; font-weight:800; }
+  .ns-sum{ margin-top:5px; font-size:11px; font-weight:600; color:var(--muted); }
   /* 本月未完成清单（日历下方，点击跳转去完成） */
   .mu{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
   .mu-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
@@ -1456,11 +1473,15 @@ function issueBailanIfNeeded(){
   const cm = monthStrOf(new Date());
   // 清理过期卡（expire < 当前月）：过期清零
   state.bailan.cards = state.bailan.cards.filter(c => c.expire >= cm);
-  // v.109：矫正——旧版本当月多发（如 2026-10 发过 2 张）裁剪到应发数（只裁未消耗卡，保留前 n 张）
+  /* v.112：矫正多发 —— 已消耗的卡一张都不动（删掉会凭空多出可用卡），未消耗的只留到「应发数 − 已消耗数」。
+     例：2026-10 应发 1 张、已用 1 张（10-28）→ 未消耗额度 0 → 多出来的未用卡全部裁掉，可用显示 0。 */
   const n = bailanIssueCount(cm);
-  const unusedCur = state.bailan.cards.filter(c => c.issue===cm && !c.spent);
-  if(unusedCur.length > n){
-    const keep = new Set(unusedCur.slice(0,n).map(c=>c.id));
+  const curCards = state.bailan.cards.filter(c => c.issue===cm);
+  const spentCnt = curCards.filter(c => c.spent).length;
+  const unusedCur = curCards.filter(c => !c.spent);
+  const allowUnused = Math.max(0, n - spentCnt);
+  if(unusedCur.length > allowUnused){
+    const keep = new Set(unusedCur.slice(0,allowUnused).map(c=>c.id));
     state.bailan.cards = state.bailan.cards.filter(c => !(c.issue===cm && !c.spent) || keep.has(c.id));
   }
   if(state.bailan.issuedMonth !== cm){
@@ -1531,7 +1552,7 @@ function bailanCardHtml(ds){
   const titleTxt = on ? `🌫 已摆烂（${isToday?'今日':ds}）` : "🌫 摆烂卡";
   return `<div class="${cardCls}">
     <div class="bl-head"><span class="bl-title">${titleTxt}</span><span class="bl-count">可用 × ${avail}</span></div>
-    <div class="bl-note">每月 1 日发放 2 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
+    <div class="bl-note">本月发放 ${bailanIssueCount(monthStrOf(new Date()))} 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
     ${btn}
   </div>`;
 }
@@ -2380,6 +2401,49 @@ function readMonthBlock(ym){
     ${bookHtml}
   </div>`;
 }
+
+/* v.112：奖励栏「晚睡统计」——本月 1 日至今天，晚睡天数 / 非晚睡天数占比（环形图） */
+function nightMonthBlock(ym){
+  const yy = parseInt(ym.slice(0,4),10), mm = parseInt(ym.slice(5,7),10);
+  const daysInMonth = new Date(yy, mm, 0).getDate();
+  const curYm = ymd(new Date()).slice(0,7);
+  let endDay = daysInMonth;
+  if(ym > curYm) endDay = 0;                       // 未来月：无数据
+  else if(ym === curYm) endDay = new Date().getDate();   // 本月：1 号 → 今天
+  let nights = 0, total = 0;
+  for(let d=1; d<=endDay; d++){
+    total++;
+    if(isNightDay(ymd(new Date(yy, mm-1, d)))) nights++;
+  }
+  const non = total - nights;
+  const pct = total>0 ? Math.round(nights/total*100) : 0;
+  const starCut = Math.floor(nights/4);
+  const C = 2 * Math.PI * 46;
+  const arc = C * (total>0 ? nights/total : 0);
+  const label = yy+"年"+mm+"月";
+  return `<div class="rw-card nightstat">
+    <div class="rw-head">
+      <div class="rw-h-left"><span class="rw-ic" style="color:#5B6B8C">🌙</span><div><div class="rw-name">晚睡统计</div><div class="rw-desc">本月 1 日至今天的晚睡占比（每 4 个晚睡扣 1 星）</div></div></div>
+      <div class="rd-m">${label}</div>
+    </div>
+    <div class="ns-body">
+      <div class="ns-donut-wrap">
+        <svg class="ns-donut" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="46" fill="none" stroke="#E6EAF2" stroke-width="14"/>
+          <circle cx="60" cy="60" r="46" fill="none" stroke="#5B6B8C" stroke-width="14" stroke-linecap="round"
+                  stroke-dasharray="${arc.toFixed(1)} ${(C-arc).toFixed(1)}" transform="rotate(-90 60 60)"/>
+        </svg>
+        <div class="ns-mid"><b>${pct}%</b><span>晚睡占比</span></div>
+      </div>
+      <div class="ns-legend">
+        <div class="ns-li"><i style="background:#5B6B8C"></i><span>晚睡</span><b>${nights}</b><span>天</span></div>
+        <div class="ns-li"><i style="background:#E6EAF2"></i><span>非晚睡</span><b>${non}</b><span>天</span></div>
+        <div class="ns-sum">${ total>0 ? `已统计 ${total} 天 · 已扣 ${starCut} 星` : "本月还没有可统计的天数" }</div>
+      </div>
+    </div>
+  </div>`;
+}
+
 
 /* 展开后可编辑的字段：具体内容 / 预估时间 / 错题数量（未完成与已完成共用） */
 function expoFields(t){
@@ -3315,19 +3379,20 @@ function renderMonth(){
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
     <div class="kpi-cell"><div class="v warn">${unfinished}</div><div class="k">当月未完成</div></div>
     <div class="kpi-cell"><div class="v warn">${uncorr}</div><div class="k">当月未订正</div></div>
-    <div class="kpi-cell"><div class="v warn">${unfinMin}</div><div class="k">未完成时长(分)</div></div>
+    <div class="kpi-cell"><div class="v warn">${unfinMin}</div><div class="k">未完成<br>时长(分)</div></div>
   </div>`;
 
-  // 月度合格状态：未完成 预计时长（分钟）≥ 150 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // 月度合格状态：未完成 预计时长（分钟）≥ 合格线 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // v.112：合格线 = 150 − 50×本月已用摆烂卡（用卡后标准**收紧**）；展示为「≤ 合格线−1 分钟」
   // v.111：只计「未完成」，未订正不再计入时长（未订正仍单独在 KPI/清单里显示）
-  // v.110：基准 150 分钟；每用 1 张摆烂卡，未完成时长 −50 分钟后再判（容忍度 +50）
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
   const bailanUsed = bailanDaysInRange(Array.from({length:days},(_,i)=>ymd(new Date(y,m,i+1))));
-  const effMin = Math.max(0, unfinMin - 50*bailanUsed);
+  const stdMin = Math.max(1, 150 - 50*bailanUsed);   // 合格线（未完成分钟 ≥ 该值即不合格）；下限保 1，避免负数
+  const stdShow = stdMin - 1;                        // 展示值：≤ stdShow 分钟即合格
   let qualCls, qualTxt;
   if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
-  else if(effMin >= 150){ qualCls="qual-fail"; qualTxt="本月不合格"; }
+  else if(unfinMin >= stdMin){ qualCls="qual-fail"; qualTxt="本月不合格"; }
   else { qualCls="qual-ok"; qualTxt="本月合格"; }
 
   let grid = `<div class="cal"><div class="cal-grid">`;
@@ -3356,9 +3421,13 @@ function renderMonth(){
     <span>🌙 晚睡（每 4 个扣 1 星）</span>
     <span>📖 当天有阅读</span>
   </div>
-  <div class="month-note">${ bailanUsed>0
-    ? `月度合格标准：未完成 预计时长（分）每张摆烂卡 −50 后须 ＜ 150（本月已用摆烂卡 ${bailanUsed} 张 · 不含未订正）`
-    : "月度合格标准：未完成 预计时长（分）须 ＜ 150（不含未订正）" }</div>
+  <div class="month-std">
+    <div class="ms-main">本月合格标准：≤<b>${stdShow}</b>分钟</div>
+    <div class="ms-sub">（会结合摆烂卡的使用产生变化）</div>
+  </div>
+  <div class="month-note">口径：只统计「未完成」的预计时长，不含未订正${ bailanUsed>0
+    ? ` · 本月已用摆烂卡 ${bailanUsed} 张，标准 −${50*bailanUsed} 分钟`
+    : "" }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡 + 目标 + 阅读 + 额外奖励(正) − 额外惩罚(负) = 本月星星
@@ -3645,6 +3714,8 @@ function renderReward(){
 
   /* v.94：阅读统计（本月）板块从「月度」页迁到「奖励」页，按奖励页所选月份口径展示 */
   html += readMonthBlock(ym);
+  /* v.112：晚睡统计（本月 1 日至今天的晚睡/非晚睡占比） */
+  html += nightMonthBlock(ym);
 
   $("rewardContent").innerHTML = html;
 }
@@ -4588,7 +4659,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.30.111";
+const APP_VERSION = "2026.10.30.112";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
