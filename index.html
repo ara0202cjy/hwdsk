@@ -3286,11 +3286,10 @@ function renderMonth(){
     stars += st.stars; if(st.allDone) full++;
     // 口径与作业清单严格一致：当月未完成 = 待完成（仅 !done）；当月未订正 = 待订正（有错题未订正）
     s.ts.forEach(t=>{
-      const bad = !t.done || ((t.wrong||0)>0 && !t.corrected);
       if(!t.done) unfinished++;                                       // 待完成：与清单一致（不含已完成的未订正）
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
       if(t.qualified===false) unqual++;                               // v.96：不合格（默认合格，展开栏内单独勾选）
-      if(bad) unfinMin += (t.estMin||0);                              // v.110：未完成+未订正 预计时长（分钟）合计
+      if(!t.done) unfinMin += (t.estMin||0);                          // v.111：合格口径只计「未完成」（不再计入未订正）
     });
   }
   /* v.96：不合格扣星 —— 每 3 次不合格扣 1 颗星（向下取整，计入本月星星总数） */
@@ -3319,7 +3318,8 @@ function renderMonth(){
     <div class="kpi-cell"><div class="v warn">${unfinMin}</div><div class="k">未完成时长(分)</div></div>
   </div>`;
 
-  // 月度合格状态：未完成+未订正 预计时长（分钟）≥ 150 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // 月度合格状态：未完成 预计时长（分钟）≥ 150 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // v.111：只计「未完成」，未订正不再计入时长（未订正仍单独在 KPI/清单里显示）
   // v.110：基准 150 分钟；每用 1 张摆烂卡，未完成时长 −50 分钟后再判（容忍度 +50）
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
@@ -3357,8 +3357,8 @@ function renderMonth(){
     <span>📖 当天有阅读</span>
   </div>
   <div class="month-note">${ bailanUsed>0
-    ? `月度合格标准：未完成+未订正 预计时长（分）每张摆烂卡 −50 后须 ＜ 150（本月已用摆烂卡 ${bailanUsed} 张）`
-    : "月度合格标准：未完成+未订正 预计时长（分）须 ＜ 150" }</div>
+    ? `月度合格标准：未完成 预计时长（分）每张摆烂卡 −50 后须 ＜ 150（本月已用摆烂卡 ${bailanUsed} 张 · 不含未订正）`
+    : "月度合格标准：未完成 预计时长（分）须 ＜ 150（不含未订正）" }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡 + 目标 + 阅读 + 额外奖励(正) − 额外惩罚(负) = 本月星星
@@ -4588,7 +4588,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.30.110";
+const APP_VERSION = "2026.10.30.111";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
