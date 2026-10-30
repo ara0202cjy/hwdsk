@@ -1467,8 +1467,14 @@ function ensureBailan(){
 function ensureNights(){
   if(!state.nights || typeof state.nights!=="object") state.nights = {};
 }
-/* v.109：各月摆烂卡发放张数 —— 2026-10（上线月，已近月底）发 1 张，之后每月 2 张 */
-function bailanIssueCount(ym){ return ym==="2026-10" ? 1 : 2; }
+/* v.113：摆烂卡发放规则（用户口径）——
+   · 2026-10 之前：不发放（0 张）
+   · 2026-10：只发 1 张
+   · 2026-11 起：每月 1 日发 2 张；每张有效期 2 个自然月（issue 当月 + 次月，expire = 次月） */
+function bailanIssueCount(ym){
+  if(ym < "2026-10") return 0;
+  return ym === "2026-10" ? 1 : 2;
+}
 function issueBailanIfNeeded(){
   const cm = monthStrOf(new Date());
   // 清理过期卡（expire < 当前月）：过期清零
@@ -1552,7 +1558,7 @@ function bailanCardHtml(ds){
   const titleTxt = on ? `🌫 已摆烂（${isToday?'今日':ds}）` : "🌫 摆烂卡";
   return `<div class="${cardCls}">
     <div class="bl-head"><span class="bl-title">${titleTxt}</span><span class="bl-count">可用 × ${avail}</span></div>
-    <div class="bl-note">本月发放 ${bailanIssueCount(monthStrOf(new Date()))} 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
+    <div class="bl-note">每月 1 日发 2 张${ monthStrOf(new Date())==="2026-10" ? "（2026 年 10 月只发 1 张）" : "" }，每张有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
     ${btn}
   </div>`;
 }
@@ -3426,7 +3432,7 @@ function renderMonth(){
     <div class="ms-sub">（会结合摆烂卡的使用产生变化）</div>
   </div>
   <div class="month-note">口径：只统计「未完成」的预计时长，不含未订正${ bailanUsed>0
-    ? ` · 本月已用摆烂卡 ${bailanUsed} 张，标准 −${50*bailanUsed} 分钟`
+    ? ` · 本月已用摆烂卡 ${bailanUsed} 张：150 − ${50*bailanUsed} = ${stdMin}，未完成达 ${stdMin} 分钟即不合格`
     : "" }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
@@ -4659,7 +4665,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.30.112";
+const APP_VERSION = "2026.10.30.113";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
