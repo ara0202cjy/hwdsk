@@ -410,6 +410,17 @@
   .bailan-card.bailan-on{ border-color:#C2A9B0; background:linear-gradient(135deg,#fff,#F3E4E7); }
   .cal-cell.bailan{ background:#f1f1f1; color:#bdbdbd; }
   .cal-cell.bailan .bl-tag{ font-size:9px; color:#9a9a9a; font-weight:800; margin-top:1px; }
+  /* v.110：晚上设置（晚睡）卡片 + 月历 🌙 角标 */
+  .night-card{ border:1.5px solid #C7CCDA; background:linear-gradient(135deg,#fff,#EAEDF4); }
+  .night-card .bl-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .night-card .bl-title{ font-size:14px; font-weight:800; color:#3F4A66; }
+  .night-card .bl-note{ font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:10px; }
+  .night-btn{ width:100%; border:none; border-radius:11px; padding:13px; font-size:15px; font-weight:800; cursor:pointer; letter-spacing:.5px; -webkit-tap-highlight-color:transparent; }
+  .night-btn:not(.dis):not(.cancel){ background:#5B6B8C; color:#FBF8F9; box-shadow:0 3px 9px rgba(91,107,140,.22); }
+  .night-btn:not(.dis):not(.cancel):active{ transform:translateY(1px); background:#4E5C7A; }
+  .night-btn.cancel{ background:#E3E6EE; color:#3F4A66; border:1px solid #C7CCDA; }
+  .night-card.night-on{ border-color:#A9B2CC; background:linear-gradient(135deg,#fff,#DDE3F0); }
+  .cal-night{position:absolute; top:1px; left:2px; font-size:9px; line-height:1; opacity:.85;}   /* v.110：晚睡（左上角） */
   /* 阅读统计（累计） */
   .read-stats{background:linear-gradient(135deg,#f6f1ff,#efe7fb); border:1.5px solid #e3d8f2; border-radius:14px; padding:11px 13px; margin-top:4px;}
   .rs-line{font-size:13px; color:var(--ink); font-weight:700; line-height:1.9;}
@@ -1147,6 +1158,7 @@ function load(){
   if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
+  ensureNights();                              // v.110：晚睡数据初始化
   /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
   (state.todos||[]).forEach(t=>{ if(t && typeof t.qualified==="undefined") t.qualified = true; });
   /* v.97：兼容旧数据 —— 未标记「是否统计」的作业一律视为计入统计 */
@@ -1172,7 +1184,7 @@ function save(){ saveLocal(); syncSchedule(); }
 
 function seed(){
   // 全新安装从空开始（不再生成示例数据，避免混入统计与云端）
-  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, subjects: defaultSubjects(), _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, subjects: defaultSubjects(), nights:{}, _syncedAt:0 };
 }
 function mkTodo(date, subject, title, o={}){
   return Object.assign({
@@ -1434,6 +1446,10 @@ function ensureBailan(){
   if(typeof state.bailan.issuedMonth==="undefined") state.bailan.issuedMonth = null;
   issueBailanIfNeeded();
 }
+/* v.110：晚睡（晚上设置）数据初始化 —— state.nights = {'YYYY-MM-DD': true} */
+function ensureNights(){
+  if(!state.nights || typeof state.nights!=="object") state.nights = {};
+}
 /* v.109：各月摆烂卡发放张数 —— 2026-10（上线月，已近月底）发 1 张，之后每月 2 张 */
 function bailanIssueCount(ym){ return ym==="2026-10" ? 1 : 2; }
 function issueBailanIfNeeded(){
@@ -1516,6 +1532,35 @@ function bailanCardHtml(ds){
   return `<div class="${cardCls}">
     <div class="bl-head"><span class="bl-title">${titleTxt}</span><span class="bl-count">可用 × ${avail}</span></div>
     <div class="bl-note">每月 1 日发放 2 张，有效期 2 个月（至 ${expTxt}），过期清零。<br>摆烂当日：任务变灰 · 不发星 · 不计入任何统计。</div>
+    ${btn}
+  </div>`;
+}
+/* v.110：晚上设置（晚睡）—— 在「添加作业」与「摆烂卡」之间，标记当天为晚睡。
+   与摆烂卡同口径：针对当前界面这一天（viewDate）；标记后在月度日历左上角显示 🌙；每 4 个晚睡扣 1 颗星。 */
+function isNightDay(ds){ return !!(state.nights && state.nights[ds]); }
+function nightDaysInRange(days){ return days.filter(ds=>isNightDay(ds)).length; }
+function toggleNightDay(ds){
+  if(isNightDay(ds)){
+    delete state.nights[ds];
+    renderList(); toast("已取消 "+ds+" 晚睡标记");
+    try{ save(); }catch(e){}
+  } else {
+    state.nights[ds] = true;
+    renderList(); toast("已标记 "+ds+" 为晚睡（月度日历显示 🌙）");
+    try{ save(); }catch(e){}
+  }
+}
+function nightCardHtml(ds){
+  const on = isNightDay(ds);
+  const isToday = ds===todayStr();
+  let btn;
+  if(on) btn = `<button class="night-btn cancel" onclick="toggleNightDay('${ds}')">取消晚睡</button>`;
+  else   btn = `<button class="night-btn" onclick="toggleNightDay('${ds}')">${isToday?'标记今晚晚睡':'标记晚睡'}（${ds}）</button>`;
+  const cardCls = on ? "card night-card night-on" : "card night-card";
+  const titleTxt = on ? `🌙 已晚睡（${isToday?'今晚':ds}）` : "🌙 晚上设置";
+  return `<div class="${cardCls}">
+    <div class="bl-head"><span class="bl-title">${titleTxt}</span></div>
+    <div class="bl-note">标记当天为晚睡；月度日历左上角显示 🌙；每 4 个晚睡扣 1 颗星（与摆烂卡互不影响）。</div>
     ${btn}
   </div>`;
 }
@@ -1899,7 +1944,7 @@ function renderList(){
 
   /* v.91：阅读栏 —— 排在所有科目卡之后（清单最后一个栏目项）。
      独立于 state.todos，不计入完成 / 未完成结算，只做阅读统计与阅读奖励。 */
-  html += bailanDay ? `<div class="bailan-gray">${readCardHtml(ds)}</div>` : readCardHtml(ds);
+  html += readCardHtml(ds);   // v.110：摆烂日阅读栏仍可使用（去掉 bailan-gray 灰显禁用）
 
   // 添加作业统一卡（v.85：设置模式下支持科目与常用词拖拽排序）
   html += `<div class="card">
@@ -1947,6 +1992,8 @@ function renderList(){
     </div>
   </div>`;
 
+  /* v.110：晚上设置（晚睡）—— 出现在「添加作业」与「摆烂卡」之间 */
+  html += nightCardHtml(ds);
   /* v.103：摆烂卡 —— 出现在「添加作业」下方；仅当天可摆烂，消耗摆烂卡 */
   html += bailanCardHtml(ds);
 
@@ -3227,23 +3274,29 @@ function renderMonth(){
   /* v.92：当天有阅读记录的日期，在月历格子上标一个 📖 角标（一眼看出哪天读了） */
   const readDateSet = new Set((state.reads||[]).map(r=>r.date));
   // KPI（基于当前月已过的日期）
-  let stars=0, full=0, hours=0, unfinished=0, uncorr=0, unqual=0;
+  let stars=0, full=0, unfinished=0, uncorr=0, unqual=0, unfinMin=0, nightCount=0;
   const today=new Date(); today.setHours(0,0,0,0);
   // 汇总全月（仅统计今日以前的日期，不含今日）
   for(let d=1; d<=days; d++){
     const dt=new Date(y,m,d); if(dt>=today) continue;   // 不含今日：今日数据仍在变动，不计入月度统计
-    const ds=ymd(dt); if(isBailanDay(ds)) continue;     // v.103：摆烂日不计入月度任何统计
+    const ds=ymd(dt);
+    if(isNightDay(ds)) nightCount++;                    // v.110：晚睡独立计数（不论是否摆烂）
+    if(isBailanDay(ds)) continue;                       // v.103：摆烂日不计入月度任何统计
     const st=dayStars(ds); const s=dayStats(ds);
-    stars += st.stars; if(st.allDone) full++; hours += s.totalMin/60;
+    stars += st.stars; if(st.allDone) full++;
     // 口径与作业清单严格一致：当月未完成 = 待完成（仅 !done）；当月未订正 = 待订正（有错题未订正）
     s.ts.forEach(t=>{
+      const bad = !t.done || ((t.wrong||0)>0 && !t.corrected);
       if(!t.done) unfinished++;                                       // 待完成：与清单一致（不含已完成的未订正）
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
       if(t.qualified===false) unqual++;                               // v.96：不合格（默认合格，展开栏内单独勾选）
+      if(bad) unfinMin += (t.estMin||0);                              // v.110：未完成+未订正 预计时长（分钟）合计
     });
   }
   /* v.96：不合格扣星 —— 每 3 次不合格扣 1 颗星（向下取整，计入本月星星总数） */
   const unqualStars = Math.floor(unqual / 3);
+  /* v.110：晚睡扣星 —— 每 4 个晚睡扣 1 颗星（向下取整，计入本月星星总数） */
+  const nightStars = Math.floor(nightCount / 4);
   // 额外奖励汇总（本月）：目标奖励 + 打卡奖励（均仅已完成结算） + 阅读奖励 + 额外奖励(正) − 额外惩罚(负)
   const ym = y+"-"+pad2(m+1);
   let goalStars=0, checkinStars=0, bonusStars=0, penStars=0;
@@ -3257,25 +3310,24 @@ function renderMonth(){
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars - unqualStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星
+  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars - unqualStars - nightStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星 − 晚睡扣星
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
     <div class="kpi-cell"><div class="v warn">${unfinished}</div><div class="k">当月未完成</div></div>
     <div class="kpi-cell"><div class="v warn">${uncorr}</div><div class="k">当月未订正</div></div>
-    <div class="kpi-cell"><div class="v g">${hours.toFixed(1)}</div><div class="k">总用时(时)</div></div>
+    <div class="kpi-cell"><div class="v warn">${unfinMin}</div><div class="k">未完成时长(分)</div></div>
   </div>`;
 
-  // 月度合格状态：未完成 + 未订正 > 上限 → 不合格；本月未结束（当月或未来月）→ 待结算
-  // v.109：上限随当月摆烂卡使用数递减 —— 每用 1 张 −3（10→7→4→1），用满 4 张及以上须全部完成
-  const badTotal = unfinished + uncorr;
+  // 月度合格状态：未完成+未订正 预计时长（分钟）≥ 150 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // v.110：基准 150 分钟；每用 1 张摆烂卡，未完成时长 −50 分钟后再判（容忍度 +50）
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
   const bailanUsed = bailanDaysInRange(Array.from({length:days},(_,i)=>ymd(new Date(y,m,i+1))));
-  const qualLimit = Math.max(0, 10 - 3*bailanUsed);
+  const effMin = Math.max(0, unfinMin - 50*bailanUsed);
   let qualCls, qualTxt;
   if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
-  else if(badTotal > qualLimit){ qualCls="qual-fail"; qualTxt="本月不合格"; }
+  else if(effMin >= 150){ qualCls="qual-fail"; qualTxt="本月不合格"; }
   else { qualCls="qual-ok"; qualTxt="本月合格"; }
 
   let grid = `<div class="cal"><div class="cal-grid">`;
@@ -3292,7 +3344,8 @@ function renderMonth(){
     const inner = bl
       ? `<div class="bl-tag">摆烂</div>`
       : `<div class="stars">${starTxt}</div>${readDateSet.has(ds)?'<i class="cal-read" title="当天有阅读记录">📖</i>':''}`;
-    grid += `<div class="cal-cell ${isToday?'today':''}${bl?' bailan':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div>${inner}</div>`;
+    const nightBadge = isNightDay(ds) ? `<i class="cal-night" title="晚睡">🌙</i>` : '';
+    grid += `<div class="cal-cell ${isToday?'today':''}${bl?' bailan':''}" onclick="gotoDate(${y},${m},${d})"><div>${d}</div>${nightBadge}${inner}</div>`;
   }
   grid += `</div><div class="legend-row">
     <span><i style="background:var(--sun)"></i>当天完成 2 星</span>
@@ -3300,11 +3353,12 @@ function renderMonth(){
     <span><i style="background:var(--green)"></i>错题&lt;5 +1</span>
     <span><i style="background:var(--sun-light)"></i>D+2 内 1 星</span>
     <span><i style="background:#f1f1f1;border:1px solid #ddd"></i>摆烂日（无星）</span>
+    <span>🌙 晚睡（每 4 个扣 1 星）</span>
     <span>📖 当天有阅读</span>
   </div>
   <div class="month-note">${ bailanUsed>0
-    ? `月度合格标准：未完成 + 未订正 ${qualLimit===0 ? "须全部完成" : "≤ "+qualLimit+" 项"}（本月已用摆烂卡 ${bailanUsed} 张，每张 −3）`
-    : "月度合格标准：未完成 + 未订正 ≤ 10 项" }</div>
+    ? `月度合格标准：未完成+未订正 预计时长（分）每张摆烂卡 −50 后须 ＜ 150（本月已用摆烂卡 ${bailanUsed} 张）`
+    : "月度合格标准：未完成+未订正 预计时长（分）须 ＜ 150" }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡 + 目标 + 阅读 + 额外奖励(正) − 额外惩罚(负) = 本月星星
@@ -3318,7 +3372,8 @@ function renderMonth(){
     <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
     <div class="rs-row"><span>不合格扣星</span><b class="rs-pen">−${unqualStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars} − ${penStars} − ${unqualStars} = <b>${monthStars}</b></div>
+    <div class="rs-row"><span>晚睡扣星</span><b class="rs-pen">−${nightStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars} − ${penStars} − ${unqualStars} − ${nightStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
@@ -4140,6 +4195,8 @@ function mergeState(cloud, local){
   merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
   const bailan = mergeBailan(cloud.bailan, local.bailan);   // v.108：摆烂卡随同步合并，避免 applyMerged 整体替换 state 后丢失
   if(bailan) merged.bailan = bailan;
+  const nights = Object.assign({}, cloud.nights||{}, local.nights||{});   // v.110：晚睡按日期并集
+  if(nights) merged.nights = nights;
   /* v.99：合并后按「最新常用词定义」把历史作业的统计口径写回（标记本地修改 → 随本轮同步上传云端） */
   try{ applyStatsFromHW(merged); }catch(e){}
   return merged;
@@ -4175,7 +4232,7 @@ async function writeCloud(obj, expectRev){
 /* 数据指纹：仅含真实数据，不含 _syncedAt 等易变元数据；v.80 纳入 subjects（排除其 _u） */
 function dataSig(s){
   const subs = Array.isArray(s&&s.subjects) ? s.subjects.map(x=>({name:x.name,color:x.color,arc:!!x.arc})) : null;
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null ]);
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null, (s&&s.nights)||{} ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
 function protectMerged(merged){
@@ -4199,6 +4256,7 @@ function applyMerged(merged){
   state = merged;
   ensureSubjects();          // v.80：科目表缺失时回退默认，避免变量名报错
   ensureBailan();            // v.108：兜底——旧云端数据无 bailan 时初始化，防摆烂按钮同步后失灵
+  ensureNights();            // v.110：兜底——旧云端数据无 nights 时初始化
   saveLocal();
   if(dataSig(state) !== before){ pruneTombstones(); refreshAll(); renderTasks(); }
 }
@@ -4530,7 +4588,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.29.109";
+const APP_VERSION = "2026.10.30.110";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
