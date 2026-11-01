@@ -306,6 +306,8 @@
   .field .val{font-size:14px; color:var(--text); flex:1; line-height:1.5;}
   .field textarea,.field input{width:100%; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; font-size:15px; background:#fcfaf5; resize:none; color:var(--text);}
   .field textarea{min-height:68px;}
+  /* v.120：常用词来源的清单项，名称只读提示 */
+  .hw-lock-note{font-size:11px; color:var(--muted); line-height:1.5; margin:10px 0 0;}
   .est-row{display:flex; align-items:center; gap:8px; width:100%;}
   .est-row input{flex:1; min-width:80px; text-align:left; font-size:15px; border:1.5px solid var(--line); border-radius:12px; padding:11px 12px; background:#fcfaf5;}
   .field-row{display:flex; gap:12px; margin-top:14px;}
@@ -2482,6 +2484,7 @@ function expoFields(t){
         <label>具体内容</label>
         <textarea onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','detail',this.value)" placeholder="点此填写">${esc(t.detail)}</textarea>
       </div>
+      ${ t.hwId ? `<div class="hw-lock-note">名称来自常用词，不能在清单内改名；如需改名请到「常用词」处修改（会同步到相关作业）。时间可在此单独调整。</div>` : "" }
       <div class="field-row">
         <div class="field">
           <label>预估时间</label>
@@ -2526,6 +2529,8 @@ function todoRow(t, subj, ds){
   if(t.qualified===false) meta.push(`<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>`);
   const statusCls = running ? "run" : (t.done ? "stop" : "pause");
   const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
+  /* v.120：通过常用词添加的作业（有 hwId）不允许在清单内改名，名称统一由常用词决定 */
+  const renameBtn = t.hwId ? "" : `<button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>`;
   const detail = `
     <div class="expo ${open?'open':''}" id="expo-${t.id}">
       ${expoFields(t)}
@@ -2554,7 +2559,7 @@ function todoRow(t, subj, ds){
         <span class="acts-edit">
           <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
           <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
-          <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
+          ${renameBtn}
           <button class="mini-btn del ${delLocked?'dis':''}" title="${delLocked?'已超过'+DELETE_LOCK_DAYS+'天，不可删除（仍可编辑状态/补打卡/改错题/订正）':'删除'}" ${delLocked?'disabled':''} onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         </span>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -2610,6 +2615,8 @@ function doneRow(t, subj, ds){
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : "",
     (t.qualified===false) ? `<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>` : ""
   ].filter(Boolean);
+  /* v.120：常用词来源的已完成项同样不提供改名 */
+  const renameBtn = t.hwId ? "" : `<button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>`;
   return `<div class="todo" id="todo-${t.id}">
     <span class="stamp" id="stamp-${t.id}">已完成</span>
     <div class="todo-top">
@@ -2622,7 +2629,7 @@ function doneRow(t, subj, ds){
         <span class="acts-edit">
           <button class="mini-btn lock ${t.lock==='daily'?'on':''}" title="每日固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','daily')">日</button>
           <button class="mini-btn lock week ${t.lock==='weekly'?'on':''}" title="每周固定（单击切换固定/取消）" onclick="event.stopPropagation();toggleLock('${t.id}','weekly')">周</button>
-          <button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>
+          ${renameBtn}
           <button class="mini-btn del ${delLocked?'dis':''}" title="${delLocked?'已超过'+DELETE_LOCK_DAYS+'天，不可删除（仍可编辑状态/补打卡/改错题/订正）':'删除'}" ${delLocked?'disabled':''} onclick="event.stopPropagation();delTodo('${t.id}')">${trashSvg()}</button>
         </span>
         <button class="arrow ${open?'open':''}" id="arrow-${t.id}" onclick="toggleExpo('${t.id}')">${arrowSvg()}</button>
@@ -4706,7 +4713,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.119";
+const APP_VERSION = "2026.11.01.120";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
