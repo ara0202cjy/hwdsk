@@ -2484,7 +2484,7 @@ function expoFields(t){
         <label>具体内容</label>
         <textarea onfocus="editingId='${t.id}'" onblur="editingId=null" onchange="editField('${t.id}','detail',this.value)" placeholder="点此填写">${esc(t.detail)}</textarea>
       </div>
-      ${ t.hwId ? `<div class="hw-lock-note">名称来自常用词，不能在清单内改名；如需改名请到「常用词」处修改（会同步到相关作业）。时间可在此单独调整。</div>` : "" }
+      ${ t.hwId ? `<div class="hw-lock-note">名称来自常用词，不能在清单内改名；点右侧「修改」或下方「预估时间」，可单独调整这一天的时长。</div>` : "" }
       <div class="field-row">
         <div class="field">
           <label>预估时间</label>
@@ -2529,8 +2529,8 @@ function todoRow(t, subj, ds){
   if(t.qualified===false) meta.push(`<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>`);
   const statusCls = running ? "run" : (t.done ? "stop" : "pause");
   const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
-  /* v.120：通过常用词添加的作业（有 hwId）不允许在清单内改名，名称统一由常用词决定 */
-  const renameBtn = t.hwId ? "" : `<button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>`;
+  /* v.121：常用词来源的项保留「修改」按钮 —— 只改这一项的预估时间，名称只读；手写项仍可改名 */
+  const renameBtn = `<button class="mini-btn" title="${t.hwId?'修改时间（名称不可改）':'改名'}" onclick="event.stopPropagation();editTodoItem('${t.id}')">${penSvg()}</button>`;
   const detail = `
     <div class="expo ${open?'open':''}" id="expo-${t.id}">
       ${expoFields(t)}
@@ -2615,8 +2615,8 @@ function doneRow(t, subj, ds){
     (t.wrong>0) ? `<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>` : "",
     (t.qualified===false) ? `<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>` : ""
   ].filter(Boolean);
-  /* v.120：常用词来源的已完成项同样不提供改名 */
-  const renameBtn = t.hwId ? "" : `<button class="mini-btn" title="改名" onclick="event.stopPropagation();renameTodo('${t.id}')">${penSvg()}</button>`;
+  /* v.121：常用词来源的已完成项同样只可改该项时间 */
+  const renameBtn = `<button class="mini-btn" title="${t.hwId?'修改时间（名称不可改）':'改名'}" onclick="event.stopPropagation();editTodoItem('${t.id}')">${penSvg()}</button>`;
   return `<div class="todo" id="todo-${t.id}">
     <span class="stamp" id="stamp-${t.id}">已完成</span>
     <div class="todo-top">
@@ -2769,6 +2769,24 @@ function setLock(id, type){
   toast(type==="daily"?"已设为每日锁定（仅对更改日之后生效）":"已设为每周锁定（仅对更改日之后生效）");
 }
 
+/* v.121：清单内的「修改」按钮 —— 常用词来源的作业只改这一天的预估时间，名称只读；
+   手工添加的作业无常用词约束，仍走原位改名。 */
+async function editTodoItem(id){
+  const t=getTodo(id); if(!t) return;
+  if(!t.hwId){ renameTodo(id); return; }              // 非常用词来源：保持原位改名
+  const v = await askInput({
+    title: "修改作业",
+    label: "预估时长（分钟）",
+    type: "number",
+    value: t.estMin ? String(t.estMin) : "",
+    placeholder: "如：15",
+    hint: "名称：" + t.title + "（由常用词决定，不可修改）；时间只改这一天的这一项。"
+  });
+  if(v==null) return;
+  editField(id, "estMin", v);
+  renderList();
+  toast("已更新预估时长");
+}
 function renameTodo(id){
   const t=getTodo(id); if(!t) return;
   const el=$("todo-"+id); if(!el) return;
@@ -4713,7 +4731,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.120";
+const APP_VERSION = "2026.11.01.121";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
