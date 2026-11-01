@@ -1643,8 +1643,9 @@ function dayStars(dateStr){
   const settled = dateStr < ymd(new Date());
   if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
   // v.116：完成闸门由「全部完成」改为「学习时长(按预计) ≥ 预计时长」
+  // v.118：doneEst 已改为「不含后期补做」，闸门需把该日清单内后期补做的时长加回，保持星规语义不变
   const dl = dayListStats(ts, dateStr);
-  const learnComplete = (dl.doneEst + dl.madeUpEst) >= dl.totalEst;
+  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;
   if(!learnComplete) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:settled, pending:!settled, total:total};
   // —— 全部完成：按「最晚完成日」分档 ——
   const base = parseDS(dateStr);
@@ -1880,28 +1881,31 @@ function orderHw(arr, ids){
    注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
 function dayListStats(ts, dsStr){
   // v.103：摆烂日视为无任务 —— 各项个数与时长全部清零
-  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, madeUpEst:0, learnEst:0, undoneEst:0, actualEst:0, learnComplete:false };
+  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, doneLateEst:0, madeUpEst:0, learnEst:0, undoneEst:0, actualEst:0, learnComplete:false };
   // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
   const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
   const estOf = t => (t.estMin||0);
-  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日自身项：按时完成
-  const doneLate   = ts.filter(t=>t.done && t.makeup);               // 当日自身项：后期补做完成（作业日当天完成、完成日更晚）
+  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日自身项：按时完成（当日或提前）
+  const doneLate   = ts.filter(t=>t.done && t.makeup);               // 当日自身项：后期补做完成（完成日晚于作业日）
   const undoneOwn  = ts.filter(t=>!t.done);                           // 当日自身项：未完成
   // 当日补做「其他日期」清单项：完成日==当日 且 作业日≠当日（跨日统计）
   const madeUp = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr);
   const totalEst  = ts.reduce((a,t)=>a+estOf(t),0);                  // 预计时长 = 当日自身项全部预计
-  const doneEst   = ts.filter(t=>t.done).reduce((a,t)=>a+estOf(t),0);// 当日已做 = 当日自身项已完成预计（含按时与后期补做）
+  // v.118：当日已做只算「当日做完」的项；后期补做（makeup）不计入当日已做，也不计入当日实际学习时长
+  const doneEst   = doneOnTime.reduce((a,t)=>a+estOf(t),0);          // 当日已做 = 当日自身项按时完成预计
+  const doneLateEst = doneLate.reduce((a,t)=>a+estOf(t),0);          // 该日清单内「后期补做」预计（仅用于完成闸门，不展示）
   const madeUpEst = madeUp.reduce((a,t)=>a+estOf(t),0);              // 当日补做 = 他日项当日补做预计
   const learnEst  = doneEst + madeUpEst;                             // v.117：当日学习时长 = 当日已做 + 当日补做
   const undoneEst = undoneOwn.reduce((a,t)=>a+estOf(t),0);           // 当日未完成时长 = 自身未完成预计
-  const actualEst = ts.filter(t=>t.done).reduce((a,t)=>a+durOf(t),0) + madeUp.reduce((a,t)=>a+durOf(t),0); // 当日实际学习时长(计时优先)
-  const learnComplete = learnEst >= totalEst;                        // 当日完成标准 = 当日学习时长(已做+补做) ≥ 预计时长
+  const actualEst = doneOnTime.reduce((a,t)=>a+durOf(t),0) + madeUp.reduce((a,t)=>a+durOf(t),0); // 当日实际学习时长(计时优先，不含后期补做)
+  // 完成闸门仍按「该日清单全部已完成(含后期补做) + 他日补做」判定，保持 v.116 星规语义不变
+  const learnComplete = (doneEst + doneLateEst + madeUpEst) >= totalEst;
   return {
     doneReal:     doneOnTime.length,                                 // 当日完成（真实完成、非补打卡）
     doneMakeup:   doneLate.length,                                   // 补打卡完成
     pendingCorr:  ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length,// 待订正
     pendingDone:  undoneOwn.length,                                  // 待完成
-    totalEst, doneEst, madeUpEst, learnEst, undoneEst, actualEst, learnComplete
+    totalEst, doneEst, doneLateEst, madeUpEst, learnEst, undoneEst, actualEst, learnComplete
   };
 }
 /* 顶部紧凑统计栏 + 四时长摘要栏（数字间带符号：预计 (>/</=) 当日学习时长 = 当日已做 + 当日补做） */
@@ -4693,7 +4697,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.117";
+const APP_VERSION = "2026.11.01.118";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
