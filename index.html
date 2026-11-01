@@ -1619,12 +1619,13 @@ function dayStats(dateStr){
 }
 /* 用时展示：不足 1 分钟显示「未计时」，避免把 0 分当成真实成绩 */
 function spentLabel(t){ const m=Math.round(recMs(t)/60000); return m>0 ? m+" 分" : "未计时"; }
-/* ===== 星星规则（v.44 起；v.47 把截止时间由 21:30 提前到 21:00）=====
-   前提：该日作业必须「全部完成」，否则 0 星（当日/未来日期次日结算）。
+/* ===== 星星规则（v.44 起；v.47 把截止时间由 21:30 提前到 21:00；v.116 完成闸门改为「学习时长≥预计时长」）=====
+   前提（v.116）：该日「当日学习时长(按预计) ≥ 当日预计时长」即视为完成（自身已完成项预计 + 补做他日项预计 ≥ 自身全部项预计），
+     否则 0 星（当日/未来日期次日结算）。
    1) 当天完成（含提前完成）              → 2 星
    2) 在「当天完成」基础上，21:00 前结束   → 再 +1 星
    3) D+2 天内完成（即 D+1、D+2 才做完）  → 1 星；超过 D+2 完成 → 0 星
-   4) 全部完成 且 当日错题少于 5 题       → 再 +1 星
+   4) 学习达标 且 当日错题少于 5 题       → 再 +1 星
    档位按「最晚完成日」判定（多项作业中最后一项的完成日）。
    parts 记录每一颗星的来源，供日历按原因分色显示：
    onday=当天完成(金) / early=21:00 前(墨绿) / wrong=错题<5(绿) / late=D+2 内完成(浅橙)。 */
@@ -1633,13 +1634,16 @@ const STAR_LATE_DAYS  = 2;              // D+2 天内完成 → 1 星
 const STAR_DEADLINE_MIN = 21*60;        // 21:00 前结束 → +1 星
 const STAR_WRONG_LT   = 5;              // 错题少于 5 题 → +1 星
 function dayStars(dateStr){
-  if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, settled:false, pending:false, total:0};  // v.103：摆烂日不发星
+  if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};  // v.103：摆烂日不发星
   const s = dayStats(dateStr);
   const ts = s.ts || [];
   const total = ts.length;
   const settled = dateStr < ymd(new Date());
-  if(total===0) return {stars:0, parts:[], allDone:false, settled:false, pending:false, total:0};
-  if(s.done < total) return {stars:0, parts:[], allDone:false, settled:settled, pending:!settled, total:total};
+  if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
+  // v.116：完成闸门由「全部完成」改为「学习时长(按预计) ≥ 预计时长」
+  const dl = dayListStats(ts, dateStr);
+  const learnComplete = (dl.doneEst + dl.madeUpEst) >= dl.totalEst;
+  if(!learnComplete) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:settled, pending:!settled, total:total};
   // —— 全部完成：按「最晚完成日」分档 ——
   const base = parseDS(dateStr);
   let delay = 0;                                   // 最晚完成日相对作业日的天数；提前完成按 0 计
@@ -1659,11 +1663,11 @@ function dayStars(dateStr){
     let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
     if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
   }
-  // 全部完成 且 错题少于 5 题 → +1 星
+  // 学习达标 且 错题少于 5 题 → +1 星
   const wrongSum = ts.reduce((a,t)=>a+(t.wrong||0),0);
   if(wrongSum < STAR_WRONG_LT){ stars++; parts.push({k:"wrong", n:1}); }
-  if(!settled) return {stars:0, parts:[], allDone:true, settled:false, pending:true, total:total};  // 今日/未来：次日结算，先显示「待」
-  return {stars:stars, parts:parts, allDone:true, settled:true, pending:false, total:total};
+  if(!settled) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:false, pending:true, total:total};  // 今日/未来：次日结算，先显示「待」
+  return {stars:stars, parts:parts, allDone:learnComplete, learnComplete:learnComplete, settled:true, pending:false, total:total};
 }
 
 /* ============ 渲染层 ============ */
@@ -1874,27 +1878,28 @@ function orderHw(arr, ids){
    注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
 function dayListStats(ts, dsStr){
   // v.103：摆烂日视为无任务 —— 各项个数与时长全部清零
-  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, laterEst:0, undoneEst:0, madeUpEst:0, workEst:0 };
+  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, madeUpEst:0, learnEst:0, undoneEst:0, actualEst:0, learnComplete:false };
   // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
   const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
-  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日清单按时完成（非补做）
-  const doneLater  = ts.filter(t=>t.done && t.makeup);               // 当日清单后期补做完成
-  const undone     = ts.filter(t=>!t.done);                           // 当日未完成
+  const estOf = t => (t.estMin||0);
+  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日自身项：按时完成
+  const doneLate   = ts.filter(t=>t.done && t.makeup);               // 当日自身项：后期补做完成（作业日当天完成、完成日更晚）
+  const undoneOwn  = ts.filter(t=>!t.done);                           // 当日自身项：未完成
   // 当日补做「其他日期」清单项：完成日==当日 且 作业日≠当日（跨日统计）
-  const madeUpEst  = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr)
-                      .reduce((a,t)=>a+durOf(t),0);
+  const madeUp = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr);
+  const totalEst  = ts.reduce((a,t)=>a+estOf(t),0);                  // 预计时长 = 当日自身项全部预计
+  const doneEst   = ts.filter(t=>t.done).reduce((a,t)=>a+estOf(t),0);// 当日已做 = 当日自身项已完成预计（含按时与后期补做）
+  const madeUpEst = madeUp.reduce((a,t)=>a+estOf(t),0);              // 当日补做 = 他日项当日补做预计
+  const learnEst  = totalEst + madeUpEst;                            // 当日学习时长(预计) = 自身全部 + 补做他日
+  const undoneEst = undoneOwn.reduce((a,t)=>a+estOf(t),0);           // 当日未完成时长 = 自身未完成预计
+  const actualEst = ts.filter(t=>t.done).reduce((a,t)=>a+durOf(t),0) + madeUp.reduce((a,t)=>a+durOf(t),0); // 当日实际学习时长(计时优先)
+  const learnComplete = (doneEst + madeUpEst) >= totalEst;          // v.116：当日完成标准 = 学习时长(预计) ≥ 预计时长
   return {
-    doneReal:     ts.filter(t=>t.done && !t.makeup).length,          // 当日完成（真实完成、非补打卡）
-    doneMakeup:   ts.filter(t=>t.done && t.makeup).length,           // 补打卡完成
+    doneReal:     doneOnTime.length,                                 // 当日完成（真实完成、非补打卡）
+    doneMakeup:   doneLate.length,                                   // 补打卡完成
     pendingCorr:  ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length,// 待订正
-    pendingDone:  ts.filter(t=>!t.done).length,                      // 待完成
-    totalEst:     ts.reduce((a,t)=>a+durOf(t),0),                    // 预计时长 = 当日所有项之和
-    doneEst:      doneOnTime.reduce((a,t)=>a+durOf(t),0),            // 当日已做
-    laterEst:     doneLater.reduce((a,t)=>a+durOf(t),0),             // 后期补做
-    undoneEst:    undone.reduce((a,t)=>a+durOf(t),0),                // 未做
-    madeUpEst,                                                        // 当日补做（其他日期）
-    // 自检：预计时长 = 当日已做 + 后期补做 + 未做（按定义恒成立）
-    workEst:      doneOnTime.reduce((a,t)=>a+durOf(t),0) + madeUpEst // 当日时长 = 当日已做 + 当日补做
+    pendingDone:  undoneOwn.length,                                  // 待完成
+    totalEst, doneEst, madeUpEst, learnEst, undoneEst, actualEst, learnComplete
   };
 }
 /* 顶部紧凑统计栏 + 四时长摘要栏（含金色恒等式行）的 HTML */
@@ -1906,9 +1911,9 @@ function dayStatsHtml(st){
     <div class="ts-cell"><div class="ts-v warn">${st.pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
   </div>
   <div class="day-summary"><div class="ds-main">
-    <div class="ds-row ds-labels"><span>预计时长</span><span>当日已做</span><span>后期补做</span><span>未做时长</span></div>
-    <div class="ds-row ds-vals"><b class="ds-v">${fmtEst(st.totalEst)}</b><b class="ds-v3">${fmtEst(st.doneEst)}</b><b class="ds-v4">${fmtEst(st.laterEst)}</b><b class="ds-v2">${fmtEst(st.undoneEst)}</b></div>
-    <div class="ds-gold">当日时长（${fmtEst(st.workEst)}）= 当日已做（${fmtEst(st.doneEst)}）+ 当日补做（${fmtEst(st.madeUpEst)}）</div>
+    <div class="ds-row ds-labels"><span>预计时长</span><span>当日学习时长</span><span>当日已做</span><span>当日补做</span></div>
+    <div class="ds-row ds-vals"><b class="ds-v">${fmtEst(st.totalEst)}</b><b class="ds-v4">${fmtEst(st.learnEst)}</b><b class="ds-v3">${fmtEst(st.doneEst)}</b><b class="ds-v2">${fmtEst(st.madeUpEst)}</b></div>
+    <div class="ds-gold">当日未完成时长 ${fmtEst(st.undoneEst)}　·　当日实际学习时长 ${fmtEst(st.actualEst)}</div>
   </div></div>`;
 }
 
@@ -3384,21 +3389,28 @@ function renderMonth(){
   const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars - unqualStars - nightStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星 − 晚睡扣星
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
-    <div class="kpi-cell"><div class="v g">${full}</div><div class="k">全勤天数</div></div>
+    <div class="kpi-cell"><div class="v g">${full}</div><div class="k">完成天数</div></div>
     <div class="kpi-cell"><div class="v warn">${unfinished}</div><div class="k">当月未完成</div></div>
     <div class="kpi-cell"><div class="v warn">${uncorr}</div><div class="k">当月未订正</div></div>
     <div class="kpi-cell"><div class="v warn">${unfinMin}</div><div class="k">未完成<br>时长(分)</div></div>
   </div>`;
 
-  // 月度合格状态：未完成 预计时长（分钟）≥ 合格线 → 不合格；本月未结束（当月或未来月）→ 待结算
+  // 月度合格状态：未完成 预计时长（分钟）> 合格线 → 不合格；本月未结束（当月或未来月）→ 待结算
   // v.114：合格标准 = 150 − 50×本月已用摆烂卡（用卡后**收紧**），且**含边界**：
   //   0 张 ≤150 / 1 张 ≤100 / 2 张 ≤50 / ≥3 张 = 0（未完成必须为 0）
   //   判定：未完成分钟 > 标准 才不合格
   // v.111：只计「未完成」，未订正不再计入时长（未订正仍单独在 KPI/清单里显示）
+  // v.116：摆烂日完成的作业清单时长计入月度合格标准 —— 标准 = max(0, 150 − 50N) + 摆烂日已完成项预计时长之和
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
   const bailanUsed = bailanDaysInRange(Array.from({length:days},(_,i)=>ymd(new Date(y,m,i+1))));
-  const stdMax = Math.max(0, 150 - 50*bailanUsed);   // 合格上限（含）：未完成 ≤ 该值即合格
+  // v.116：摆烂日完成的作业清单时长（仅统计已完成的项）
+  let bailanDoneMin = 0;
+  for(let d=1; d<=days; d++){
+    const ds = ymd(new Date(y,m,d));
+    if(isBailanDay(ds)){ todosOf(ds).forEach(t=>{ if(t.done) bailanDoneMin += (t.estMin||0); }); }
+  }
+  const stdMax = Math.max(0, 150 - 50*bailanUsed) + bailanDoneMin;   // 合格上限（含）：未完成 ≤ 该值即合格
   let qualCls, qualTxt;
   if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
   else if(unfinMin > stdMax){ qualCls="qual-fail"; qualTxt="本月不合格"; }
@@ -3432,13 +3444,15 @@ function renderMonth(){
   </div>
   <div class="month-std">
     <div class="ms-main">本月合格标准：${ stdMax>0 ? `≤<b>${stdMax}</b>` : `=<b>0</b>` }分钟</div>
-    <div class="ms-sub">（会结合摆烂卡的使用产生变化）</div>
+    <div class="ms-sub">（会结合摆烂卡与摆烂日完成情况变化）</div>
   </div>
-  <div class="month-note">口径：只统计「未完成」的预计时长，不含未订正${ bailanUsed>0
-    ? ( stdMax>0
-        ? ` · 本月已用摆烂卡 ${bailanUsed} 张：150 − ${50*bailanUsed} = ${stdMax}，未完成超过 ${stdMax} 分钟即不合格`
-        : ` · 本月已用摆烂卡 ${bailanUsed} 张：标准已归零，未完成须为 0 分钟` )
-    : "" }</div>
+  <div class="month-note">口径：只统计「未完成」的预计时长，不含未订正
+    ${ (bailanUsed>0 || bailanDoneMin>0)
+        ? ` · 摆烂：已用 ${bailanUsed} 张（−${50*bailanUsed} 分）${ bailanDoneMin>0 ? `，摆烂日完成 +${bailanDoneMin} 分` : "" }`
+        : "" }
+    ${ stdMax>0
+        ? ` · 合格标准 = 150${(bailanUsed>0?` − ${50*bailanUsed}`:"")}${(bailanDoneMin>0?` + ${bailanDoneMin}`:"")} = ${stdMax}，未完成超过 ${stdMax} 分钟即不合格`
+        : ` · 标准已归零，未完成须为 0 分钟` }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
   // 额外奖励统计（本月）：打卡 + 目标 + 阅读 + 额外奖励(正) − 额外惩罚(负) = 本月星星
@@ -4673,7 +4687,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.10.30.115";
+const APP_VERSION = "2026.11.01.116";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
