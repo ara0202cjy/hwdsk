@@ -1621,14 +1621,16 @@ function dayStats(dateStr){
 }
 /* 用时展示：不足 1 分钟显示「未计时」，避免把 0 分当成真实成绩 */
 function spentLabel(t){ const m=Math.round(recMs(t)/60000); return m>0 ? m+" 分" : "未计时"; }
-/* ===== 星星规则（v.44 起；v.47 把截止时间由 21:30 提前到 21:00；v.116 完成闸门改为「学习时长≥预计时长」）=====
-   前提（v.116）：该日「当日学习时长(按预计) ≥ 当日预计时长」即视为完成（自身已完成项预计 + 补做他日项预计 ≥ 自身全部项预计），
-     否则 0 星（当日/未来日期次日结算）。
-   1) 当天完成（含提前完成）              → 2 星
-   2) 在「当天完成」基础上，21:00 前结束   → 再 +1 星
-   3) D+2 天内完成（即 D+1、D+2 才做完）  → 1 星；超过 D+2 完成 → 0 星
-   4) 学习达标 且 当日错题少于 5 题       → 再 +1 星
-   档位按「最晚完成日」判定（多项作业中最后一项的完成日）。
+/* ===== 星星规则（v.44 起；v.47 截止时间 21:00；v.116 闸门改时长；v.119 明确两档口径）=====
+   基础档（v.119）：
+   1) 当天学习时长达标（当日已做 + 当日补做 ≥ 当日预计，不含后期补做）→ 2 星
+   2) 当天时长未达标，但 2 天内（D+1、D+2）把当天作业清单全部做完 → 1 星
+   3) 其余（超 D+2 才做完 / 清单始终没做完且时长达标）→ 0 星
+   加分（其余不变）：
+   4) 当天档 且 21:00 前结束（严格小于）→ +1 星
+   5) 当日错题合计少于 5 题（严格小于）→ +1 星
+   「当天档」按最晚完成日判定（多项作业取最后一项的完成日，提前完成按 0 计）。
+   旧「后期补做」不再计入 2 星判定，只能走「2 天内清单全部完成」的 1 星档。
    parts 记录每一颗星的来源，供日历按原因分色显示：
    onday=当天完成(金) / early=21:00 前(墨绿) / wrong=错题<5(绿) / late=D+2 内完成(浅橙)。 */
 const STAR_ONDAY      = 2;              // 当天完成基础星
@@ -1644,10 +1646,17 @@ function dayStars(dateStr){
   if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
   // v.116：完成闸门由「全部完成」改为「学习时长(按预计) ≥ 预计时长」
   // v.118：doneEst 已改为「不含后期补做」，闸门需把该日清单内后期补做的时长加回，保持星规语义不变
+  // v.116：完成闸门按学习时长；v.118：doneEst 不含后期补做；v.119：2 星只认「当天时长」，1 星改认「2 天内清单全做完」
   const dl = dayListStats(ts, dateStr);
-  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;
-  if(!learnComplete) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:settled, pending:!settled, total:total};
-  // —— 全部完成：按「最晚完成日」分档 ——
+  // 「当天已完成」按完成日判定：completedOn 晚于当天 = 后期补做（不计入 2 星）；无完成日的老数据退回 makeup 标记
+  const isLateDone = t => t.completedOn ? (t.completedOn > dateStr) : !!t.makeup;
+  const doneDayEst = ts.reduce((a,t)=> (t.done && !isLateDone(t)) ? a + (t.estMin||0) : a, 0);
+  const timeOk = (doneDayEst + dl.madeUpEst) >= dl.totalEst;              // 当天时长（当日完成 + 当日补做）是否达标
+  const allItemsDone = ts.every(t=>t.done);                              // 当天作业清单是否全部做完
+  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI 仍含后期补做
+  // 既没达标、清单也没全做完 → 0 星，且不参与后续加分
+  if(!timeOk && !allItemsDone) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:settled, pending:!settled, total:total};
+  // —— 分档：2 星看当天时长；1 星看 2 天内清单全部完成 ——
   const base = parseDS(dateStr);
   let delay = 0;                                   // 最晚完成日相对作业日的天数；提前完成按 0 计
   ts.forEach(t=>{
@@ -1658,9 +1667,9 @@ function dayStars(dateStr){
   });
   const parts = [];
   let stars;
-  if(delay <= 0){ stars = STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }        // 当天完成 → 2 星
-  else if(delay <= STAR_LATE_DAYS){ stars = 1; parts.push({k:"late", n:1}); }         // D+2 天内完成 → 1 星
-  else stars = 0;                                                                    // 超过 D+2 → 0 星
+  if(timeOk){ stars = STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }        // 当天时长达标 → 2 星
+  else if(delay <= STAR_LATE_DAYS){ stars = 1; parts.push({k:"late", n:1}); }     // 2 天内清单全部完成 → 1 星
+  else stars = 0;                                                                 // 超 D+2 → 0 星
   // 当天完成 且 21:00 前全部结束 → +1 星
   if(delay <= 0){
     let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
@@ -4697,7 +4706,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.118";
+const APP_VERSION = "2026.11.01.119";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
