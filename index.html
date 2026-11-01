@@ -270,9 +270,11 @@
   .day-summary{display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:12px; background:linear-gradient(135deg,#fff7e6,#fdeecb); border:1.5px solid #f1e0b8; border-radius:16px;}
   .day-summary .ds-main{display:flex; flex-direction:column; gap:3px; width:100%;}
   .day-summary .ds-t{font-size:12px; color:#9a7b3a; font-weight:600;}
-  .day-summary .ds-row{display:flex; align-items:center; justify-content:space-between; white-space:nowrap; gap:6px;}
-  .day-summary .ds-labels span{flex:1; text-align:center; font-size:11px; color:#9a7b3a; font-weight:600;}
-  .day-summary .ds-vals b{flex:1; text-align:center; font-size:15px; font-weight:800; line-height:1.1;}
+  .day-summary .ds-row{display:grid; grid-template-columns:minmax(0,1fr) 10px minmax(0,1fr) 10px minmax(0,1fr) 10px minmax(0,1fr); align-items:center; white-space:nowrap; column-gap:2px;}
+  .day-summary .ds-labels span{text-align:center; font-size:11px; color:#9a7b3a; font-weight:600;}
+  .day-summary .ds-labels i{display:block;}
+  .day-summary .ds-vals b{text-align:center; font-size:15px; font-weight:800; line-height:1.1;}
+  .day-summary .ds-op{font-size:12px; font-weight:800; color:#B08A3E; text-align:center; line-height:1; opacity:.9;}
   .day-summary .ds-v{color:#7a5e1e;}
   .day-summary .ds-v2{color:var(--red);}
   .day-summary .ds-v3{color:#2e9e6b;}
@@ -1890,10 +1892,10 @@ function dayListStats(ts, dsStr){
   const totalEst  = ts.reduce((a,t)=>a+estOf(t),0);                  // 预计时长 = 当日自身项全部预计
   const doneEst   = ts.filter(t=>t.done).reduce((a,t)=>a+estOf(t),0);// 当日已做 = 当日自身项已完成预计（含按时与后期补做）
   const madeUpEst = madeUp.reduce((a,t)=>a+estOf(t),0);              // 当日补做 = 他日项当日补做预计
-  const learnEst  = totalEst + madeUpEst;                            // 当日学习时长(预计) = 自身全部 + 补做他日
+  const learnEst  = doneEst + madeUpEst;                             // v.117：当日学习时长 = 当日已做 + 当日补做
   const undoneEst = undoneOwn.reduce((a,t)=>a+estOf(t),0);           // 当日未完成时长 = 自身未完成预计
   const actualEst = ts.filter(t=>t.done).reduce((a,t)=>a+durOf(t),0) + madeUp.reduce((a,t)=>a+durOf(t),0); // 当日实际学习时长(计时优先)
-  const learnComplete = (doneEst + madeUpEst) >= totalEst;          // v.116：当日完成标准 = 学习时长(预计) ≥ 预计时长
+  const learnComplete = learnEst >= totalEst;                        // 当日完成标准 = 当日学习时长(已做+补做) ≥ 预计时长
   return {
     doneReal:     doneOnTime.length,                                 // 当日完成（真实完成、非补打卡）
     doneMakeup:   doneLate.length,                                   // 补打卡完成
@@ -1902,8 +1904,10 @@ function dayListStats(ts, dsStr){
     totalEst, doneEst, madeUpEst, learnEst, undoneEst, actualEst, learnComplete
   };
 }
-/* 顶部紧凑统计栏 + 四时长摘要栏（含金色恒等式行）的 HTML */
+/* 顶部紧凑统计栏 + 四时长摘要栏（数字间带符号：预计 (>/</=) 当日学习时长 = 当日已做 + 当日补做） */
 function dayStatsHtml(st){
+  // v.117：数字间符号 —— 预计 vs 学习 按大小动态取 &gt; / &lt; / =；学习 = 已做 + 补做 固定
+  const op = st.totalEst > st.learnEst ? "&gt;" : (st.totalEst < st.learnEst ? "&lt;" : "=");
   return `<div class="top-stats">
     <div class="ts-cell"><div class="ts-v g">${st.doneReal}<small>项</small></div><div class="ts-k">当日完成</div></div>
     <div class="ts-cell"><div class="ts-v g">${st.doneMakeup}<small>项</small></div><div class="ts-k">补打卡</div></div>
@@ -1911,8 +1915,8 @@ function dayStatsHtml(st){
     <div class="ts-cell"><div class="ts-v warn">${st.pendingDone}<small>项</small></div><div class="ts-k">待完成</div></div>
   </div>
   <div class="day-summary"><div class="ds-main">
-    <div class="ds-row ds-labels"><span>预计时长</span><span>当日学习时长</span><span>当日已做</span><span>当日补做</span></div>
-    <div class="ds-row ds-vals"><b class="ds-v">${fmtEst(st.totalEst)}</b><b class="ds-v4">${fmtEst(st.learnEst)}</b><b class="ds-v3">${fmtEst(st.doneEst)}</b><b class="ds-v2">${fmtEst(st.madeUpEst)}</b></div>
+    <div class="ds-row ds-labels"><span>预计时长</span><i></i><span>当日学习时长</span><i></i><span>当日已做</span><i></i><span>当日补做</span></div>
+    <div class="ds-row ds-vals"><b class="ds-v">${fmtEst(st.totalEst)}</b><span class="ds-op">${op}</span><b class="ds-v4">${fmtEst(st.learnEst)}</b><span class="ds-op">=</span><b class="ds-v3">${fmtEst(st.doneEst)}</b><span class="ds-op">+</span><b class="ds-v2">${fmtEst(st.madeUpEst)}</b></div>
     <div class="ds-gold">当日未完成时长 ${fmtEst(st.undoneEst)}　·　当日实际学习时长 ${fmtEst(st.actualEst)}</div>
   </div></div>`;
 }
@@ -3451,7 +3455,9 @@ function renderMonth(){
         ? ` · 摆烂：已用 ${bailanUsed} 张（−${50*bailanUsed} 分）${ bailanDoneMin>0 ? `，摆烂日完成 +${bailanDoneMin} 分` : "" }`
         : "" }
     ${ stdMax>0
-        ? ` · 合格标准 = 150${(bailanUsed>0?` − ${50*bailanUsed}`:"")}${(bailanDoneMin>0?` + ${bailanDoneMin}`:"")} = ${stdMax}，未完成超过 ${stdMax} 分钟即不合格`
+        ? ` · 合格标准 = ${ (bailanUsed>0 || bailanDoneMin>0)
+            ? `150${(bailanUsed>0?` − ${50*bailanUsed}`:"")}${(bailanDoneMin>0?` + ${bailanDoneMin}`:"")} = ${stdMax}`
+            : `${stdMax}` }，未完成超过 ${stdMax} 分钟即不合格`
         : ` · 标准已归零，未完成须为 0 分钟` }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
 
@@ -4687,7 +4693,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.116";
+const APP_VERSION = "2026.11.01.117";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
