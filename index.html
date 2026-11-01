@@ -625,6 +625,25 @@
   /* 奖励弹层的确认按钮：全局 button reset 会清掉背景/边框，这里显式还原成实心主按钮 */
   .rw-form .lbtn{display:block; width:100%; box-sizing:border-box; margin-top:14px; padding:13px; border:none; border-radius:12px; background:var(--ink); color:#fff; font-size:16px; font-weight:800; cursor:pointer;}
   .rw-form .lbtn:active{opacity:.85;}
+  /* v.122：目标分等级 —— 表单编辑器 + 卡片等级选择 */
+  .rw-form .fld label.rw-lv-on{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); font-weight:600; margin-bottom:0;}
+  .rw-form .rw-lv-on input{width:auto; padding:0; margin:0; flex:none;}
+  .rw-lv-help{font-size:11px; color:var(--muted); line-height:1.5; margin-top:4px;}
+  #rwLevelRows{display:flex; flex-direction:column; gap:8px;}
+  .rw-form .rw-lv-row{display:flex; align-items:center; gap:8px;}
+  .rw-form .rw-lv-row .rw-lv-label{flex:1; min-width:0;}
+  .rw-form .rw-lv-row .rw-lv-stars{width:72px; flex:none;}
+  .rw-form .rw-lv-row .rw-lv-del{width:32px; height:32px; flex:none; padding:0; border:1px solid #e3dccb; border-radius:10px; background:#fff; color:var(--muted); font-size:17px; line-height:1; cursor:pointer;}
+  .rw-lv-add{align-self:flex-start; padding:7px 11px; border:1.5px dashed var(--line); border-radius:10px; background:#fff; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer;}
+  .rw-lv-ic{width:26px; flex:none; text-align:center; color:var(--sun); font-weight:800; font-size:15px;}
+  .rw-lvp-box{display:flex; flex-wrap:wrap; gap:6px; margin-top:7px;}
+  .rw-lvp{display:flex; align-items:center; gap:5px; padding:5px 9px; border:1.5px solid var(--line); border-radius:10px; background:#fff; font-size:12px; font-weight:600; color:var(--muted); cursor:pointer;}
+  .rw-lvp.on{border-color:var(--sun); background:#fff6de; color:var(--ink);}
+  .rw-lvp-s{color:var(--sun); font-weight:800;}
+  .rw-lvp.on .rw-lvp-s{color:#a3741c;}
+  .rw-lvp-ok{font-size:10px; color:#fff; background:var(--sun); border-radius:6px; padding:1px 5px;}
+  .rw-row.goal.done-lv .rw-title{color:var(--muted); text-decoration:line-through;}
+  .rw-row.goal.done-lv{opacity:1;}
 
   /* ===== 月度统计 · 额外奖励统计 ===== */
   .reward-stat{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:12px; margin:12px 0;}
@@ -3423,7 +3442,7 @@ function renderMonth(){
   (state.rewards||[]).forEach(r=>{
     if(rewardSettleMonth(r)!==ym) return;      // 仅统计结算月（目标/打卡：完成之月；奖惩：归属月）
     if(!rewardDone(r)) return;                 // 目标/打卡未完成不结算；奖惩默认完成
-    if(r.type==="goal") goalStars += (r.stars||0);
+    if(r.type==="goal") goalStars += goalStarsOf(r);
     else if(r.type==="checkin") checkinStars += (r.stars||0);
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
@@ -3603,6 +3622,20 @@ function rewardMonth(r){ if((r.type==="goal"||r.type==="checkin") && r.deadline)
 // 目标/打卡显示窗口：添加之月 → 结算完成之月(已完成) / 截止之月(未完成)；窗口之外不显示
 function rewardAddMonth(r){ return r.added || r.month || rewardMonth(r); }
 function rewardSettleMonth(r){ if(r.type==="goal"||r.type==="checkin"){ if(r.done) return r.doneMonth || rewardMonth(r); return rewardMonth(r); } return r.month; }
+/* v.122：目标奖励分等级 —— r.levels=[{label,stars}]，r.levelIdx=选中的档位（-1=未选）
+   一条目标只结算一个等级：选哪档就给哪档的星（不累加）。 */
+function goalLevels(r){ return (r && r.type==="goal" && Array.isArray(r.levels) && r.levels.length) ? r.levels : null; }
+function goalStarsOf(r){ const lv=goalLevels(r); if(!lv) return r.stars||0; return (r.levelIdx>=0 && lv[r.levelIdx]) ? (lv[r.levelIdx].stars||0) : 0; }
+function goalMaxStars(r){ const lv=goalLevels(r); if(!lv) return r.stars||0; return lv.reduce((a,x)=>Math.max(a, x.stars||0), 0); }
+/* 选择某档：再点一次取消；切换档位按当前月重新结算 */
+function pickGoalLevel(id, i){
+  const r=getReward(id); if(!r || r.type!=="goal") return;
+  const lv=goalLevels(r); if(!lv || !lv[i]) return;
+  r.levelIdx = (r.levelIdx===i) ? -1 : i;
+  r.done = r.levelIdx>=0;
+  if(r.done) r.doneMonth = ymd(new Date()).slice(0,7); else delete r.doneMonth;
+  touch(r); save(); renderReward(); renderMonth();
+}
 // 奖惩默认完成并实时结算；目标需手动标记完成；打卡达次数自动完成
 function rewardDone(r){ if(r.type==="goal"||r.type==="checkin") return !!r.done; return true; }
 function addReward(type, content, stars, o={}){
@@ -3611,10 +3644,13 @@ function addReward(type, content, stars, o={}){
   const r = { id:uid(), type, content:(content||"").trim(), stars:Math.max(1, stars|0||1),
               done:(type!=="goal" && type!=="checkin"), month:ym, added:ym, deadline:(o.deadline||null),
               target:(type==="checkin" ? Math.max(1, o.target|0||1) : undefined), count:(type==="checkin" ? 0 : undefined), dates:(type==="checkin" ? [] : undefined), _u:Date.now() };
+  /* v.122：目标可带等级；等级目标默认未选档（done=false），由卡片上选择 */
+  if(type==="goal" && Array.isArray(o.levels) && o.levels.length){ r.levels=o.levels.map(x=>({label:String(x.label||"").trim(), stars:Math.max(1,x.stars|0||1)})); r.levelIdx=-1; r.done=false; delete r.doneMonth; }
   state.rewards = state.rewards || [];
   state.rewards.push(r); save(); renderReward(); renderMonth(); toast("已添加奖励");
 }
-function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
+function toggleRewardDone(id){ const r=getReward(id); if(!r || r.type!=="goal") return; if(goalLevels(r)) return;  // 分等级目标改用等级选择
+  r.done=!r.done; if(r.done) r.doneMonth=ymd(new Date()).slice(0,7); else delete r.doneMonth; touch(r); save(); renderReward(); renderMonth(); }
 // 打卡奖励：卡片「打卡 +1」/「−1」；次数达 target 自动完成并结算到完成之月
 function checkinPlus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=(r.count||0)+1; (r.dates=r.dates||[]).push(ymd(new Date())); if(r.count>=r.target && !r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } touch(r); save(); renderReward(); renderMonth(); }
 function checkinMinus(id){ const r=getReward(id); if(!r || r.type!=="checkin") return; r.count=Math.max(0,(r.count||0)-1); if(r.dates && r.dates.length) r.dates.pop(); if(r.count<r.target){ r.done=false; delete r.doneMonth; } touch(r); save(); renderReward(); renderMonth(); }
@@ -3628,7 +3664,7 @@ function rewardFormHTML(type, r){
   const isExtra = (type==="bonus" || type==="penalty");
   const isCheckin = (type==="checkin");
   const title = type==="goal" ? "完成内容" : (isCheckin ? "打卡目标" : "内容");
-  const starsLabel = type==="penalty" ? "额外扣星数量" : "额外奖励额度";
+  const starsLabel = type==="penalty" ? "额外扣星数量" : (type==="goal" ? "目标星数（不分等级时使用）" : "额外奖励额度");
   const monthLabel = (type==="goal"||isCheckin) ? "起始月份（添加之月）" : "归属月份（结算月）";
   const deadlineField = (type==="goal"||isCheckin)
     ? `<div class="fld"><label>截止时间</label><input type="date" id="rwDeadline" value="${r&&r.deadline?r.deadline:""}"></div>` : "";
@@ -3643,13 +3679,55 @@ function rewardFormHTML(type, r){
       <button type="button" class="sg ${type!=="penalty"?"on":""}" data-t="bonus" onclick="setRwSign('bonus')">奖励 +</button>
       <button type="button" class="sg ${type==="penalty"?"on":""}" data-t="penalty" onclick="setRwSign('penalty')">惩罚 −</button>
     </div>` : "";
+  /* v.122：目标专属 —— 分等级编辑器（每个等级 = 名称 + 星数） */
+  let levelsField = "";
+  if(type==="goal"){
+    const lv = (r && Array.isArray(r.levels) && r.levels.length) ? r.levels : [];
+    const rows = (lv.length ? lv : [{label:"",stars:""}]).map(levelRowHTML).join("");
+    levelsField = `
+    <div class="fld">
+      <label class="rw-lv-on"><input type="checkbox" id="rwLevelOn" ${lv.length?"checked":""} onchange="rwToggleLevels()"> 分等级（达到不同等级给不同星）</label>
+      <div class="rw-lv-help">开启后，达标时在卡片上选择达到的等级；只结算所选等级的星，不累加。</div>
+    </div>
+    <div class="fld rw-levels" id="rwLevels" style="display:${lv.length?"flex":"none"};">
+      <div id="rwLevelRows">${rows}</div>
+      <button type="button" class="rw-lv-add" onclick="rwAddLevelRow()">＋ 添加等级</button>
+    </div>`;
+  }
   return `${signToggle}
     <div class="fld"><label>${title}</label><input id="rwContent" placeholder="输入${title}…" value="${contentVal}"></div>
     ${deadlineField}
     ${targetField}
     ${countField}
     <div class="fld"><label>${monthLabel}</label><input type="month" id="rwMonth" value="${monthVal}"></div>
-    <div class="fld"><label class="rw-stars-label">${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>`;
+    <div class="fld"><label class="rw-stars-label">${starsLabel}</label><input type="number" min="1" id="rwStars" value="${starsVal}"></div>
+    ${levelsField}`;
+}
+/* v.122：分等级编辑器的小工具 */
+function levelRowHTML(x){
+  const label = esc((x && x.label) || "");
+  const stars = (x && x.stars) || "";
+  return `<div class="rw-lv-row">
+    <input class="rw-lv-label" placeholder="等级名称，如 10 本" value="${label}">
+    <input class="rw-lv-stars" type="number" min="1" placeholder="星" value="${stars}">
+    <button type="button" class="rw-lv-del" title="删除该等级" onclick="this.parentNode.remove()">×</button>
+  </div>`;
+}
+function rwToggleLevels(){
+  const on = $("rwLevelOn") && $("rwLevelOn").checked;
+  const box = $("rwLevels"); if(box) box.style.display = on ? "flex" : "none";
+}
+function rwAddLevelRow(){
+  const box = $("rwLevelRows"); if(!box) return;
+  box.insertAdjacentHTML("beforeend", levelRowHTML(null));
+}
+function rwReadLevels(){
+  const box = $("rwLevelRows"); if(!box) return null;
+  const out = Array.from(box.querySelectorAll(".rw-lv-row")).map(row=>({
+    label: ((row.querySelector(".rw-lv-label")||{}).value || "").trim(),
+    stars: Math.max(1, parseInt(((row.querySelector(".rw-lv-stars")||{}).value || "1"),10)||1)
+  })).filter(x=>x.label);
+  return out.length ? out : null;
 }
 // 额外奖惩弹层：切换 奖励(+)/惩罚(−)，同步类型与星数标签
 function setRwSign(t){
@@ -3666,7 +3744,7 @@ function openRewardAdd(type){
     <div class="rw-form">
       ${rewardFormHTML(type, null)}
       <button class="lbtn" onclick="commitReward()">确认添加</button>
-      <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月（卡片内点 ✔ 标记）或截止之月为止；逾期未完成显示「已逾期」且星星不结算。打卡奖励：卡片内点「打卡 +1」累计次数，达到目标次数自动完成并结算到完成之月。额外奖惩添加即结算，归属月份即结算月。</div>
+      <div class="rw-hint">目标：从「起始月份」起显示，直到完成之月或截止之月为止；逾期未完成显示「已逾期」且星星不结算。分等级目标：在卡片上点选达到的等级，只结算所选那一档的星。打卡奖励：卡片内点「打卡 +1」累计次数，达到目标次数自动完成并结算到完成之月。额外奖惩添加即结算，归属月份即结算月。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitReward(); };
@@ -3680,7 +3758,7 @@ function openRewardEdit(id){
     <div class="rw-form">
       ${rewardFormHTML(r.type, r)}
       <button class="lbtn" onclick="commitRewardEdit()">保存修改</button>
-      <div class="rw-hint">修改「起始月份 / 完成期限」会改变目标在哪些月份显示；星星结算月=完成之月（已完成）或截止之月。完成状态请在卡片上用 ✔ 切换。</div>
+      <div class="rw-hint">修改「起始月份 / 完成期限」会改变目标在哪些月份显示；星星结算月=完成之月（已完成）或截止之月。完成状态请在卡片上用 ✔ 切换；分等级目标改为在卡片上选择等级。</div>
     </div>`;
   openSheet(html);
   const inp=$("rwContent"); if(inp) inp.onkeydown=e=>{ if(e.key==="Enter") commitRewardEdit(); };
@@ -3699,6 +3777,16 @@ function commitRewardEdit(){
     if(r.count>=r.target){ if(!r.done){ r.done=true; r.doneMonth=ymd(new Date()).slice(0,7); } }
     else { r.done=false; delete r.doneMonth; }
   }
+  /* v.122：目标等级 —— 开启时保存等级；改动后若原选中档越界则清空完成状态 */
+  if(r.type==="goal"){
+    const lvOn = !!($("rwLevelOn") && $("rwLevelOn").checked);
+    const levels = lvOn ? rwReadLevels() : null;
+    if(lvOn && !levels){ toast("请至少填写一个等级名称"); return; }
+    if(lvOn){
+      r.levels = levels;
+      if(!(r.levelIdx>=0 && r.levelIdx<levels.length)){ r.levelIdx=-1; r.done=false; delete r.doneMonth; }
+    } else { delete r.levels; r.levelIdx=-1; }
+  }
   touch(r); save(); renderReward(); renderMonth(); closeSheet();
 }
 function commitReward(){
@@ -3709,7 +3797,11 @@ function commitReward(){
   const month = ($("rwMonth").value||"").slice(0,7) || ymd(new Date()).slice(0,7);
   const deadline = (type==="goal"||type==="checkin") ? ($("rwDeadline").value||"") : "";
   const target = type==="checkin" ? Math.max(1, parseInt(($("rwTarget")&&$("rwTarget").value)||"1",10)||1) : undefined;
-  addReward(type, content, stars, {month, deadline, target});
+  /* v.122：目标等级 —— 勾选「分等级」时必须至少填一个等级名称 */
+  const lvOn = (type==="goal") && !!($("rwLevelOn") && $("rwLevelOn").checked);
+  const levels = (type==="goal") ? rwReadLevels() : null;
+  if(lvOn && !levels){ toast("请至少填写一个等级名称"); return; }
+  addReward(type, content, stars, {month, deadline, target, levels: lvOn ? levels : null});
   closeSheet();
 }
 function renderReward(){
@@ -3731,8 +3823,8 @@ function renderReward(){
   active.sort((a,b)=> (a.deadline||"9999").localeCompare(b.deadline||"9999"));   // 临近截止靠前
   overdue.sort((a,b)=> (b.deadline||"").localeCompare(a.deadline||""));
   done.sort((a,b)=> (b.deadline||"").localeCompare(a.deadline||""));
-  const goalSettled = done.reduce((a,r)=>a+(r.stars||0),0);
-  const goalPending = active.concat(overdue).reduce((a,r)=>a+(r.stars||0),0);
+  const goalSettled = done.reduce((a,r)=>a+goalStarsOf(r),0);
+  const goalPending = active.concat(overdue).reduce((a,r)=>a+goalMaxStars(r),0);
 
   // —— 额外奖惩：奖励(正)+惩罚(负)，按归属月份，默认完成实时结算 ——
   const extras = (state.rewards||[]).filter(r=> (r.type==="bonus"||r.type==="penalty") && r.month===ym);
@@ -3793,17 +3885,34 @@ function renderReward(){
 }
 // 目标行：带「完成」勾选，按完成状态显示 进行中/已逾期/已完成
 function goalRow(r, showEdit){
-  const starsTxt = "+" + (r.stars||0) + " 星";
+  const lv = goalLevels(r);
+  const sel = (lv && r.levelIdx>=0) ? lv[r.levelIdx] : null;
+  const starsTxt = lv
+    ? (sel ? ("+" + (sel.stars||0) + " 星") : ("最高 +" + goalMaxStars(r) + " 星"))
+    : ("+" + (r.stars||0) + " 星");
   const dl = r.deadline ? ("期限 "+r.deadline.slice(5)) : "无期限";
   let cls="", statusTag="", statusCls="";
-  if(r.done){ cls="done"; statusTag="已完成"; statusCls="st-done"; }
+  if(r.done){ cls = lv ? "done-lv" : "done"; statusTag = (lv && sel) ? ("已完成 · "+sel.label) : "已完成"; statusCls="st-done"; }
   else if(r.deadline && r.deadline < ymd(new Date())){ cls="overdue"; statusTag="已逾期"; statusCls="st-ov"; }
   else { cls="active"; statusTag="待结算"; statusCls="st-pend"; }
+  /* 分等级目标：左侧不用整体勾选，改为在等级里选一个；避免误把整条目标一键完成 */
+  const left = lv
+    ? `<span class="rw-lv-ic" title="分等级目标：请在下方选择达到的等级">★</span>`
+    : `<button class="chk ${r.done?"done":""}" onclick="toggleRewardDone('${r.id}')">${chkSvg(r.done)}</button>`;
+  const levelPicks = lv ? `<div class="rw-lvp-box">${lv.map((x,i)=>{
+      const on = (r.levelIdx===i);
+      return `<button class="rw-lvp ${on?"on":""}" onclick="pickGoalLevel('${r.id}',${i})">
+        <span class="rw-lvp-n">${esc(x.label)}</span>
+        <span class="rw-lvp-s">+${x.stars||0} 星</span>
+        ${on?'<span class="rw-lvp-ok">已达</span>':''}
+      </button>`;
+    }).join("")}</div>` : "";
   return `<div class="rw-row goal ${cls}">
-    <button class="chk ${r.done?"done":""}" onclick="toggleRewardDone('${r.id}')">${chkSvg(r.done)}</button>
+    ${left}
     <div class="rw-main">
       <div class="rw-title">${esc(r.content)}</div>
       <div class="rw-meta"><span class="rw-tag">${dl}</span><span class="rw-stars">${starsTxt}</span><span class="rw-status ${statusCls}">${statusTag}</span></div>
+      ${levelPicks}
     </div>
     ${showEdit ? `<button class="rw-edit" onclick="openRewardEdit('${r.id}')">${penSvg()}</button><button class="rw-del" onclick="delReward('${r.id}')">${trashSvg()}</button>` : ""}
   </div>`;
@@ -4731,7 +4840,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.121";
+const APP_VERSION = "2026.11.01.122";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
