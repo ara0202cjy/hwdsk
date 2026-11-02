@@ -964,6 +964,7 @@
             </div>
             <div class="content" id="statsContent"></div>
             <div class="content" id="summaryContent"></div>
+            <div class="content" id="suppContent"></div>
           </section>
 
           <!-- 待办事项 -->
@@ -1725,7 +1726,7 @@ function switchTab(tab){
   $("page-"+tab).classList.add("active");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.tab===tab));
   if(tab==="list") renderList();
-  if(tab==="stats"){ renderStats(); renderSummary(); }
+  if(tab==="stats"){ renderStats(); renderSummary(); renderSuppStats(); }
   if(tab==="tasks") renderTasks();
   if(tab==="month") renderMonth();
   if(tab==="reward") renderReward();
@@ -2278,7 +2279,7 @@ async function delHW(i){
   }
   if(gone&&gone.id) tombstoneHW(gone.id);
   const at=real.indexOf(gone); if(at>=0) real.splice(at,1); else arr.splice(i,1);
-  saveHW(hw); renderHWChips();
+  saveHW(hw); renderHWChips(); renderSuppStats();
   if(gone && gone.supp) toast("已删除教辅并记入教辅学习统计");
 }
 /* v.123：统计某教辅（按 hwId）的学习次数 / 学习时间 / 首次学习日（仅统计已完成的清单项） */
@@ -2310,6 +2311,8 @@ function renderSuppBlock(){
   }).join("");
   return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div>${rows}</div>`;
 }
+/* v.123：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
+function renderSuppStats(){ const el=$("suppContent"); if(el) el.innerHTML = renderSuppBlock(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
@@ -3669,7 +3672,7 @@ function renderMonth(){
   mu += `</div>`;
   grid += mu + rewardBlock;   // 未完成&未订正（mu）排在未额外奖励统计（rewardBlock）之上；阅读统计板块已迁到「奖励」页（v.94）
 
-  $("monthContent").innerHTML = kpi + grid + renderSuppBlock();
+  $("monthContent").innerHTML = kpi + grid;
 }
 
 /* ============ 奖励栏（目标奖励 / 打卡奖励 / 额外奖惩 + 阅读统计） ============
@@ -4907,7 +4910,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.02.123";
+const APP_VERSION = "2026.11.02.124";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
