@@ -739,6 +739,21 @@
 
   .empty-tip{text-align:center; color:var(--muted); font-size:13px; padding:30px 0;}
 
+  /* ===== v.123：常用词「教辅」标记 + 教辅学习统计区块 ===== */
+  .hw-supp{font-size:11px; color:#7a5a17; background:#f6eccf; border-radius:999px; padding:1px 6px; margin-left:2px; font-weight:700;}
+  .supp-block{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
+  .supp-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
+  .supp-h .supp-n{color:var(--sun); font-weight:800; margin-left:4px;}
+  .supp-row{display:flex; flex-direction:column; gap:3px; padding:7px 4px; border-bottom:1px solid #f2efe6;}
+  .supp-row:last-child{border-bottom:none;}
+  .supp-top{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .supp-name{flex:1; min-width:0; font-size:12.5px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .supp-sub{font-size:11px; color:var(--muted); line-height:1.7; white-space:pre-line;}
+  .supp-badge{font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; flex:0 0 auto; white-space:nowrap;}
+  .supp-badge.done{color:#3b6d11; background:#eaf3de;}
+  .supp-badge.ongoing{color:#0c447c; background:#e6f1fb;}
+  .supp-badge.abort{color:#791f1f; background:#fcebeb;}
+
   /* ===== 底部 Tab ===== */
   .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
   .home-bar::after{content:""; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#1c1c1e; opacity:.85;}
@@ -1198,6 +1213,7 @@ function load(){
   /* v.91 阅读栏：独立于作业清单（不计入完成 / 未完成结算），单独统计阅读天数与时长 */
   if(!Array.isArray(state.reads)) state.reads = [];       // 阅读记录：{id,date,minutes,lang,fic,book}
   if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
+  if(!Array.isArray(state.suppLog)) state.suppLog = [];   // v.123：教辅学习记录（删除教辅时归档）
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
   ensureNights();                              // v.110：晚睡数据初始化
@@ -1226,7 +1242,7 @@ function save(){ saveLocal(); syncSchedule(); }
 
 function seed(){
   // 全新安装从空开始（不再生成示例数据，避免混入统计与云端）
-  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, subjects: defaultSubjects(), nights:{}, _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, suppLog:[], subjects: defaultSubjects(), nights:{}, _syncedAt:0 };
 }
 function mkTodo(date, subject, title, o={}){
   return Object.assign({
@@ -2092,7 +2108,7 @@ function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发�
 /* 常用词统一为 {t:标题, e:预估分钟, stats:是否计入统计栏}；旧数据仅存字符串，读取时兼容。
    stats 缺省视为 true（统计）——保持 v.97 之前「所有作业都计入统计栏」的默认行为；
    新词由 addHW/editHW 让用户选择，非通过常用词直接添加的清单项默认不统计（见 doAdd）。 */
-function hwItem(x){ if(typeof x==="string") return {t:x, e:0, stats:true}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0), stats: x && x.stats===false ? false : true}; }
+function hwItem(x){ if(typeof x==="string") return {t:x, e:0, stats:true, supp:false}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0), stats: x && x.stats===false ? false : true, supp: !!(x&&x.supp)}; }
 
 /* ===== v.99：统计口径「按最近的常用词定义」实时判定 =====
    背景：v.97/v.98 的 stats 是「添加当时的快照」。用户改了常用词的 统计/不统计 后，
@@ -2157,7 +2173,7 @@ function renderHWChips(){
     const mv = mvOK
       ? `<i class="hw-mv${i===0?' dis':''}" title="前移" onclick="event.stopPropagation();moveHW(${i},-1)">‹</i>`
        +`<i class="hw-mv${i===arr.length-1?' dis':''}" title="后移" onclick="event.stopPropagation();moveHW(${i},1)">›</i>` : "";
-    return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${mv}${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${w.stats===false?`<i class="hw-nostat">不统计</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
+    return `<span class="hw-chip${dragOK?' sortable':''}" ${dragOK?`data-drag-id="${esc(id)}"`:""} onclick="fillHW(${i})">${mv}${esc(w.t)}${w.e?`<i class="hw-est">${w.e}分</i>`:""}${w.stats===false?`<i class="hw-nostat">不统计</i>`:""}${w.supp?`<i class="hw-supp">教辅</i>`:""}${editHWOn?`<i class="hw-edit" title="修改" onclick="event.stopPropagation();editHW(${i})">✎</i><i class="hw-del" title="删除" onclick="event.stopPropagation();delHW(${i})">✕</i>`:""}</span>`;
   }).join("");
   const addBtn=$("hwAddBtn"); if(addBtn) addBtn.style.display = arr.length>=15 ? "none" : "";
 }
@@ -2197,7 +2213,11 @@ async function addHW(){
   const s = await askSeg({ title:"是否计入统计栏", value:"1", options:[{value:"1",label:"统计"},{value:"0",label:"不统计"}],
     hint:"选「统计」才会出现在周 / 月 / 年清单；选「不统计」仅保留在每日清单与星星结算。" });
   if(s==null) return; const stats = (s==="1");
-  arr.push({id:uid(), t:t, e:est, stats, _u:Date.now()}); saveHW(hw); renderHWChips();
+  /* v.123：常用词内设置「是否为教辅」；默认普通 */
+  const p = await askSeg({ title:"是否为教辅", value:"0", options:[{value:"1",label:"教辅"},{value:"0",label:"普通"}],
+    hint:"选「教辅」后，删除时会询问学习状态并记入教辅学习统计。" });
+  if(p==null) return; const supp = (p==="1");
+  arr.push({id:uid(), t:t, e:est, stats, supp, cAt:ymd(new Date()), _u:Date.now()}); saveHW(hw); renderHWChips();
 }
 async function editHW(i){
   const hw=loadHW(); const real=hw[addSubj]||[];
@@ -2211,9 +2231,13 @@ async function editHW(i){
   const s = await askSeg({ title:"是否计入统计栏", value: cur.stats?"1":"0", options:[{value:"1",label:"统计"},{value:"0",label:"不统计"}],
     hint:"选「统计」才会出现在周 / 月 / 年清单；选「不统计」仅保留在每日清单与星星结算。" });
   if(s==null) return; const stats = (s==="1");
+  /* v.123：常用词内设置「是否为教辅」（沿用当前值作为默认） */
+  const p = await askSeg({ title:"是否为教辅", value: cur.supp?"1":"0", options:[{value:"1",label:"教辅"},{value:"0",label:"普通"}],
+    hint:"选「教辅」后，删除时会询问学习状态并记入教辅学习统计。" });
+  if(p==null) return; const supp = (p==="1");
   const raw=arr[i]||{}; const hwId = raw.id||uid();
   const oldTitle = cur.t;                     // 旧标题：用于存量数据的标题兜底匹配
-  const newItem={id:hwId, t:t, e:est, stats, _u:Date.now()};
+  const newItem={id:hwId, t:t, e:est, stats, supp, _u:Date.now()};
   const at = real.indexOf(raw);               // 写回真实数组中该词的所在位置（保持原存储顺序）
   if(at>=0) real[at]=newItem; else real.push(newItem);
   saveHW(hw);
@@ -2235,13 +2259,56 @@ async function editHW(i){
   if(n>0) toast("已改名为「"+t+"」，同步更新 "+n+" 条清单项"+(byTitle?("（其中 "+byTitle+" 条为历史数据按名称匹配）"):""));
   else toast("常用词已更新");
 }
-/* v.80：删除常用词只删词本身，不影响此前已添加的清单项（无需处理 state.todos） */
-function delHW(i){
+/* v.123：删除常用词 —— 若为教辅，先询问学习状态并归档到 suppLog，再删除词本身 */
+async function delHW(i){
   const hw=loadHW(); const real=hw[addSubj]||[];
   const arr=orderHw(real, getHwOrder(addSubj)); if(i<0||i>=arr.length) return;
-  const gone=arr[i]; if(gone&&gone.id) tombstoneHW(gone.id);
+  const gone=arr[i];
+  if(gone && gone.supp){
+    const st = await askSeg({ title:"删除教辅 · 确认学习状态", value:"done",
+      options:[{value:"done",label:"学习完成"},{value:"ongoing",label:"未完成"},{value:"abort",label:"学习中止"}],
+      hint:"「学习完成」记录起止时间并标记已完成；「未完成」仅保留学习开始时间；「学习中止」记录起止时间并标记已中止。" });
+    if(st==null) return;                       // 取消 → 不删除
+    const ss = suppStatsForHw(gone.id);
+    state.suppLog = state.suppLog||[];
+    state.suppLog.push({ id:uid(), name:hwItem(gone).t, subj:addSubj, status:st,
+      startDs: ss.startDs || gone.cAt || ymd(new Date()),
+      endDs: (st==="ongoing") ? null : ymd(new Date()),
+      count: ss.count, minutes: ss.minutes, _u:Date.now() });
+  }
+  if(gone&&gone.id) tombstoneHW(gone.id);
   const at=real.indexOf(gone); if(at>=0) real.splice(at,1); else arr.splice(i,1);
   saveHW(hw); renderHWChips();
+  if(gone && gone.supp) toast("已删除教辅并记入教辅学习统计");
+}
+/* v.123：统计某教辅（按 hwId）的学习次数 / 学习时间 / 首次学习日（仅统计已完成的清单项） */
+function suppStatsForHw(hwId){
+  const items = (state.todos||[]).filter(t=> t && t.hwId===hwId && t.done);
+  let count=0, minutes=0, startDs=null;
+  items.forEach(t=>{ count++; minutes += suppDur(t); if(!startDs || (t.date && t.date<startDs)) startDs=t.date; });
+  return { count, minutes, startDs };
+}
+/* v.123：单条教辅学习时长（分钟）：计时项用真实用时，未计时用预估分 */
+function suppDur(t){ return isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0); }
+/* v.123：教辅学习统计区块（统计栏展示最新 20 本） */
+function renderSuppBlock(){
+  const log = (state.suppLog||[]).slice().sort((a,b)=>(b._u||0)-(a._u||0)).slice(0,20);
+  if(!log.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录</div></div>`;
+  const rows = log.map(r=>{
+    const badge = r.status==="done" ? `<span class="supp-badge done">✓ 已完成</span>`
+                : r.status==="abort" ? `<span class="supp-badge abort">⛔ 已中止</span>`
+                : `<span class="supp-badge ongoing">● 进行中</span>`;
+    const timeLine = r.status==="ongoing"
+      ? `开始：${r.startDs||"—"}`
+      : `起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`;
+    const hrs = (r.minutes||0)/60;
+    const hrTxt = hrs>=1 ? (hrs.toFixed(1)+" 小时") : ((r.minutes||0)+" 分钟");
+    return `<div class="supp-row">
+      <div class="supp-top"><span class="supp-name">${esc(r.name)}</span>${badge}</div>
+      <div class="supp-sub">${timeLine}<br/>学习次数：${r.count} 次 ｜ 学习时间：${hrTxt}</div>
+    </div>`;
+  }).join("");
+  return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div>${rows}</div>`;
 }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
@@ -3602,7 +3669,7 @@ function renderMonth(){
   mu += `</div>`;
   grid += mu + rewardBlock;   // 未完成&未订正（mu）排在未额外奖励统计（rewardBlock）之上；阅读统计板块已迁到「奖励」页（v.94）
 
-  $("monthContent").innerHTML = kpi + grid;
+  $("monthContent").innerHTML = kpi + grid + renderSuppBlock();
 }
 
 /* ============ 奖励栏（目标奖励 / 打卡奖励 / 额外奖惩 + 阅读统计） ============
@@ -4840,7 +4907,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.01.122";
+const APP_VERSION = "2026.11.02.123";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
