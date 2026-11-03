@@ -753,6 +753,7 @@
   .supp-badge.done{color:#3b6d11; background:#eaf3de;}
   .supp-badge.ongoing{color:#0c447c; background:#e6f1fb;}
   .supp-badge.abort{color:#791f1f; background:#fcebeb;}
+  .supp-badge.studying{color:#7a4b00; background:#fdf0d5;}
 
   /* ===== 底部 Tab ===== */
   .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
@@ -2282,26 +2283,44 @@ async function delHW(i){
   saveHW(hw); renderHWChips(); renderSuppStats();
   if(gone && gone.supp) toast("已删除教辅并记入教辅学习统计");
 }
-/* v.123：统计某教辅（按 hwId）的学习次数 / 学习时间 / 首次学习日（仅统计已完成的清单项） */
+/* v.123：统计某教辅（按 hwId）的学习次数 / 学习时间 / 首次学习日 / 最近学习日（仅统计已完成的清单项） */
 function suppStatsForHw(hwId){
   const items = (state.todos||[]).filter(t=> t && t.hwId===hwId && t.done);
-  let count=0, minutes=0, startDs=null;
-  items.forEach(t=>{ count++; minutes += suppDur(t); if(!startDs || (t.date && t.date<startDs)) startDs=t.date; });
-  return { count, minutes, startDs };
+  let count=0, minutes=0, startDs=null, lastDs=null;
+  items.forEach(t=>{ count++; minutes += suppDur(t);
+    if(!startDs || (t.date && t.date<startDs)) startDs=t.date;
+    if(!lastDs || (t.date && t.date>lastDs)) lastDs=t.date; });
+  return { count, minutes, startDs, lastDs };
 }
 /* v.123：单条教辅学习时长（分钟）：计时项用真实用时，未计时用预估分 */
 function suppDur(t){ return isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0); }
-/* v.123：教辅学习统计区块（统计栏展示最新 20 本） */
+/* v.125：教辅学习统计区块（统计栏展示最新 20 本）
+   来源 = 已归档（删除教辅时记录） + 当前常用词里「已有完成记录」的教辅（学习中）。
+   未删除但已在学习中的教辅也实时显示，解决「完成清单后看不到统计」的问题。 */
 function renderSuppBlock(){
-  const log = (state.suppLog||[]).slice().sort((a,b)=>(b._u||0)-(a._u||0)).slice(0,20);
-  if(!log.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录</div></div>`;
-  const rows = log.map(r=>{
-    const badge = r.status==="done" ? `<span class="supp-badge done">✓ 已完成</span>`
-                : r.status==="abort" ? `<span class="supp-badge abort">⛔ 已中止</span>`
-                : `<span class="supp-badge ongoing">● 进行中</span>`;
-    const timeLine = r.status==="ongoing"
-      ? `开始：${r.startDs||"—"}`
-      : `起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`;
+  const log = (state.suppLog||[]).slice();   // 已删除归档
+  // 当前仍在常用词、且已有学习记录的教辅 → 学习中
+  const hw = loadHW(); const active = [];
+  Object.keys(hw||{}).forEach(subj=>{
+    (hw[subj]||[]).forEach(w=>{
+      if(w && w.supp && w.id){
+        const ss = suppStatsForHw(w.id);
+        if(ss.count>0) active.push({ name:hwItem(w).t, status:"studying",
+          startDs:ss.startDs, endDs:null, count:ss.count, minutes:ss.minutes,
+          sortDs:ss.lastDs||ss.startDs||"" });
+      }
+    });
+  });
+  // 归档项补排序键：已完结的用结束日，未完结的用开始日
+  log.forEach(r=>{ r.sortDs = (r.status!=="ongoing" && r.endDs) ? r.endDs : (r.startDs||""); });
+  const all = active.concat(log).sort((a,b)=> String(b.sortDs||"").localeCompare(String(a.sortDs||""))).slice(0,20);
+  if(!all.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录（完成含教辅的清单项后自动出现）</div></div>`;
+  const rows = all.map(r=>{
+    let badge, timeLine;
+    if(r.status==="done"){ badge=`<span class="supp-badge done">✓ 已完成</span>`; timeLine=`起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`; }
+    else if(r.status==="abort"){ badge=`<span class="supp-badge abort">⛔ 已中止</span>`; timeLine=`起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`; }
+    else if(r.status==="studying"){ badge=`<span class="supp-badge studying">📖 学习中</span>`; timeLine=`开始：${r.startDs||"—"}`; }
+    else { badge=`<span class="supp-badge ongoing">● 进行中</span>`; timeLine=`开始：${r.startDs||"—"}`; }
     const hrs = (r.minutes||0)/60;
     const hrTxt = hrs>=1 ? (hrs.toFixed(1)+" 小时") : ((r.minutes||0)+" 分钟");
     return `<div class="supp-row">
@@ -4910,7 +4929,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.02.124";
+const APP_VERSION = "2026.11.03.125";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
