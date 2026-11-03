@@ -744,24 +744,29 @@
   .supp-block{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px; margin-top:10px;}
   .supp-h{font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
   .supp-h .supp-n{color:var(--sun); font-weight:800; margin-left:4px;}
-  .supp-row{display:flex; flex-direction:column; gap:3px; padding:7px 4px; border-bottom:1px solid #f2efe6;}
+  .supp-row{display:flex; flex-direction:column; gap:3px; padding:7px 6px 7px 10px; border-bottom:1px solid #f2efe6; border-left:3px solid transparent;}
   .supp-row:last-child{border-bottom:none;}
+  /* v.127：按学习状态着色卡片（学习中蓝·中止橙·已结束绿），便于一眼区分 */
+  .supp-row.status-studying{background:#f2f8ff; border-left-color:#2f7fd6;}
+  .supp-row.status-paused{background:#fff8ee; border-left-color:#e0a13c;}
+  .supp-row.status-done{background:#f4f8ef; border-left-color:#7bb24a;}
   .supp-top{display:flex; align-items:center; justify-content:space-between; gap:8px;}
   .supp-name{flex:1; min-width:0; font-size:12.5px; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .supp-sub{font-size:11px; color:var(--muted); line-height:1.7; white-space:pre-line;}
+  .supp-sub{font-size:11px; color:var(--muted); line-height:1.5; white-space:pre-line;}
   .supp-badge{font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; flex:0 0 auto; white-space:nowrap;}
   .supp-badge.done{color:#3b6d11; background:#eaf3de;}
   .supp-badge.ongoing{color:#0c447c; background:#e6f1fb;}
   .supp-badge.abort{color:#791f1f; background:#fcebeb;}
-  .supp-badge.studying{color:#7a4b00; background:#fdf0d5;}
-  .supp-badge.paused{color:#633806; background:#faedda;}
+  .supp-badge.studying{color:#1f5fa8; background:#dcebfb;}
+  .supp-badge.paused{color:#8a5a00; background:#fbeed2;}
   .supp-menu{display:flex; gap:6px; margin:5px 0 2px; flex-wrap:wrap;}
+  .supp-setbtn{font-size:11px; padding:2px 9px; border-radius:10px; border:0.5px solid #d8d2c4; background:#fff; color:#666; cursor:pointer; font-family:inherit; flex:0 0 auto;}
+  .supp-setbtn:hover{border-color:#bbb;}
   .supp-mbtn{font-size:11px; padding:3px 11px; border-radius:10px; border:0.5px solid #d8d2c4; background:#fff; color:#444; cursor:pointer; font-family:inherit;}
   .supp-mbtn:hover{border-color:#bbb;}
   .supp-mbtn.danger{border-color:#e0a3a3; color:#a32d2d;}
-  .supp-delbtn{font-size:11px; padding:2px 9px; border-radius:10px; border:0.5px solid #ddd; background:#fff; color:#888; cursor:pointer; font-family:inherit; flex:0 0 auto;}
-  .supp-delbtn:hover{border-color:#c99; color:#a32d2d;}
-  .supp-conf{font-size:11px; color:var(--muted); display:inline-flex; align-items:center; gap:5px;}
+  .supp-setmenu{margin:5px 0 2px;}
+  .supp-delconf{font-size:11px; color:#a32d2d; display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:5px 0 2px; padding:4px 6px; background:#fdf0f0; border-radius:8px;}
 
   /* ===== 底部 Tab ===== */
   .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
@@ -1201,6 +1206,7 @@ let cmpTitle = null;
 let openExpo = null;      // 当前展开的 todoId（手风琴：同时只展开一个）
 let ganttHL = null;      // 高亮 todoId
 let suppMenuKey = null;  // 教辅统计：当前展开状态菜单的条目 key
+let suppSetKey = null;   // 教辅统计：当前展开「设置」菜单的条目 key
 let suppDelKey = null;   // 教辅统计：当前处于删除确认态的条目 key
 
 /* ============ 数据层 ============ */
@@ -2353,7 +2359,13 @@ function suppAllRecords(){
       }
     });
   });
-  return managed.concat(auto).sort((a,b)=> String(b.sortDs||"").localeCompare(String(a.sortDs||""))).slice(0,20);
+  /* v.127：排序——学习中(0)最上、中止(1)居中、已结束(2)最底；组内按最近学习日倒序 */
+  const RANK = {studying:0, paused:1, done:2};
+  return managed.concat(auto).sort((a,b)=>{
+    const ra = RANK[a.status]!=null?RANK[a.status]:3, rb = RANK[b.status]!=null?RANK[b.status]:3;
+    if(ra!==rb) return ra-rb;
+    return String(b.sortDs||"").localeCompare(String(a.sortDs||""));
+  }).slice(0,20);
 }
 function suppSegStart(r){ return (r.segs&&r.segs[0]&&r.segs[0].s)||"—"; }
 function suppSegEnd(r){ const last=(r.segs||[])[(r.segs||[]).length-1]; return (last&&last.e)||"—"; }
@@ -2364,30 +2376,36 @@ function renderSuppBlock(){
   const rows = recs.map(r=>{
     const bcls = r.status==="done"?"done":r.status==="paused"?"paused":"studying";
     const btxt = r.status==="done"?"学习结束":r.status==="paused"?"中止学习":"学习中";
+    /* v.127：灰色字精简紧凑——单行，去掉冗余前缀，仅保留 时段/次数/时长 */
     let timeLine;
-    if(r.status==="done"){ timeLine = `起止：${suppSegStart(r)} → ${suppSegEnd(r)}`; }
+    if(r.status==="done"){ timeLine = `起 ${suppSegStart(r)} → 止 ${suppSegEnd(r)}`; }
     else if(r.status==="paused"){
-      const parts = (r.segs||[]).map((s,i)=>`第${i+1}段 ${suppFmtDs(s.s)} → ${suppFmtDs(s.e)}`);
-      timeLine = `学习时段（分段）：${parts.join("　")}（暂搁，可恢复）`;
+      const segsTxt = (r.segs||[]).map(s=>`${suppFmtDs(s.s)}→${suppFmtDs(s.e)}`).join(" / ");
+      timeLine = `分段(${(r.segs||[]).length}) ${segsTxt}（暂挂）`;
     } else {
-      timeLine = `学习中 ｜ 首次开始 ${suppSegStart(r)}` + ((r.segs||[]).length>1 ? `；共 ${(r.segs||[]).length} 段（曾暂停后续学）` : `（进行中）`);
+      timeLine = `自学自 ${suppSegStart(r)}` + ((r.segs||[]).length>1 ? ` · ${(r.segs||[]).length}段` : "");
     }
-    const hrs=(r.minutes||0)/60; const hrTxt = hrs>=1?(hrs.toFixed(1)+" 小时"):((r.minutes||0)+" 分钟");
-    const menu = (suppMenuKey===r.key) ? `<div class="supp-menu">`+
+    const hrs=(r.minutes||0)/60; const hrTxt = hrs>=1?(hrs.toFixed(1)+"h"):((r.minutes||0)+"分");
+    const statusMenu = (suppMenuKey===r.key) ? `<div class="supp-menu">`+
       ["studying","paused","done"].map(s=>{
         const dis = r.status===s ? " disabled style=\"opacity:.5\"" : "";
         const lbl = s==="studying"?"学习中":s==="paused"?"中止学习":"学习结束";
         return `<button class="supp-mbtn" onclick="suppSetStatus('${r.hwId||""}','${r.key}','${s}')"${dis}>${lbl}</button>`;
       }).join("")+`</div>` : "";
-    const del = (suppDelKey===r.key)
-      ? `<span class="supp-conf">确认删除？<button class="supp-mbtn danger" onclick="suppDel('${r.key}','${r.hwId||""}')">删除</button><button class="supp-mbtn" onclick="suppMenuKey=null;suppDelKey=null;renderSuppStats();">取消</button></span>`
-      : `<button class="supp-delbtn" onclick="suppDelKey='${r.key}';suppMenuKey=null;renderSuppStats();">删除</button>`;
-    return `<div class="supp-row">
+    /* v.127：删除仅通过「设置」按钮进入；点「删除条目」后再二次确认，防误删 */
+    const setMenu = (suppSetKey===r.key)
+      ? `<div class="supp-setmenu"><button class="supp-mbtn danger" onclick="suppDelKey='${r.key}';suppSetKey=null;renderSuppStats();">删除条目</button></div>` : "";
+    const delConf = (suppDelKey===r.key)
+      ? `<div class="supp-delconf">确认删除该教辅统计？记录与常用词均移除。<button class="supp-mbtn danger" onclick="suppDel('${r.key}','${r.hwId||""}')">确认删除</button><button class="supp-mbtn" onclick="suppDelKey=null;renderSuppStats();">取消</button></div>` : "";
+    return `<div class="supp-row status-${bcls}">
       <div class="supp-top"><span class="supp-name">${esc(r.name)}</span>
-        <span class="supp-badge ${bcls}" onclick="suppMenuKey='${r.key}';suppDelKey=null;renderSuppStats();" style="cursor:pointer">${btxt} ▾</span>
-        ${del}</div>
-      ${menu}
-      <div class="supp-sub">${timeLine}<br/>学习次数：${r.count} 次 ｜ 学习时间：${hrTxt}</div>
+        <span class="supp-badge ${bcls}" onclick="suppMenuKey=suppMenuKey==='${r.key}'?null:'${r.key}';suppSetKey=null;suppDelKey=null;renderSuppStats();" style="cursor:pointer">${btxt} ▾</span>
+        <button class="supp-setbtn" onclick="suppSetKey=suppSetKey==='${r.key}'?null:'${r.key}';suppMenuKey=null;suppDelKey=null;renderSuppStats();">设置</button>
+      </div>
+      ${statusMenu}
+      ${setMenu}
+      ${delConf}
+      <div class="supp-sub">${timeLine} · ${r.count}次 · ${hrTxt}</div>
     </div>`;
   }).join("");
   return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div>${rows}</div>`;
@@ -2408,14 +2426,14 @@ function suppSetStatus(hwId, key, status){
   else if(status==="done"){ if(last && !last.e) last.e = ymd(new Date()); }       // 关闭当前段 → 结束
   r.status = status; r._u = Date.now();
   if(status==="done") removeHwById(hwId);                                        // 结束 → 移除常用词
-  suppMenuKey=null; suppDelKey=null;
+  suppMenuKey=null; suppSetKey=null; suppDelKey=null;
   save(); renderSuppStats();
 }
 /* v.126：删除教辅统计条目（删记录 + 移除常用词） */
 function suppDel(key, hwId){
   state.suppRec = (state.suppRec||[]).filter(x => x.id!==key && x.hwId!==key);
   removeHwById(hwId);
-  suppMenuKey=null; suppDelKey=null;
+  suppMenuKey=null; suppSetKey=null; suppDelKey=null;
   save(); renderHWChips(); renderSuppStats();
 }
 /* v.126：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
@@ -5017,7 +5035,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.03.126";
+const APP_VERSION = "2026.11.03.127";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
