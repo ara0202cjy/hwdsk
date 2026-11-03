@@ -754,6 +754,14 @@
   .supp-badge.ongoing{color:#0c447c; background:#e6f1fb;}
   .supp-badge.abort{color:#791f1f; background:#fcebeb;}
   .supp-badge.studying{color:#7a4b00; background:#fdf0d5;}
+  .supp-badge.paused{color:#633806; background:#faedda;}
+  .supp-menu{display:flex; gap:6px; margin:5px 0 2px; flex-wrap:wrap;}
+  .supp-mbtn{font-size:11px; padding:3px 11px; border-radius:10px; border:0.5px solid #d8d2c4; background:#fff; color:#444; cursor:pointer; font-family:inherit;}
+  .supp-mbtn:hover{border-color:#bbb;}
+  .supp-mbtn.danger{border-color:#e0a3a3; color:#a32d2d;}
+  .supp-delbtn{font-size:11px; padding:2px 9px; border-radius:10px; border:0.5px solid #ddd; background:#fff; color:#888; cursor:pointer; font-family:inherit; flex:0 0 auto;}
+  .supp-delbtn:hover{border-color:#c99; color:#a32d2d;}
+  .supp-conf{font-size:11px; color:var(--muted); display:inline-flex; align-items:center; gap:5px;}
 
   /* ===== 底部 Tab ===== */
   .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
@@ -1192,8 +1200,23 @@ let rewardView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);   // 
 let cmpTitle = null;
 let openExpo = null;      // 当前展开的 todoId（手风琴：同时只展开一个）
 let ganttHL = null;      // 高亮 todoId
+let suppMenuKey = null;  // 教辅统计：当前展开状态菜单的条目 key
+let suppDelKey = null;   // 教辅统计：当前处于删除确认态的条目 key
 
 /* ============ 数据层 ============ */
+/* v.126：旧 suppLog 迁移到可管理的 suppRec（done→done / ongoing→paused / abort→done；segs 由起止推导） */
+function migrateSuppLog(){
+  if(!Array.isArray(state.suppRec)) state.suppRec = [];
+  if(Array.isArray(state.suppLog)){
+    state.suppLog.forEach(r=>{
+      if(!r) return;
+      const st = r.status==="done" ? "done" : r.status==="abort" ? "done" : "paused";
+      const segs = [{ s: r.startDs||"", e: r.status==="ongoing" ? null : (r.endDs||null) }];
+      state.suppRec.push({ id:r.id||uid(), name:r.name, subj:r.subj, hwId:r.hwId||null, status:st, segs, count:r.count||0, minutes:r.minutes||0, _u:r._u||Date.now() });
+    });
+    delete state.suppLog;
+  }
+}
 function load(){
   try{ const raw = localStorage.getItem(STORE_KEY); if(raw){ state = JSON.parse(raw); } }catch(e){}
   if(!state || !state.todos){ state = seed(); save(); }
@@ -1215,7 +1238,8 @@ function load(){
   /* v.91 阅读栏：独立于作业清单（不计入完成 / 未完成结算），单独统计阅读天数与时长 */
   if(!Array.isArray(state.reads)) state.reads = [];       // 阅读记录：{id,date,minutes,lang,fic,book}
   if(!state._delRd) state._delRd = {};        // 阅读记录删除墓碑：跨端同步删除
-  if(!Array.isArray(state.suppLog)) state.suppLog = [];   // v.123：教辅学习记录（删除教辅时归档）
+  if(!Array.isArray(state.suppRec)) state.suppRec = [];   // v.126：教辅学习记录（可管理：状态 + 分段 segs）
+  migrateSuppLog();                              // v.126：旧 suppLog 迁移到 suppRec
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
   ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
   ensureNights();                              // v.110：晚睡数据初始化
@@ -1244,7 +1268,7 @@ function save(){ saveLocal(); syncSchedule(); }
 
 function seed(){
   // 全新安装从空开始（不再生成示例数据，避免混入统计与云端）
-  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, suppLog:[], subjects: defaultSubjects(), nights:{}, _syncedAt:0 };
+  return { todos:[], tasks:[], masters:[], _del:{}, _delM:{}, hw:{}, _delHW:{}, rewards:[], _delR:{}, suppRec:[], subjects: defaultSubjects(), nights:{}, _syncedAt:0 };
 }
 function mkTodo(date, subject, title, o={}){
   return Object.assign({
@@ -2261,27 +2285,41 @@ async function editHW(i){
   if(n>0) toast("已改名为「"+t+"」，同步更新 "+n+" 条清单项"+(byTitle?("（其中 "+byTitle+" 条为历史数据按名称匹配）"):""));
   else toast("常用词已更新");
 }
-/* v.123：删除常用词 —— 若为教辅，先询问学习状态并归档到 suppLog，再删除词本身 */
+/* v.126：删除常用词 —— 教辅删除后归档为「学习结束」（暂搁请改用统计栏的中止学习） */
 async function delHW(i){
   const hw=loadHW(); const real=hw[addSubj]||[];
   const arr=orderHw(real, getHwOrder(addSubj)); if(i<0||i>=arr.length) return;
   const gone=arr[i];
   if(gone && gone.supp){
-    const st = await askSeg({ title:"删除教辅 · 确认学习状态", value:"done",
-      options:[{value:"done",label:"学习完成"},{value:"ongoing",label:"未完成"},{value:"abort",label:"学习中止"}],
-      hint:"「学习完成」记录起止时间并标记已完成；「未完成」仅保留学习开始时间；「学习中止」记录起止时间并标记已中止。" });
+    const st = await askSeg({ title:"删除教辅常用词", value:"done",
+      options:[{value:"done",label:"学习结束（归档）"}],
+      hint:"删除后将记为「学习结束」并归档到教辅统计；如想暂搁请改用统计栏里的「中止学习」。" });
     if(st==null) return;                       // 取消 → 不删除
-    const ss = suppStatsForHw(gone.id);
-    state.suppLog = state.suppLog||[];
-    state.suppLog.push({ id:uid(), name:hwItem(gone).t, subj:addSubj, status:st,
-      startDs: ss.startDs || gone.cAt || ymd(new Date()),
-      endDs: (st==="ongoing") ? null : ymd(new Date()),
-      count: ss.count, minutes: ss.minutes, _u:Date.now() });
+    suppArchive(gone.id, hwItem(gone).t, addSubj, "done");
   }
   if(gone&&gone.id) tombstoneHW(gone.id);
   const at=real.indexOf(gone); if(at>=0) real.splice(at,1); else arr.splice(i,1);
   saveHW(hw); renderHWChips(); renderSuppStats();
-  if(gone && gone.supp) toast("已删除教辅并记入教辅学习统计");
+  if(gone && gone.supp) toast("已归档为学习结束");
+}
+/* v.126：查找/删除常用词工具 */
+function findHw(hwId){ if(!hwId) return null; const hw=loadHW(); for(const s of Object.keys(hw||{})){ const x=(hw[s]||[]).find(w=>w&&w.id===hwId); if(x) return x; } return null; }
+function hwName(hwId){ const x=findHw(hwId); return x?hwItem(x).t:"(教辅)"; }
+function hwSubj(hwId){ const hw=loadHW(); for(const s of Object.keys(hw||{})){ if((hw[s]||[]).some(w=>w&&w.id===hwId)) return s; } return ""; }
+function removeHwById(hwId){ if(!hwId) return; const hw=loadHW(); for(const s of Object.keys(hw||{})){ const arr=hw[s]||[]; const at=arr.findIndex(w=>w&&w.id===hwId); if(at>=0){ tombstoneHW(hwId); arr.splice(at,1); saveHW(hw); return; } } }
+/* v.126：归档教辅为指定状态（关闭开放分段、写入 suppRec、移除常用词） */
+function suppArchive(hwId, name, subj, status){
+  state.suppRec = state.suppRec||[];
+  let r = state.suppRec.find(x=>x.hwId===hwId);
+  const ss = suppStatsForHw(hwId);
+  if(!r){ r={ id:uid(), name, subj, hwId, segs:[], _u:Date.now() }; state.suppRec.push(r); }
+  r.name=name; r.subj=subj; r.hwId=hwId; r.count=ss.count; r.minutes=ss.minutes;
+  const last=r.segs[r.segs.length-1];
+  if(last && !last.e) last.e=ymd(new Date());
+  else if(!r.segs.length) r.segs.push({s: ss.startDs||ymd(new Date()), e: ymd(new Date())});
+  r.status=status; r._u=Date.now();
+  removeHwById(hwId);
+  save();
 }
 /* v.123：统计某教辅（按 hwId）的学习次数 / 学习时间 / 首次学习日 / 最近学习日（仅统计已完成的清单项） */
 function suppStatsForHw(hwId){
@@ -2294,43 +2332,93 @@ function suppStatsForHw(hwId){
 }
 /* v.123：单条教辅学习时长（分钟）：计时项用真实用时，未计时用预估分 */
 function suppDur(t){ return isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0); }
-/* v.125：教辅学习统计区块（统计栏展示最新 20 本）
-   来源 = 已归档（删除教辅时记录） + 当前常用词里「已有完成记录」的教辅（学习中）。
-   未删除但已在学习中的教辅也实时显示，解决「完成清单后看不到统计」的问题。 */
-function renderSuppBlock(){
-  const log = (state.suppLog||[]).slice();   // 已删除归档
-  // 当前仍在常用词、且已有学习记录的教辅 → 学习中
-  const hw = loadHW(); const active = [];
+/* v.126：教辅学习统计区块（统计栏展示最新 20 本）
+   来源 = suppRec（显式管理记录：中止/结束，及手动设过状态的） + 当前常用词里「已有完成记录」的教辅（自动学习中）。
+   支持点击状态标签切换 学习中/中止学习/学习结束，支持删除；中止=暂搁保留常用词、结束/删除=移除常用词。 */
+function suppAllRecords(){
+  const managed = (state.suppRec||[]).map(r=>{
+    const ss = r.hwId ? suppStatsForHw(r.hwId) : {count:r.count||0, minutes:r.minutes||0, startDs:(r.segs[0]&&r.segs[0].s)||"", lastDs:null};
+    const lastSeg = (r.segs||[])[(r.segs||[]).length-1]||{};
+    return { key:r.id, hwId:r.hwId||null, name:r.name, status:r.status, segs:r.segs||[],
+      count:ss.count, minutes:ss.minutes, sortDs: lastSeg.e || (r.segs&&r.segs[0]&&r.segs[0].s) || "" };
+  });
+  const auto = []; const hw=loadHW();
   Object.keys(hw||{}).forEach(subj=>{
     (hw[subj]||[]).forEach(w=>{
       if(w && w.supp && w.id){
-        const ss = suppStatsForHw(w.id);
-        if(ss.count>0) active.push({ name:hwItem(w).t, status:"studying",
-          startDs:ss.startDs, endDs:null, count:ss.count, minutes:ss.minutes,
-          sortDs:ss.lastDs||ss.startDs||"" });
+        if((state.suppRec||[]).some(r=>r.hwId===w.id)) return;   // 已有显式记录则不再自动生成
+        const ss=suppStatsForHw(w.id);
+        if(ss.count>0) auto.push({ key:w.id, hwId:w.id, name:hwItem(w).t, status:"studying",
+          segs:[{s:ss.startDs, e:null}], count:ss.count, minutes:ss.minutes, sortDs:ss.lastDs||ss.startDs||"" });
       }
     });
   });
-  // 归档项补排序键：已完结的用结束日，未完结的用开始日
-  log.forEach(r=>{ r.sortDs = (r.status!=="ongoing" && r.endDs) ? r.endDs : (r.startDs||""); });
-  const all = active.concat(log).sort((a,b)=> String(b.sortDs||"").localeCompare(String(a.sortDs||""))).slice(0,20);
-  if(!all.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录（完成含教辅的清单项后自动出现）</div></div>`;
-  const rows = all.map(r=>{
-    let badge, timeLine;
-    if(r.status==="done"){ badge=`<span class="supp-badge done">✓ 已完成</span>`; timeLine=`起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`; }
-    else if(r.status==="abort"){ badge=`<span class="supp-badge abort">⛔ 已中止</span>`; timeLine=`起止：${r.startDs||"—"} ~ ${r.endDs||"—"}`; }
-    else if(r.status==="studying"){ badge=`<span class="supp-badge studying">📖 学习中</span>`; timeLine=`开始：${r.startDs||"—"}`; }
-    else { badge=`<span class="supp-badge ongoing">● 进行中</span>`; timeLine=`开始：${r.startDs||"—"}`; }
-    const hrs = (r.minutes||0)/60;
-    const hrTxt = hrs>=1 ? (hrs.toFixed(1)+" 小时") : ((r.minutes||0)+" 分钟");
+  return managed.concat(auto).sort((a,b)=> String(b.sortDs||"").localeCompare(String(a.sortDs||""))).slice(0,20);
+}
+function suppSegStart(r){ return (r.segs&&r.segs[0]&&r.segs[0].s)||"—"; }
+function suppSegEnd(r){ const last=(r.segs||[])[(r.segs||[]).length-1]; return (last&&last.e)||"—"; }
+function suppFmtDs(s){ return s||"—"; }
+function renderSuppBlock(){
+  const recs = suppAllRecords();
+  if(!recs.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录（完成含教辅的清单项后自动出现）</div></div>`;
+  const rows = recs.map(r=>{
+    const bcls = r.status==="done"?"done":r.status==="paused"?"paused":"studying";
+    const btxt = r.status==="done"?"学习结束":r.status==="paused"?"中止学习":"学习中";
+    let timeLine;
+    if(r.status==="done"){ timeLine = `起止：${suppSegStart(r)} → ${suppSegEnd(r)}`; }
+    else if(r.status==="paused"){
+      const parts = (r.segs||[]).map((s,i)=>`第${i+1}段 ${suppFmtDs(s.s)} → ${suppFmtDs(s.e)}`);
+      timeLine = `学习时段（分段）：${parts.join("　")}（暂搁，可恢复）`;
+    } else {
+      timeLine = `学习中 ｜ 首次开始 ${suppSegStart(r)}` + ((r.segs||[]).length>1 ? `；共 ${(r.segs||[]).length} 段（曾暂停后续学）` : `（进行中）`);
+    }
+    const hrs=(r.minutes||0)/60; const hrTxt = hrs>=1?(hrs.toFixed(1)+" 小时"):((r.minutes||0)+" 分钟");
+    const menu = (suppMenuKey===r.key) ? `<div class="supp-menu">`+
+      ["studying","paused","done"].map(s=>{
+        const dis = r.status===s ? " disabled style=\"opacity:.5\"" : "";
+        const lbl = s==="studying"?"学习中":s==="paused"?"中止学习":"学习结束";
+        return `<button class="supp-mbtn" onclick="suppSetStatus('${r.hwId||""}','${r.key}','${s}')"${dis}>${lbl}</button>`;
+      }).join("")+`</div>` : "";
+    const del = (suppDelKey===r.key)
+      ? `<span class="supp-conf">确认删除？<button class="supp-mbtn danger" onclick="suppDel('${r.key}','${r.hwId||""}')">删除</button><button class="supp-mbtn" onclick="suppMenuKey=null;suppDelKey=null;renderSuppStats();">取消</button></span>`
+      : `<button class="supp-delbtn" onclick="suppDelKey='${r.key}';suppMenuKey=null;renderSuppStats();">删除</button>`;
     return `<div class="supp-row">
-      <div class="supp-top"><span class="supp-name">${esc(r.name)}</span>${badge}</div>
+      <div class="supp-top"><span class="supp-name">${esc(r.name)}</span>
+        <span class="supp-badge ${bcls}" onclick="suppMenuKey='${r.key}';suppDelKey=null;renderSuppStats();" style="cursor:pointer">${btxt} ▾</span>
+        ${del}</div>
+      ${menu}
       <div class="supp-sub">${timeLine}<br/>学习次数：${r.count} 次 ｜ 学习时间：${hrTxt}</div>
     </div>`;
   }).join("");
   return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div>${rows}</div>`;
 }
-/* v.123：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
+/* v.126：切换某教辅学习状态（学习中/中止学习/学习结束）；维护分段；中止保留常用词，结束移除常用词 */
+function suppSetStatus(hwId, key, status){
+  state.suppRec = state.suppRec||[];
+  let r = state.suppRec.find(x=>x.id===key) || (hwId ? state.suppRec.find(x=>x.hwId===hwId) : null);
+  const ss = suppStatsForHw(hwId);
+  if(!r){
+    r = { id:key, name:hwName(hwId), subj:hwSubj(hwId), hwId:hwId||null, segs:[{s:ss.startDs||ymd(new Date()), e:null}], _u:Date.now() };
+    state.suppRec.push(r);
+  }
+  r.count=ss.count; r.minutes=ss.minutes;
+  const last = (r.segs||[])[(r.segs||[]).length-1];
+  if(status==="paused"){ if(last && !last.e) last.e = ymd(new Date()); }          // 关闭当前段 → 暂搁
+  else if(status==="studying"){ if(!last || last.e) r.segs.push({s: ymd(new Date()), e:null}); } // 续学开新段（分段）
+  else if(status==="done"){ if(last && !last.e) last.e = ymd(new Date()); }       // 关闭当前段 → 结束
+  r.status = status; r._u = Date.now();
+  if(status==="done") removeHwById(hwId);                                        // 结束 → 移除常用词
+  suppMenuKey=null; suppDelKey=null;
+  save(); renderSuppStats();
+}
+/* v.126：删除教辅统计条目（删记录 + 移除常用词） */
+function suppDel(key, hwId){
+  state.suppRec = (state.suppRec||[]).filter(x => x.id!==key && x.hwId!==key);
+  removeHwById(hwId);
+  suppMenuKey=null; suppDelKey=null;
+  save(); renderHWChips(); renderSuppStats();
+}
+/* v.126：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
 function renderSuppStats(){ const el=$("suppContent"); if(el) el.innerHTML = renderSuppBlock(); }
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
@@ -4929,7 +5017,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.03.125";
+const APP_VERSION = "2026.11.03.126";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
