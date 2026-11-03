@@ -755,11 +755,8 @@
   .supp-sub{font-size:11px; color:var(--muted); line-height:1.5; white-space:pre-line;}
   .supp-badge{font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; flex:0 0 auto; white-space:nowrap;}
   .supp-badge.done{color:#3b6d11; background:#eaf3de;}
-  .supp-badge.ongoing{color:#0c447c; background:#e6f1fb;}
-  .supp-badge.abort{color:#791f1f; background:#fcebeb;}
   .supp-badge.studying{color:#1f5fa8; background:#dcebfb;}
   .supp-badge.paused{color:#8a5a00; background:#fbeed2;}
-  .supp-menu{display:flex; gap:6px; margin:5px 0 2px; flex-wrap:wrap;}
   .supp-setbtn{font-size:11px; padding:2px 9px; border-radius:10px; border:0.5px solid #d8d2c4; background:#fff; color:#666; cursor:pointer; font-family:inherit; flex:0 0 auto;}
   .supp-setbtn:hover{border-color:#bbb;}
   .supp-mbtn{font-size:11px; padding:3px 11px; border-radius:10px; border:0.5px solid #d8d2c4; background:#fff; color:#444; cursor:pointer; font-family:inherit;}
@@ -1098,8 +1095,6 @@ function ensureSubjects(){
 }
 /* 科目是否归档（已删除）：归档卡只读、置灰，今日前的历史内容仍显示 */
 function subjArchived(name){ const f = subjList().find(s=>s.name===name); return !!(f && f.arc); }
-/* 提交科目表变更：bump 后保存并触发同步 */
-function touchSubjects(){ save(); }
 /* 科目是否已存在（用于新增查重） */
 function subjExists(name){ return subjList().some(s=>s.name===name); }
 
@@ -1202,10 +1197,8 @@ let state = null;
 let viewDate = new Date(); viewDate.setHours(0,0,0,0);
 let monthView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
 let rewardView = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);   // 奖励页当前查看月份
-let cmpTitle = null;
 let openExpo = null;      // 当前展开的 todoId（手风琴：同时只展开一个）
 let ganttHL = null;      // 高亮 todoId
-let suppMenuKey = null;  // 教辅统计：当前展开状态菜单的条目 key
 let suppSetKey = null;   // 教辅统计：当前展开「设置」菜单的条目 key
 let suppDelKey = null;   // 教辅统计：当前处于删除确认态的条目 key
 
@@ -1691,8 +1684,6 @@ function dayStats(dateStr){
           timedN:timedAll.length, validN:valid.length, untimedN:ts.length-timedAll.length,
           allDone: ts.length>0 && done===ts.length};
 }
-/* 用时展示：不足 1 分钟显示「未计时」，避免把 0 分当成真实成绩 */
-function spentLabel(t){ const m=Math.round(recMs(t)/60000); return m>0 ? m+" 分" : "未计时"; }
 /* ===== 星星规则（v.44 起；v.47 截止时间 21:00；v.116 闸门改时长；v.119 明确两档口径）=====
    基础档（v.119）：
    1) 当天学习时长达标（当日已做 + 当日补做 ≥ 当日预计，不含后期补做）→ 2 星
@@ -2370,8 +2361,6 @@ function suppAllRecords(){
     return String(b.sortDs||"").localeCompare(String(a.sortDs||""));
   }).slice(0,20);
 }
-function suppSegStart(r){ return (r.segs&&r.segs[0]&&r.segs[0].s)||"—"; }
-function suppSegEnd(r){ const last=(r.segs||[])[(r.segs||[]).length-1]; return (last&&last.e)||"—"; }
 function suppFmtDs(s){ return s||"—"; }
 /* v.128：两日期(yyyy-mm-dd)相差天数（b−a） */
 function suppGapDays(a,b){ if(!a||!b) return 999; const A=new Date(a), B=new Date(b); return Math.round((B-A)/86400000); }
@@ -2420,7 +2409,7 @@ function renderSuppBlock(){
     return `<div class="supp-row status-${bcls}">
       <div class="supp-top"><span class="supp-name">${esc(r.name)}</span>
         <span class="supp-badge ${bcls}">${btxt}</span>
-        <button class="supp-setbtn" onclick="suppSetKey=suppSetKey==='${r.key}'?null:'${r.key}';suppMenuKey=null;suppDelKey=null;renderSuppStats();">设置</button>
+        <button class="supp-setbtn" onclick="suppSetKey=suppSetKey==='${r.key}'?null:'${r.key}';suppDelKey=null;renderSuppStats();">设置</button>
       </div>
       ${setMenu}
       ${delConf}
@@ -2452,7 +2441,7 @@ function suppSetStatus(hwId, key, status, todayDs){
   else if(status==="done"){ if(last && !last.e) last.e = today; }                 // 关闭当前段 → 结束
   r.status = status; r._u = Date.now();
   if(status==="done") removeHwById(hwId);                                        // 结束 → 移除常用词
-  suppMenuKey=null; suppSetKey=null; suppDelKey=null;
+  suppSetKey=null; suppDelKey=null;
   save(); renderSuppStats();
 }
 /* v.126：删除教辅统计条目（删记录 + 移除常用词） */
@@ -2462,7 +2451,7 @@ function suppDel(key, hwId){
   state._delSupp[key] = Date.now();
   if(hwId) state._delSupp[hwId] = Date.now();
   removeHwById(hwId);
-  suppMenuKey=null; suppSetKey=null; suppDelKey=null;
+  suppSetKey=null; suppDelKey=null;
   save(); renderHWChips(); renderSuppStats();
 }
 /* v.126：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
@@ -3618,7 +3607,6 @@ function setSumSort(k){
   else { sumSort.key = k; sumSort.dir = 1; }            // 新列 → 升序
   renderSummary();
 }
-function setSumRange(r){ setStatMode(r); }             // 兼容旧调用：年/月/周
 function shiftSum(delta){
   statMode = sumRange;                                 // 直接调用时确保视图为比较模式
   if(sumRange==="year"){ sumYear += delta; }
@@ -4375,7 +4363,6 @@ function logout(){
 /* 登录界面交互 */
 function showLogin(){ $("loginForm").style.display="block"; $("regForm").style.display="none"; $("whoForm").style.display="none"; $("loginTitle").textContent="作业台 · 登录"; $("loginSub").textContent="登录后自动云端同步，多端数据互联"; $("loginErr").textContent=""; $("loginPw").value=""; }
 function showRegister(){ $("loginForm").style.display="none"; $("regForm").style.display="block"; $("whoForm").style.display="none"; $("loginTitle").textContent="注册新账号"; $("loginSub").textContent="注册后自动创建独立云端空间"; $("regErr").textContent=""; }
-function showWho(user){ $("loginForm").style.display="none"; $("regForm").style.display="none"; $("whoForm").style.display="block"; $("loginTitle").textContent="已登录"; $("whoText").textContent="当前账号："+user; }
 async function doLogin(){
   const u=$("loginUser").value.trim(), p=$("loginPw").value;
   const tk=$("loginToken").value.trim();
@@ -4449,19 +4436,6 @@ function syncErr(e){
 function syncHeaders(cfg){
   return { "Authorization":"token "+cfg.token, "Accept":"application/vnd.github+json" };
 }
-/* 保存用户填写的 Token / Gist ID（只存本机） */
-function syncSaveCfg(){
-  const t=($("syncToken").value||"").trim();
-  let g=($("syncGist").value||"").trim();
-  g = g.replace(/^.*gist\.github\.com\/[^\/]+\//,"").replace(/\/.*$/,"").trim();  // 允许直接粘贴完整网址
-  try{ localStorage.setItem(SYNC_KEY, JSON.stringify({token:t, gist:g})); }catch(e){}
-  if(t && g){
-    syncStatus("配置已保存到本机","ok"); toast("配置已保存，正在连接…");
-    syncCycle(true);     // 立即合并一次（云端有数据则合并，云端为空则上传本机）
-  }else{
-    syncStatus("请填写完整的 Token 与 Gist ID","err"); toast("请填写完整的 Token 与 Gist ID");
-  }
-}
 /* 从云端下载。mode="auto"：仅在云端不比本机旧时覆盖，且不弹 toast；其他值：强制覆盖并提示 */
 async function syncPull(mode){
   const cfg=syncCfg();
@@ -4528,29 +4502,6 @@ async function syncPull(mode){
     const msg = syncErr(e);
     syncStatus("下载失败："+msg,"err");
     if(mode!=="auto") toast("下载失败："+msg);
-    return false;
-  }
-}
-/* 把本机数据整体上传到云端（复用写云端逻辑：乐观锁 + 版本号） */
-async function syncPush(silent){
-  const cfg=syncCfg();
-  if(!cfg.token || !cfg.gist){
-    if(!silent){ syncStatus("请先填写 Token 与 Gist ID","err"); toast("请先填写 Token 与 Gist ID"); }
-    return false;
-  }
-  if(!silent) syncStatus("正在上传到云端…");
-  try{
-    const up = JSON.parse(JSON.stringify(state));
-    const ok = await writeCloud(up);
-    saveLocal();
-    const d=new Date();
-    syncStatus("已上传 · "+pad2(d.getHours())+":"+pad2(d.getMinutes()),"ok");
-    if(!silent) toast("已上传到云端");
-    return ok;
-  }catch(e){
-    const msg = syncErr(e);
-    syncStatus("上传失败："+msg,"err");
-    if(!silent) toast("上传失败："+msg);
     return false;
   }
 }
@@ -5088,7 +5039,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.03.128";
+const APP_VERSION = "2026.11.03.129";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
