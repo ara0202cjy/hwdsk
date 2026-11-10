@@ -473,6 +473,17 @@
   .pri-3{background:#e9efe9; color:#3E7A69;} .pri-3 .dot{background:#6B8E5A;}
   .task-due{font-size:11.5px; color:var(--muted);}
   .task-due.over{color:#b3402f; font-weight:700;}
+  /* v.130：待办「到期筛选」——快捷选择（全部 / 今日到期 / 几日内到期含今日） */
+  .task-filt{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 12px;}
+  .tf-lab{font-size:12px; font-weight:800; color:var(--muted); letter-spacing:.5px;}
+  .tf-chips{display:flex; gap:6px; flex-wrap:wrap;}
+  .tf-chip{border:none; background:#f1ece1; color:#6b655b; border-radius:999px; padding:7px 13px; font-size:12.5px; font-weight:700; cursor:pointer;}
+  .tf-chip.on{background:var(--ink); color:#fff;}
+  .tf-chip:active{transform:scale(.97);}
+  .tf-step{display:inline-flex; align-items:center; gap:6px; background:#f7f3ea; border-radius:999px; padding:5px 9px; font-size:12.5px; color:var(--ink);}
+  .tf-step button{width:22px; height:22px; border-radius:50%; border:none; background:#e7e0d2; color:var(--ink); font-size:15px; font-weight:800; line-height:1; cursor:pointer; padding:0;}
+  .tf-step b{min-width:14px; text-align:center; font-size:13.5px;}
+  .tf-step em{font-style:normal; color:var(--muted); font-size:11.5px;}
   .task-del{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--muted); border-radius:8px;}
   .task-del:active{background:#f1ece1;}
   .task-edit{width:30px; height:30px; flex:0 0 30px; display:flex; align-items:center; justify-content:center; color:var(--ink-2); border-radius:8px;}
@@ -1053,10 +1064,11 @@
 "use strict";
 /* ============ 常量 ============ */
 const STORE_KEY = "wb_hwdsk_v1";
-const SUBJECTS = ["校内","语文","数学","英语","其他"];
+/* v.130：学科顺序统一为 语文、英语、数学、其他（「校内」为非学科分类，置底保留） */
+const SUBJECTS = ["语文","英语","数学","其他","校内"];
 const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
 const SUBJ_COLOR = {"校内":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
-const SUBJ_ORDER = {"校内":0,"语文":1,"数学":2,"英语":3,"其他":4};
+const SUBJ_ORDER = {"语文":0,"英语":1,"数学":2,"其他":3,"校内":4};
 
 /* ============ 可变科目表（v.80：支持改名 / 删除 / 新增 / 排序，随云端同步） ============
    - state.subjects：数组，每项 {name, color, arc?}；arc=true 表示「已删除归档」（今日前的历史内容保留、置灰只读）
@@ -1092,6 +1104,26 @@ function subjColor(name){ const f = subjList().find(s=>s.name===name); return (f
 function ensureSubjects(){
   if(!Array.isArray(state.subjects) || !state.subjects.length){ state.subjects = defaultSubjects(); }
   return state.subjects;
+}
+/* v.130：学科顺序统一 —— 语文、英语、数学、其他，「校内」置底。
+   对已有本地数据做一次性重排（用 _subjOrderV 版本闸门，跑过一次就不再覆盖用户手动排序）。
+   其余自定义科目保持相对顺序；归档科目统一置末。 */
+const SUBJ_ORDER_VER = "2026.11.10.130";
+function migrateSubjectOrder(){
+  if(!Array.isArray(state.subjects) || !state.subjects.length) return;
+  if(state._subjOrderV === SUBJ_ORDER_VER) return;
+  const canon = ["语文","英语","数学","其他","校内"];
+  const byName = new Map(state.subjects.map(s=>[s.name, s]));
+  const next = [];
+  const take = n=>{ const s=byName.get(n); if(s){ next.push(s); byName.delete(n); } };
+  canon.forEach(take);
+  // 其余自定义科目（未归档）按原相对顺序紧随其后
+  state.subjects.forEach(s=>{ if(byName.has(s.name) && !s.arc){ next.push(s); byName.delete(s.name); } });
+  // 归档科目统一置末
+  state.subjects.forEach(s=>{ if(s.arc) next.push(s); });
+  state.subjects = next;
+  state._subjOrderV = SUBJ_ORDER_VER;
+  bumpSubjects();
 }
 /* 科目是否归档（已删除）：归档卡只读、置灰，今日前的历史内容仍显示 */
 function subjArchived(name){ const f = subjList().find(s=>s.name===name); return !!(f && f.arc); }
@@ -1243,6 +1275,7 @@ function load(){
   { const ds = state._delSupp;
     state.suppRec = state.suppRec.filter(r=>r && !(ds[r.id] || (r.hwId&&ds[r.hwId]))); }
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
+  migrateSubjectOrder();                       // v.130：统一学科顺序（语文/英语/数学/其他，校内置底）
   ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
   ensureNights();                              // v.110：晚睡数据初始化
   /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
@@ -3253,9 +3286,42 @@ function dueLabel(due){
   const over = d < today;
   return { txt:(d.getMonth()+1)+"月"+d.getDate()+"日", over };
 }
+/* ===== v.130：待办「到期筛选」 =====
+   快捷选项：全部 / 今日到期 / 几日内到期（含今日，N 可增减，默认 3 天）。
+   「几日内」口径：今天算第 1 天，截止日落在 [今天, 今天+N-1] 内即命中；逾期/无截止不命中。 */
+let taskDueFilter = "all";   // all | today | within
+let taskDueN = 3;            // N 日内（含今日），1~30
+function daysUntilDue(due){
+  if(!due) return null;
+  const d = parseYmd(due); if(!d) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
+function taskPassDueFilter(t){
+  if(taskDueFilter === "all") return true;
+  const d = daysUntilDue(t.due);
+  if(d == null) return false;
+  if(taskDueFilter === "today") return d === 0;
+  if(taskDueFilter === "within") return d >= 0 && d <= taskDueN - 1;   // 含今日共 N 天
+  return true;
+}
+function setTaskDueFilter(f){ taskDueFilter = f; renderTasks(); }
+function stepTaskDueN(delta){ taskDueN = Math.max(1, Math.min(30, taskDueN + delta)); taskDueFilter = "within"; renderTasks(); }
+function taskFilterBar(){
+  return `<div class="task-filt">
+    <span class="tf-lab">到期</span>
+    <div class="tf-chips">
+      <button class="tf-chip ${taskDueFilter==='all'?'on':''}" onclick="setTaskDueFilter('all')">全部</button>
+      <button class="tf-chip ${taskDueFilter==='today'?'on':''}" onclick="setTaskDueFilter('today')">今日到期</button>
+      <button class="tf-chip ${taskDueFilter==='within'?'on':''}" onclick="setTaskDueFilter('within')">几日内到期</button>
+    </div>
+    ${taskDueFilter==='within' ? `<span class="tf-step"><button onclick="stepTaskDueN(-1)" aria-label="减少天数">−</button><b>${taskDueN}</b><span>天</span><button onclick="stepTaskDueN(1)" aria-label="增加天数">+</button><em>含今日</em></span>` : ``}
+  </div>`;
+}
 function renderTasks(){
   const tasks = state.tasks;
-  const active = tasks.filter(t=>!t.done).sort((a,b)=> (a.priority-b.priority) || (a.createdAt-b.createdAt));
+  const activeAll = tasks.filter(t=>!t.done).sort((a,b)=> (a.priority-b.priority) || (a.createdAt-b.createdAt));
+  const active = activeAll.filter(taskPassDueFilter);
   const done  = tasks.filter(t=>t.done).sort((a,b)=> (b.doneAt||0)-(a.doneAt||0)).slice(0, TASK_KEEP);
 
   // 添加卡
@@ -3272,9 +3338,13 @@ function renderTasks(){
     </div>
   </div>`;
 
+  // 到期筛选栏
+  html += taskFilterBar();
+
   // 未完成
-  html += `<div class="task-sec">未完成 · ${active.length}</div>`;
-  if(active.length===0) html += `<div class="empty-tip">暂无未完成待办</div>`;
+  const filtOn = taskDueFilter !== "all";
+  html += `<div class="task-sec">未完成 · ${active.length}${filtOn && activeAll.length!==active.length?` / 共 ${activeAll.length}`:""}</div>`;
+  if(active.length===0) html += `<div class="empty-tip">${filtOn? "没有符合筛选条件的未完成待办" : "暂无未完成待办"}</div>`;
   else html += active.map(t=>taskRow(t)).join("");
 
   // 已完成
@@ -5039,7 +5109,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.03.129";
+const APP_VERSION = "2026.11.10.130";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
