@@ -1064,11 +1064,11 @@
 "use strict";
 /* ============ 常量 ============ */
 const STORE_KEY = "wb_hwdsk_v1";
-/* v.130：学科顺序统一为 语文、英语、数学、其他（「校内」为非学科分类，置底保留） */
-const SUBJECTS = ["语文","英语","数学","其他","校内"];
+/* v.131：清单排序 —— 校内优先，其他最后；中间学科保持 语文、英语、数学 */
+const SUBJECTS = ["校内","语文","英语","数学","其他"];
 const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
 const SUBJ_COLOR = {"校内":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
-const SUBJ_ORDER = {"语文":0,"英语":1,"数学":2,"其他":3,"校内":4};
+const SUBJ_ORDER = {"校内":0,"语文":1,"英语":2,"数学":3,"其他":4};
 
 /* ============ 可变科目表（v.80：支持改名 / 删除 / 新增 / 排序，随云端同步） ============
    - state.subjects：数组，每项 {name, color, arc?}；arc=true 表示「已删除归档」（今日前的历史内容保留、置灰只读）
@@ -1105,14 +1105,14 @@ function ensureSubjects(){
   if(!Array.isArray(state.subjects) || !state.subjects.length){ state.subjects = defaultSubjects(); }
   return state.subjects;
 }
-/* v.130：学科顺序统一 —— 语文、英语、数学、其他，「校内」置底。
+/* v.131：清单排序 —— 校内优先，其他最后；中间学科保持 语文、英语、数学。
    对已有本地数据做一次性重排（用 _subjOrderV 版本闸门，跑过一次就不再覆盖用户手动排序）。
    其余自定义科目保持相对顺序；归档科目统一置末。 */
-const SUBJ_ORDER_VER = "2026.11.10.130";
+const SUBJ_ORDER_VER = "2026.11.11.131";
 function migrateSubjectOrder(){
   if(!Array.isArray(state.subjects) || !state.subjects.length) return;
   if(state._subjOrderV === SUBJ_ORDER_VER) return;
-  const canon = ["语文","英语","数学","其他","校内"];
+  const canon = ["校内","语文","英语","数学","其他"];
   const byName = new Map(state.subjects.map(s=>[s.name, s]));
   const next = [];
   const take = n=>{ const s=byName.get(n); if(s){ next.push(s); byName.delete(n); } };
@@ -5109,7 +5109,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.10.130";
+const APP_VERSION = "2026.11.11.131";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
