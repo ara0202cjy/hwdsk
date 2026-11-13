@@ -530,6 +530,15 @@
   .srow-sub{display:flex; gap:10px; margin-top:4px; font-size:11.5px; color:var(--muted); flex-wrap:wrap;}
   .srow-sub b{color:var(--ink); font-weight:700;}
 
+  /* v.134：今日作业时段 → 实际时长条（彩条长度 ∝ 时长，按科占比） */
+  .dur-row{display:flex; align-items:center; gap:8px; margin:8px 0;}
+  .dur-row .subj-dot{width:10px; height:10px; flex:0 0 auto;}
+  .dur-name{font-size:13px; color:var(--ink); font-weight:700; flex:0 0 52px;}
+  .dur-bar{flex:1; height:16px; background:#f4efe4; border-radius:8px; overflow:hidden;}
+  .dur-fill{height:100%; border-radius:8px; transition:width .6s ease;}
+  .dur-val{font-size:12px; color:var(--muted); flex:0 0 auto; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .dur-total{font-size:12px; color:var(--muted); margin-top:10px; text-align:right; font-weight:700;}
+
   /* ===== 合计栏（周/月 作业完成情况汇总） ===== */
   .sum-range{display:flex; gap:8px; margin-top:10px;}
   .sum-range button{flex:1; border:1.5px solid var(--line); background:var(--card); border-radius:14px; padding:10px 0; font-size:15px; font-weight:700; color:var(--muted); box-shadow:var(--shadow);}
@@ -783,7 +792,9 @@
   .supp-tbl-wrap{overflow-x:auto;}
   .supp-tbl{width:100%; border-collapse:collapse; font-size:13px; margin-top:2px;}
   .supp-tbl th,.supp-tbl td{padding:7px 8px; text-align:left; border-bottom:1px solid #f2efe6;}
-  .supp-tbl th{font-size:11px; color:var(--muted); font-weight:700; white-space:nowrap;}
+  .supp-tbl th{font-size:11px; color:var(--muted); font-weight:700; white-space:nowrap; cursor:pointer; user-select:none;}
+  .supp-tbl th:hover{color:var(--ink);}
+  .supp-tbl th.sort-on{color:var(--ink);}
   .supp-tbl td.dt{white-space:nowrap; color:var(--ink);}
   .supp-tbl td.tt{color:var(--ink);}
   .supp-tbl td.wr{text-align:center; font-weight:700; color:var(--ink);}
@@ -2515,12 +2526,15 @@ function suppDetailData(){
   let rows=[];
   if(rec.hwId){
     rows = (state.todos||[]).filter(t=> t.hwId===rec.hwId && t.done).map(t=>({
-      date: t.date||"", title: t.title||"", wrong: (t.wrong||0)
+      date: t.date||"", content: (t.detail||"").trim(), wrong: (t.wrong||0)
     }));
   }
   const [f,dir] = suppDetailSort.split("-");
   rows.sort((a,b)=>{
-    const c = (f==="wrong") ? (a.wrong-b.wrong) : String(a.date||"").localeCompare(String(b.date||""));
+    let c;
+    if(f==="wrong")        c = (a.wrong-b.wrong);
+    else if(f==="content") c = String(a.content||"").localeCompare(String(b.content||""));
+    else                   c = String(a.date||"").localeCompare(String(b.date||""));
     return dir==="asc" ? c : -c;
   });
   return { rec, rows };
@@ -2536,15 +2550,15 @@ function renderSuppDetail(){
   if(!recs.some(r=>r.key===suppSelKey)) suppSelKey = recs[0].key;
   const { rec, rows } = suppDetailData();
   const opts = recs.map(r=>`<option value="${r.key}" ${r.key===suppSelKey?'selected':''}>${esc(r.name)} · ${r.status==='paused'?'中止':'学习'}</option>`).join("");
-  const sortBtns = [["date-desc","日期↓"],["date-asc","日期↑"],["wrong-desc","错题↓"],["wrong-asc","错题↑"]]
-    .map(([k,l])=>`<button class="tf-chip ${suppDetailSort===k?'on':''}" onclick="suppSetDetailSort('${k}')">${l}</button>`).join("");
-  const trs = rows.map(r=>`<tr><td class="dt">${r.date||"—"}</td><td class="tt">${esc(r.title)}</td><td class="wr">${r.wrong}</td></tr>`).join("");
+  const [sf,sd] = suppDetailSort.split("-");
+  const sTh = (f,label,def)=>{ const on=sf===f, d=on?sd:def, ar=on?(d==="asc"?" ▲":" ▼"):"", nx=on?(d==="asc"?"desc":"asc"):def;
+    return `<th class="${on?'sort-on':''}" onclick="suppSetDetailSort('${f}-${nx}')">${label}${ar}</th>`; };
+  const trs = rows.map(r=>`<tr><td class="dt">${r.date||"—"}</td><td class="tt">${r.content? esc(r.content): "——"}</td><td class="wr">${r.wrong}</td></tr>`).join("");
   el.innerHTML = `<div class="supp-block">
     <div class="supp-h">教辅学习明细 <span class="supp-n">${rows.length} 次</span></div>
     <div class="supp-sel"><select onchange="suppSelKey=this.value;renderSuppDetail()">${opts}</select></div>
-    <div class="task-filt" style="margin:8px 0 10px;"><span class="tf-lab">排序</span><div class="tf-chips">${sortBtns}</div></div>
     ${ rows.length
-        ? `<div class="supp-tbl-wrap"><table class="supp-tbl"><thead><tr><th>日期</th><th>内容</th><th>错题数</th></tr></thead><tbody>${trs}</tbody></table></div>`
+        ? `<div class="supp-tbl-wrap"><table class="supp-tbl"><thead><tr>${sTh("date","日期","desc")}${sTh("content","内容","asc")}${sTh("wrong","错题数","desc")}</tr></thead><tbody>${trs}</tbody></table></div>`
         : `<div class="empty-tip">该教辅暂无完成记录</div>` }
   </div>`;
 }
@@ -3136,113 +3150,9 @@ function onChk(id){
   renderList();
 }
 
-/* ===== 作业统计（自适应多段时间轴 + 条目式列表） ===== */
-const GAP_SPLIT = 90;   // 相邻作业空隙超过该分钟数，就另起一条时间轴
-const MAX_ROWS  = 3;    // 时间轴最多分几段（对应 上午 / 下午 / 晚上）
+/* ===== 作业统计（日统计：实际时长条 + 条目式列表） ===== */
 const GAP_MERGE = 10;   // 同一作业相邻计时段之间，暂停短于该分钟数则合并为一段（只计实际工时）；满 10 分钟以上才拆成两段
-/* 色块宽度：末尾减 2px，让相邻色块之间留出细微间隔，便于分清 */
-const blkWidth = p => `max(calc(${p}% - 2px), 3px)`;
-const LANE_H = 20;        // 每条泳道高度（压低，让时间轴更贴近“一行”）
-const BLK_H  = 14;        // 单个色块高度（无文字、短条）
-/* 单条作业的真实计时分段（分钟）；相邻段暂停 <GAP_MERGE 合并为一段，
-   合并后色块长度=各段实际工时之和（暂停不计入），即“色块只显示实际工作时间” */
-function segMins(t){
-  const now = Math.floor(Date.now()/60000)%1440;
-  const raw=[];
-  const segs=(t.segments||[]).filter(x=>x && x.s);
-  if(segs.length){
-    segs.forEach(x=>{
-      const sm=clockToMin(x.s); if(sm==null) return;
-      const run = (x.e==null && t.timerRunning);
-      let em = x.e!=null ? clockToMin(x.e) : (run ? now : sm);
-      if(em==null || em<sm) em = sm + Math.max(Math.round((t.estMin||20)/2),5);
-      const e2 = Math.max(em, sm+5);
-      raw.push({sm, realEnd:e2, dur:e2-sm, running:run});
-    });
-  } else {
-    // 无分段：只用计时器实际用时；从未计时就不臆造时间条（不再按“完成时间”拉长）
-    const dur = Math.round(spentOf(t)/60000);
-    if(dur<=0) return [];
-    let sm = clockToMin(t.startClock);
-    if(sm==null) sm = t.timerRunning ? now : null;
-    if(sm==null) return [];
-    const e2 = sm + Math.max(dur, 5);
-    raw.push({sm, realEnd:e2, dur:e2-sm, running:t.timerRunning});
-  }
-  raw.sort((a,b)=> a.sm-b.sm || a.realEnd-b.realEnd);
-  const out=[];
-  raw.forEach(seg=>{
-    const last=out[out.length-1];
-    if(last && (seg.sm - last.realEnd) <= GAP_MERGE){
-      // 短暂停：合并为一段，长度只累加实际工时，暂停空档不计入
-      last.dur += seg.dur;
-      last.realEnd = Math.max(last.realEnd, seg.realEnd);
-      last.em = last.sm + last.dur;
-      last.running = last.running || seg.running;
-    } else {
-      out.push({sm:seg.sm, em:seg.sm+seg.dur, realEnd:seg.realEnd, dur:seg.dur, running:seg.running});
-    }
-  });
-  return out;
-}
-
-/* 按时间空隙把当日作业聚成若干段；段内按泳道排布避免色块重叠 */
-function buildRows(s){
-  const untimed=[], segs=[];
-  s.ts.forEach(t=>{
-    const m=segMins(t);
-    if(!m.length){ if(!t.timerRunning) untimed.push(t); else segs.push({t, sm:clockToMin(t.startClock)||0, em:Math.floor(Date.now()/60000)%1440, running:true, lane:0}); }
-    else m.forEach(seg=> segs.push({t, sm:seg.sm, em:seg.em, running:seg.running, lane:0}));
-  });
-  segs.sort((a,b)=> a.sm-b.sm);
-
-  let clusters=[];
-  segs.forEach(it=>{
-    const c = clusters[clusters.length-1];
-    if(!c) clusters.push({items:[it], minStart:it.sm, maxEnd:it.em, laneEnds:[it.em]});
-    else if(it.sm - c.maxEnd > GAP_SPLIT) clusters.push({items:[it], minStart:it.sm, maxEnd:it.em, laneEnds:[it.em]});
-    else {
-      c.items.push(it); c.minStart=Math.min(c.minStart,it.sm); c.maxEnd=Math.max(c.maxEnd,it.em);
-      // 分配泳道：找第一条「末端 ≤ 本段起点」的泳道，放入后更新其末端；否则新增泳道
-      let placed=false;
-      for(let i=0;i<c.laneEnds.length;i++){ if(c.laneEnds[i] <= it.sm){ it.lane=i; c.laneEnds[i]=it.em; placed=true; break; } }
-      if(!placed){ it.lane=c.laneEnds.length; c.laneEnds.push(it.em); }
-    }
-  });
-
-  // 段数超过上限时，反复合并间隔最小的相邻两段
-  while(clusters.length > MAX_ROWS){
-    let bi=0, bg=Infinity;
-    for(let i=0;i<clusters.length-1;i++){
-      const g = clusters[i+1].minStart - clusters[i].maxEnd;
-      if(g < bg){ bg=g; bi=i; }
-    }
-    const a=clusters[bi], b=clusters[bi+1];
-    clusters.splice(bi,2,{ items:a.items.concat(b.items),
-      minStart:Math.min(a.minStart,b.minStart), maxEnd:Math.max(a.maxEnd,b.maxEnd),
-      laneEnds: a.laneEnds.concat(b.laneEnds) });
-  }
-  clusters.forEach(c=>{ c.lanes = c.laneEnds.length; });   // 该段时间轴需要的泳道数
-  return {clusters, untimed};
-}
-function periodLabel(m){ return m < 12*60 ? "上午" : (m < 18*60 ? "下午" : "晚上"); }
-function spanText(m){ const h=Math.floor(m/60), r=m%60;
-  return (h? h+" 小时":"") + (h&&r? " ":"") + (r? r+" 分":"") + (!h&&!r? "0 分":""); }
-/* 每段基准起点：段首 -15 分后向下取整到 30 分 */
-function rowBase(c){ return Math.max(0, Math.floor((c.minStart-15)/30)*30); }
-/* 当日统一时长：取覆盖所有段所需长度的最大值，向上取整到 30 分（至少 60 分） */
-function commonSpan(clusters){
-  let need = 60;
-  clusters.forEach(c=>{ need = Math.max(need, Math.min(1440, c.maxEnd+15) - rowBase(c)); });
-  return Math.max(60, Math.min(1440, Math.ceil(need/30)*30));
-}
-/* 各行共用同一 span，只有起点不同 → 同一日每条时间轴代表的时间长度相等 */
-function rowRange(c, span){
-  let base = rowBase(c);
-  if(base + span > 1440) base = Math.max(0, 1440 - span);   // 贴近日终时左移，保证等长
-  return {base, end: base+span, span};
-}
-
+/* ===== 日统计渲染（实际时长条 + 当日作业明细） ===== */
 function renderStats(){
   const ds=ymd(viewDate); const s=dayStats(ds);
   if(s.total===0){ $("statsContent").innerHTML = `<div class="empty-tip">这一天还没有作业记录</div>`; applyStatMode(); return; }
@@ -3251,56 +3161,32 @@ function renderStats(){
   const byStart = a => startMinOf(a)==null ? 1e9 : startMinOf(a);
   const sorted = s.ts.slice().sort((a,b)=> byStart(a)-byStart(b));
 
-  const {clusters, untimed} = buildRows(s);
-  const legend = subjList().filter(x=>!x.arc).map(x=>`<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join("");
-  const span = commonSpan(clusters);                     // 当日统一时长：各行时间轴等长
-  const step = span<=150 ? 30 : (span<=330 ? 60 : 120);  // 刻度步长各行一致
-
-  let html = `<div class="gantt${ganttHL?' has-hl':''}">
-    <div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:10px;">今日作业时段${clusters.length>1?`　每段 ${spanText(span)}`:""}</div>`;
-
-  // 各时间段：一段一条时间轴，各行时长相同、仅起点不同
-  clusters.forEach(c=>{
-    const {base,end}=rowRange(c, span);
-    let ticks="";
-    for(let m=base; m<=end; m+=step){ const left=((m-base)/span)*100; ticks+=`<span class="tick" style="left:${left}%">${minToClock(m)}</span>`; }
-    let blocks="";
-    c.items.forEach(it=>{
-      const t=it.t;
-      const leftP  = Math.min(Math.max(((it.sm-base)/span)*100, 0), 96);
-      const widthP = Math.min(Math.max(((it.em-it.sm)/span)*100, 3), 100-leftP);
-      const cls = t.done ? "" : (it.running ? "g-run" : "g-none");
-      const hl  = ganttHL===t.id ? "hl":"";
-      const col = subjColor(t.subject);
-      const top = it.lane*LANE_H + Math.round((LANE_H-BLK_H)/2);
-      const tip = esc(t.title) + " · " + t.subject;
-      blocks += `<div class="gblock ${cls} ${hl}" style="left:${leftP}%;top:${top}px;height:${BLK_H}px;width:${blkWidth(widthP)};background:${col}" title="${tip}" data-gid="${t.id}" data-sm="${it.sm}" onclick="ganttClick('${t.id}')"></div>`;
-    });
-    const tag = periodLabel(c.minStart);
-    const todoCnt = new Set(c.items.map(i=>i.t.id)).size;
-    html += `<div class="gantt-row">
-      <div class="grow-hd"><span class="grow-tag ${tag}">${tag}</span><span class="grow-range">${minToClock(base)} – ${minToClock(end)} · ${todoCnt} 项</span></div>
-      <div class="gantt-axis">${ticks}</div>
-      <div class="gantt-track" data-base="${base}" data-span="${span}" style="height:${Math.max(1,c.lanes)*LANE_H}px">${blocks}</div>
-    </div>`;
+  // —— 今日作业时段：按「实际作业时长」展示（与计时器/完成时间的时钟无关）
+  //    计时项 → 计时时长；未计时 → 预计时长。彩条长度 ∝ 时长，并给出各科占比
+  const subjMin = {};
+  s.ts.forEach(t=>{
+    const d = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+    subjMin[t.subject] = (subjMin[t.subject]||0) + d;
   });
-
-  // 尚未开始的作业（无时间信息）单独一行，不做时间刻度
-  if(untimed.length){
-    let blocks="";
-    untimed.forEach(t=>{
-      const hl  = ganttHL===t.id ? "hl":"";
-      const col = subjColor(t.subject);
-      blocks += `<div class="gblock g-none ${hl}" style="background:${col}" title="${esc(t.title)} · ${t.subject}" data-gid="${t.id}" onclick="ganttClick('${t.id}')"></div>`;
-    });
-    const noTimeTag = untimed.some(t=>t.done) ? "未计时" : "未开始";
-    html += `<div class="gantt-row">
-      <div class="grow-hd"><span class="grow-tag 未开始">${noTimeTag}</span><span class="grow-range">尚未计时 · ${untimed.length} 项</span></div>
-      <div class="gantt-track static">${blocks}</div>
+  const subjArr = subjList().filter(x=>!x.arc && subjMin[x.name]>0)
+    .map(x=>({name:x.name, color:x.color, min:subjMin[x.name]}))
+    .sort((a,b)=> b.min-a.min);
+  const totalMin = subjArr.reduce((a,s)=>a+s.min,0) || 1;
+  const durBars = subjArr.map(s=>{
+    const pct = Math.round(s.min/totalMin*100);
+    const w = totalMin ? (s.min/totalMin*100) : 0;
+    return `<div class="dur-row">
+      <span class="subj-dot" style="background:${s.color}"></span>
+      <span class="dur-name">${esc(s.name)}</span>
+      <div class="dur-bar"><div class="dur-fill" style="width:${w.toFixed(1)}%;background:${s.color}"></div></div>
+      <span class="dur-val">${s.min}分 · ${pct}%</span>
     </div>`;
-  }
-
-  html += `<div class="glegend">${legend}</div></div>`;
+  }).join("");
+  let html = `<div class="gantt${ganttHL?' has-hl':''}">
+    <div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:10px;">今日作业时段（实际时长）</div>
+    ${durBars}
+    <div class="dur-total">当日总时长 ${totalMin} 分</div>
+  </div>`;
 
   // 条目式列表（按时间顺序）
   let rows="";
@@ -3319,13 +3205,13 @@ function renderStats(){
       </div>
       <div class="srow-sub">
         <span>起止 <b>${segStr}</b></span>
-        <span>用时 <b style="${isT?'':`color:var(--muted);font-weight:600;`}">${isT? sp+" 分" : "未计时"}</b></span>
+        <span>用时 <b style="${isT?'':`color:var(--muted);font-weight:600;`}">${isT? sp+" 分" : "预计 "+(t.estMin||0)+" 分"}</b></span>
         <span>错题 <b style="color:${wr>=5?RED:'var(--ink)'}">${wr}</b></span>
         ${ wr>0 ? `<span>订正 <b style="color:${t.corrected?'var(--green)':'var(--sun)'}">${t.corrected?'已订正':'待订正'}</b></span>` : "" }
       </div>
     </div>`;
   });
-  html += `<div class="card${ganttHL?' has-hl':''}" style="padding:10px 12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:4px;">当日作业（按时间）</div>${rows}</div>`;
+  html += `<div class="card${ganttHL?' has-hl':''}" style="padding:10px 12px;"><div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:4px;">当日作业明细</div>${rows}</div>`;
 
   // 本日汇总：已移除（与清单栏顶部统计栏重复）
 
@@ -5168,7 +5054,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.13.133";
+const APP_VERSION = "2026.11.13.134";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
