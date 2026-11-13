@@ -776,6 +776,18 @@
   .supp-setmenu{margin:5px 0 2px;}
   .supp-delconf{font-size:11px; color:#a32d2d; display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:5px 0 2px; padding:4px 6px; background:#fdf0f0; border-radius:8px;}
 
+  /* v.132：教辅学习明细 */
+  .task-page-h{font-size:16px; font-weight:800; color:var(--ink); margin:16px 2px 8px;}
+  .supp-sel{margin:2px 0 4px;}
+  .supp-sel select{width:100%; padding:9px 10px; border:1px solid #e7e1d4; border-radius:10px; font-size:14px; background:var(--card); color:var(--ink); font-family:inherit;}
+  .supp-tbl-wrap{overflow-x:auto;}
+  .supp-tbl{width:100%; border-collapse:collapse; font-size:13px; margin-top:2px;}
+  .supp-tbl th,.supp-tbl td{padding:7px 8px; text-align:left; border-bottom:1px solid #f2efe6;}
+  .supp-tbl th{font-size:11px; color:var(--muted); font-weight:700; white-space:nowrap;}
+  .supp-tbl td.dt{white-space:nowrap; color:var(--ink);}
+  .supp-tbl td.tt{color:var(--ink);}
+  .supp-tbl td.wr{text-align:center; font-weight:700; color:var(--ink);}
+
   /* ===== 底部 Tab ===== */
   .home-bar{height:var(--sab); flex:0 0 auto; background:var(--paper); position:relative;}
   .home-bar::after{content:""; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#1c1c1e; opacity:.85;}
@@ -986,15 +998,15 @@
             </div>
             <div class="content" id="statsContent"></div>
             <div class="content" id="summaryContent"></div>
-            <div class="content" id="suppContent"></div>
           </section>
 
-          <!-- 待办事项 -->
-          <section class="page" id="page-tasks">
+          <!-- 教辅（v.132：原「待办」栏改为教辅栏；教辅统计迁移至此 + 学习明细） -->
+          <section class="page" id="page-supp">
             <div class="sticky">
-              <div class="phead"><h1>待办事项</h1></div>
+              <div class="phead"><h1>教辅</h1></div>
             </div>
-            <div class="content" id="tasksContent"></div>
+            <div class="content" id="suppContent"></div>
+            <div class="content" id="suppDetail"></div>
           </section>
 
           <!-- 月度统计 -->
@@ -1008,6 +1020,8 @@
               </div>
             </div>
             <div class="content" id="monthContent"></div>
+            <div class="task-page-h">待办事项</div>
+            <div class="content" id="tasksContent"></div>
           </section>
 
           <!-- 奖励 -->
@@ -1044,9 +1058,9 @@
             <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
             <span class="lb">统计</span>
           </button>
-          <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">
-            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></span>
-            <span class="lb">待办</span>
+          <button class="tab" data-tab="supp" onclick="switchTab('supp')">
+            <span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 0 1 2-2h6v16H6a2 2 0 0 0-2 2V5zM20 5a2 2 0 0 0-2-2h-6v16h6a2 2 0 0 1 2 2V5z" stroke-linejoin="round"/></svg></span>
+            <span class="lb">教辅</span>
           </button>
         </div>
 
@@ -1784,9 +1798,9 @@ function switchTab(tab){
   $("page-"+tab).classList.add("active");
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.dataset.tab===tab));
   if(tab==="list") renderList();
-  if(tab==="stats"){ renderStats(); renderSummary(); renderSuppStats(); }
-  if(tab==="tasks") renderTasks();
-  if(tab==="month") renderMonth();
+  if(tab==="stats"){ renderStats(); renderSummary(); }
+  if(tab==="supp"){ renderSuppStats(); renderSuppDetail(); }
+  if(tab==="month"){ renderMonth(); renderTasks(); }
   if(tab==="reward") renderReward();
 }
 function refreshHeader(){
@@ -1796,8 +1810,8 @@ function refreshHeader(){
   const sd=$("statsDate"); if(sd) sd.textContent = (viewDate.getMonth()+1)+"月"+viewDate.getDate()+"日 · "+WEEK[viewDate.getDay()];
   $("todayBtn").classList.toggle("show", !sameDay(viewDate,new Date()));
 }
-function refreshAll(){ refreshHeader(); renderList(); renderStats(); renderSummary(); renderMonth(); renderReward(); }
-function syncDerived(){ renderStats(); renderSummary(); renderMonth(); }
+function refreshAll(){ refreshHeader(); renderList(); renderStats(); renderSummary(); renderMonth(); renderReward(); renderTasks(); renderSuppStats(); renderSuppDetail(); }
+function syncDerived(){ renderStats(); renderSummary(); renderMonth(); renderTasks(); renderSuppStats(); renderSuppDetail(); }
 
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 
@@ -2410,7 +2424,8 @@ function suppSegRanges(rec){
   });
 }
 function renderSuppBlock(){
-  const recs = suppAllRecords();
+  /* v.132：已结束（done）教辅不参与统计 */
+  const recs = suppAllRecords().filter(r=> r.status!=="done");
   if(!recs.length) return `<div class="supp-block"><div class="supp-h">教辅学习统计 <span class="supp-n">最新 20 本</span></div><div class="empty-tip">暂无教辅学习记录（完成含教辅的清单项后自动出现）</div></div>`;
   const rows = recs.map(r=>{
     const bcls = r.status==="done"?"done":r.status==="paused"?"paused":"studying";
@@ -2475,7 +2490,7 @@ function suppSetStatus(hwId, key, status, todayDs){
   r.status = status; r._u = Date.now();
   if(status==="done") removeHwById(hwId);                                        // 结束 → 移除常用词
   suppSetKey=null; suppDelKey=null;
-  save(); renderSuppStats();
+  save(); renderSuppStats(); renderSuppDetail();
 }
 /* v.126：删除教辅统计条目（删记录 + 移除常用词） */
 function suppDel(key, hwId){
@@ -2485,10 +2500,55 @@ function suppDel(key, hwId){
   if(hwId) state._delSupp[hwId] = Date.now();
   removeHwById(hwId);
   suppSetKey=null; suppDelKey=null;
-  save(); renderHWChips(); renderSuppStats();
+  save(); renderHWChips(); renderSuppStats(); renderSuppDetail();
 }
-/* v.126：把教辅学习统计渲染到统计页（page-stats 的 suppContent，位于年月周日表单下方） */
+/* v.126：把教辅学习统计渲染到教辅页（page-supp 的 suppContent） */
 function renderSuppStats(){ const el=$("suppContent"); if(el) el.innerHTML = renderSuppBlock(); }
+/* v.132：教辅学习明细 —— 选择某一教辅，展示其每次完成的日期 / 内容 / 错题数，可按下日期或错题数排序。
+   已结束（done）教辅不参与统计与明细。 */
+let suppSelKey=null, suppDetailSort="date-desc";
+function suppDetailRecs(){ return suppAllRecords().filter(r=> r.status!=="done"); }
+function suppDetailData(){
+  const recs = suppDetailRecs();
+  if(!recs.length) return { rec:null, rows:[] };
+  if(!recs.some(r=>r.key===suppSelKey)) suppSelKey = recs[0].key;
+  const rec = recs.find(r=>r.key===suppSelKey) || recs[0];
+  let rows=[];
+  if(rec.hwId){
+    rows = (state.todos||[]).filter(t=> t.hwId===rec.hwId && t.done).map(t=>({
+      date: t.date||"", title: t.title||"", wrong: (t.wrong||0)
+    }));
+  }
+  const [f,dir] = suppDetailSort.split("-");
+  rows.sort((a,b)=>{
+    const c = (f==="wrong") ? (a.wrong-b.wrong) : String(a.date||"").localeCompare(String(b.date||""));
+    return dir==="asc" ? c : -c;
+  });
+  return { rec, rows };
+}
+function suppSetDetailSort(k){ suppDetailSort = k; renderSuppDetail(); }
+function renderSuppDetail(){
+  const el=$("suppDetail"); if(!el) return;
+  const recs = suppDetailRecs();
+  if(!recs.length){
+    el.innerHTML = `<div class="supp-block"><div class="supp-h">教辅学习明细</div><div class="empty-tip">暂无进行中的教辅（已结束的教辅不参与统计）</div></div>`;
+    return;
+  }
+  if(!recs.some(r=>r.key===suppSelKey)) suppSelKey = recs[0].key;
+  const { rec, rows } = suppDetailData();
+  const opts = recs.map(r=>`<option value="${r.key}" ${r.key===suppSelKey?'selected':''}>${esc(r.name)} · ${r.status==='paused'?'中止':'学习'}</option>`).join("");
+  const sortBtns = [["date-desc","日期↓"],["date-asc","日期↑"],["wrong-desc","错题↓"],["wrong-asc","错题↑"]]
+    .map(([k,l])=>`<button class="tf-chip ${suppDetailSort===k?'on':''}" onclick="suppSetDetailSort('${k}')">${l}</button>`).join("");
+  const trs = rows.map(r=>`<tr><td class="dt">${r.date||"—"}</td><td class="tt">${esc(r.title)}</td><td class="wr">${r.wrong}</td></tr>`).join("");
+  el.innerHTML = `<div class="supp-block">
+    <div class="supp-h">教辅学习明细 <span class="supp-n">${rows.length} 次</span></div>
+    <div class="supp-sel"><select onchange="suppSelKey=this.value;renderSuppDetail()">${opts}</select></div>
+    <div class="task-filt" style="margin:8px 0 10px;"><span class="tf-lab">排序</span><div class="tf-chips">${sortBtns}</div></div>
+    ${ rows.length
+        ? `<div class="supp-tbl-wrap"><table class="supp-tbl"><thead><tr><th>日期</th><th>内容</th><th>错题数</th></tr></thead><tbody>${trs}</tbody></table></div>`
+        : `<div class="empty-tip">该教辅暂无完成记录</div>` }
+  </div>`;
+}
 function doAdd(){
   const v=$("addInput").value.trim(); if(!v){ toast("请输入作业内容"); return; }
   const est=Math.max(0, parseInt($("addEst").value||"0",10)||0);
@@ -3328,7 +3388,7 @@ function renderTasks(){
   const priBtns=[1,2,3].map(p=>`<button data-p="${p}" class="${addPri===p?'on':''}" onclick="pickAddPri(${p})">${PRI[p].label}</button>`).join("");
   const dueB = addDue? `<span class="due-btn set" onclick="openDuePicker(null)">📅 ${dueLabel(addDue).txt} · 改</span>`
                       : `<span class="due-btn" onclick="openDuePicker(null)">📅 设置截止（可选）</span>`;
-  let html = `<div class="task-add">
+  let html = `<div class="task-page-h">待办事项</div><div class="task-add">
     <div class="add-title"><span class="subj-dot subj-其他"></span>添加待办</div>
     <div class="seg3">${priBtns}</div>
     ${dueB}
@@ -5109,7 +5169,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.11.131";
+const APP_VERSION = "2026.11.12.132";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
