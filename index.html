@@ -538,6 +538,13 @@
   .dur-fill{height:100%; border-radius:8px; transition:width .6s ease;}
   .dur-val{font-size:12px; color:var(--muted); flex:0 0 auto; font-variant-numeric:tabular-nums; white-space:nowrap;}
   .dur-total{font-size:12px; color:var(--muted); margin-top:10px; text-align:right; font-weight:700;}
+  /* v.135：未完成项（预计时长）浅色条 —— 仅作展示，不计入统计 */
+  .dur-inc-head{font-size:11.5px; color:var(--muted); font-weight:700; margin:12px 0 4px;}
+  .dur-row.dur-inc .dur-name{color:var(--muted);}
+  .dur-row.dur-inc .dur-bar{background:#f7f7f7; border:1px dashed #d9d4c8;}
+  .dur-row.dur-inc .dur-fill{opacity:.32;}
+  .dur-row.dur-inc .dur-val{color:#a39e92; font-weight:600;}
+  .dur-row.dur-inc .subj-dot{opacity:.45;}
 
   /* ===== 合计栏（周/月 作业完成情况汇总） ===== */
   .sum-range{display:flex; gap:8px; margin-top:10px;}
@@ -3153,6 +3160,66 @@ function onChk(id){
 /* ===== 作业统计（日统计：实际时长条 + 条目式列表） ===== */
 const GAP_MERGE = 10;   // 同一作业相邻计时段之间，暂停短于该分钟数则合并为一段（只计实际工时）；满 10 分钟以上才拆成两段
 /* ===== 日统计渲染（实际时长条 + 当日作业明细） ===== */
+
+/* v.135：把一组作业按「已完成 / 未完成」拆出各科时长(分钟)
+   done：计时→计时时长(recMs)、未计时→预计(estMin)；inc：未完成按预计(仅展示不计入) */
+function subjDurSplitOf(ts){
+  const done={}, inc={};
+  ts.forEach(t=>{
+    const subj=t.subject||"其他";
+    if(t.done){
+      const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+      done[subj] = (done[subj]||0) + m;
+    } else {
+      inc[subj] = (inc[subj]||0) + (t.estMin||0);
+    }
+  });
+  return {done, inc};
+}
+/* v.135：各科作业时长色条（已完成计入统计 / 未完成浅色不计入）
+   doneMap/incMap: {subject: minutes}；footerLabel 自定义底部总时长前缀(默认「已完成总时长」) */
+function durBarsHtml(doneMap, incMap, title, footerLabel){
+  const doneArr = Object.keys(doneMap).filter(k=>doneMap[k]>0)
+    .map(k=>({name:k, color:subjColor(k), min:doneMap[k]}))
+    .sort((a,b)=> b.min-a.min);
+  const doneTotal = doneArr.reduce((s,x)=>s+x.min,0) || 0;
+  const incArr = Object.keys(incMap||{}).filter(k=>(incMap[k]||0)>0)
+    .map(k=>({name:k, color:subjColor(k), min:incMap[k]}))
+    .sort((a,b)=> b.min-a.min);
+  const incTotal = incArr.reduce((s,x)=>s+x.min,0) || 0;
+  const denom = Math.max(doneTotal, incTotal, 1);
+  const bars = doneArr.map(s=>{
+    const pct = doneTotal ? Math.round(s.min/doneTotal*100) : 0;
+    const w = s.min/denom*100;
+    return `<div class="dur-row">
+      <span class="subj-dot" style="background:${s.color}"></span>
+      <span class="dur-name">${esc(s.name)}</span>
+      <div class="dur-bar"><div class="dur-fill" style="width:${w.toFixed(1)}%;background:${s.color}"></div></div>
+      <span class="dur-val">${s.min}分 · ${pct}%</span>
+    </div>`;
+  }).join("");
+  const incBars = incArr.length ? (
+    `<div class="dur-inc-head">未完成（预计时长，未计入统计）</div>` +
+    incArr.map(s=>{
+      const w = s.min/denom*100;
+      return `<div class="dur-row dur-inc">
+        <span class="subj-dot" style="background:${s.color}"></span>
+        <span class="dur-name">${esc(s.name)}</span>
+        <div class="dur-bar"><div class="dur-fill" style="width:${w.toFixed(1)}%;background:${s.color}"></div></div>
+        <span class="dur-val">${s.min}分</span>
+      </div>`;
+    }).join("")
+  ) : "";
+  const footer = footerLabel ? `${footerLabel} ${doneTotal} 分` : `已完成总时长 ${doneTotal} 分`;
+  const incNote = incTotal ? ` · 未完成预计 ${incTotal} 分（未计入）` : "";
+  return `<div class="gantt${ganttHL?' has-hl':''}">
+    <div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:10px;">${title}</div>
+    ${bars || '<div class="empty-tip" style="padding:6px 0;">暂无已完成作业</div>'}
+    ${incBars}
+    <div class="dur-total">${footer}${incNote}</div>
+  </div>`;
+}
+
 function renderStats(){
   const ds=ymd(viewDate); const s=dayStats(ds);
   if(s.total===0){ $("statsContent").innerHTML = `<div class="empty-tip">这一天还没有作业记录</div>`; applyStatMode(); return; }
@@ -3161,32 +3228,10 @@ function renderStats(){
   const byStart = a => startMinOf(a)==null ? 1e9 : startMinOf(a);
   const sorted = s.ts.slice().sort((a,b)=> byStart(a)-byStart(b));
 
-  // —— 今日作业时段：按「实际作业时长」展示（与计时器/完成时间的时钟无关）
-  //    计时项 → 计时时长；未计时 → 预计时长。彩条长度 ∝ 时长，并给出各科占比
-  const subjMin = {};
-  s.ts.forEach(t=>{
-    const d = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
-    subjMin[t.subject] = (subjMin[t.subject]||0) + d;
-  });
-  const subjArr = subjList().filter(x=>!x.arc && subjMin[x.name]>0)
-    .map(x=>({name:x.name, color:x.color, min:subjMin[x.name]}))
-    .sort((a,b)=> b.min-a.min);
-  const totalMin = subjArr.reduce((a,s)=>a+s.min,0) || 1;
-  const durBars = subjArr.map(s=>{
-    const pct = Math.round(s.min/totalMin*100);
-    const w = totalMin ? (s.min/totalMin*100) : 0;
-    return `<div class="dur-row">
-      <span class="subj-dot" style="background:${s.color}"></span>
-      <span class="dur-name">${esc(s.name)}</span>
-      <div class="dur-bar"><div class="dur-fill" style="width:${w.toFixed(1)}%;background:${s.color}"></div></div>
-      <span class="dur-val">${s.min}分 · ${pct}%</span>
-    </div>`;
-  }).join("");
-  let html = `<div class="gantt${ganttHL?' has-hl':''}">
-    <div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:10px;">今日作业时段（实际时长）</div>
-    ${durBars}
-    <div class="dur-total">当日总时长 ${totalMin} 分</div>
-  </div>`;
+  // —— 今日作业时段：按「实际完成作业量」统计时长（v.135）
+  //    只统计 done：计时→计时时长、未计时→预计时长；未完成项以浅色条显示但【不计入】总时长/占比
+  const split = subjDurSplitOf(s.ts);
+  let html = durBarsHtml(split.done, split.inc, "今日作业时段（实际时长）", "当日总时长");
 
   // 条目式列表（按时间顺序）
   let rows="";
@@ -3536,6 +3581,7 @@ function renderSummary(){
 
   // 收集范围内的所有作业实例，按「小项」合并（同 科目+名称 视为同一项，跨母版/一次性合并统计）
   const groups = {};
+  const durDone={}, durInc={};        // v.135：范围内各科「已完成/未完成」时长(分)，用于时长色条
   const bailanN = days.filter(ds=>isBailanDay(ds)).length;   // v.103：摆烂日已排除，这里仅用于提示
   days.forEach(ds=>{
     if(isBailanDay(ds)) return;        // v.103：摆烂日视为无任务，不计入统计栏
@@ -3545,6 +3591,13 @@ function renderSummary(){
       let g = groups[key];
       if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
       g.items.push(t);
+      // v.135：时长色条累计（done 计入，未完成仅记预计并标浅色）
+      if(t.done){
+        const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+        const sk=t.subject||"其他"; durDone[sk]=(durDone[sk]||0)+m;
+      } else {
+        const sk=t.subject||"其他"; durInc[sk]=(durInc[sk]||0)+(t.estMin||0);
+      }
     });
   });
   const keys = Object.keys(groups);
@@ -3587,6 +3640,7 @@ function renderSummary(){
   const sortTip = sumSort.key ? `按 ${SORT_LABEL[sumSort.key]}${sumSort.dir>0?"升序":"降序"}（点表头切换）` : "点表头可排序";
 
   let html = `<div class="rate-big"><div class="rt">${allRate}%</div><div class="rl">${label} · 整体完成率</div><div class="rsub">共 ${rows.length} 项作业 · 安排 ${allTotal} 次 · 完成 ${allDone} 次 · 未完成 ${allTotal-allDone} 次${bailanN?` · 摆烂 ${bailanN} 天已排除`:''}</div></div>`;
+  html += durBarsHtml(durDone, durInc, "各科作业时长（"+label+"）", null);   // v.135：年/月/周 时长色条
   html += `<div class="cmpt"><div class="cmpt-head"><span>每小项作业一览</span><span class="cnt">${sortTip}</span></div>`;
   // 可点击排序的表头（与下方四格对齐）
   const cols=[["doneN","完成次数"],["undoneN","未完"],["avgMin","平均用时"],["avgWrong","平均错误"]];
@@ -5054,7 +5108,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.13.134";
+const APP_VERSION = "2026.11.13.135";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
