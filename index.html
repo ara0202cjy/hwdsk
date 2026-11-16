@@ -1495,7 +1495,20 @@ function deleteLocked(t){
    当日完成 或 提前完成（提前打卡）均视为「按时完成」，不计补打卡。
    参数为 ISO 日期串（YYYY-MM-DD），可直接字符串比较。 */
 function calcMakeup(dateStr, compStr){ return !!compStr && compStr > dateStr; }
-function toggleDone(id){
+/* v.136：把补做归属写入已完成条目。
+   makeupOverride：undefined=沿用 calcMakeup 自动判定（当日/提前→按时，晚于作业日→补做）；
+                   true/false=用户显式选择是否补做（打卡非当日内容时弹窗所得）。
+   选「按时完成(false)」时把 completedOn 归到作业日，避免星规则按 completedOn>作业日误判为后期补做。 */
+function applyDoneMakeup(t, makeupOverride){
+  const td = ymd(new Date());
+  if(makeupOverride === undefined){ t.completedOn = td; t.makeup = calcMakeup(t.date, td); }
+  else if(makeupOverride){ t.completedOn = td; t.makeup = true; }
+  else { t.completedOn = t.date; t.makeup = false; }
+}
+/* 该作业是否为「非当日内容」：作业日早于今天（过去日期）才需要询问补做；
+   当日/未来（提前打卡）沿用自动判定=按时完成，不弹窗。 */
+function isPastTodo(t){ return !!(t && t.date && t.date < ymd(new Date())); }
+function toggleDone(id, makeupOverride){
   const t = getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   t.done = !t.done; touch(t);
@@ -1503,7 +1516,7 @@ function toggleDone(id){
     // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
     if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
     finalizeEnd(t, Date.now());
-    const td=ymd(new Date()); t.completedOn=td; t.makeup=calcMakeup(t.date, td);   // 提前/当日完成=按时；晚于作业日才算补打卡
+    applyDoneMakeup(t, makeupOverride);
   }
   else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
   save(); syncDerived();
@@ -1538,16 +1551,36 @@ function timerPause(id){
   segClose(t, nowClock());              // 暂停 → 闭合当前段
   touch(t); save(); afterTimer(); toast("计时已暂停");
 }
-function timerDone(id){
+function timerDone(id, makeupOverride){
   const t=getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
   t.done=true; touch(t); finalizeEnd(t, Date.now());
-  const td=ymd(new Date()); t.completedOn=td; t.makeup=calcMakeup(t.date, td);   // 提前/当日完成=按时；晚于作业日才算补打卡
+  applyDoneMakeup(t, makeupOverride);
   save();
   afterTimer(); toast("计时已停止");
 }
 function afterTimer(){ renderList(); syncDerived(); }
+
+/* v.136：打卡 UI —— 非当日内容（作业日早于今天）先弹窗让用户选补做/按时，再完成。
+   askSeg 返回 "makeup" | "ontime" | null(取消)；取消则本次打卡不执行。
+   当日/未来内容及取消勾选沿用原路径，不弹窗。 */
+async function askMakeupThen(id, doneFn){
+  const t = getTodo(id); if(!t) return;
+  if(t.done || !isPastTodo(t)){ doneFn(id, undefined); return; }   // 取消完成 / 当日·未来 → 自动判定
+  const choice = await askSeg({
+    title: "补做还是按时完成？",
+    options: [
+      {value:"makeup", label:"记为补做"},
+      {value:"ontime", label:"按时完成"}
+    ],
+    value: "makeup",
+    hint: "这条作业日期是 "+t.date+"（非今天）。记为补做→计入补打卡；按时完成→视为作业当天完成。"
+  });
+  if(choice === null) return;                                      // 取消 → 本次不打卡
+  doneFn(id, choice === "makeup");
+}
+function timerDoneMakeup(id){ return askMakeupThen(id, timerDone); }
 
 /* ============ 计算层 ============ */
 function todosOf(dateStr){ return state.todos.filter(t=>t.date===dateStr); }
@@ -2887,7 +2920,7 @@ function todoRow(t, subj, ds){
         <div class="timer-actions">
           <button class="tbtn start ${running?'dis':''} ${locked?'dis':''}" ${running||locked?'disabled':''} onclick="timerStart('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>开始</button>
           <button class="tbtn pause ${!running?'dis':''}" ${!running?'disabled':''} onclick="timerPause('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>暂停</button>
-          <button class="tbtn done ${t.done?'dis':''} ${locked?'dis':''}" ${t.done||locked?'disabled':''} onclick="timerDone('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>完成</button>
+          <button class="tbtn done ${t.done?'dis':''} ${locked?'dis':''}" ${t.done||locked?'disabled':''} onclick="timerDoneMakeup('${t.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5 9-11" stroke-linecap="round" stroke-linejoin="round"/></svg>完成</button>
         </div>
         ${ (t.accum>0 || t.done || t.timerRunning) ? `<div class="dur-hint" style="margin-top:9px;">起止时间：<b style="color:var(--ink)">${segText(t)}</b></div>` : "" }
       </div>
@@ -3151,10 +3184,14 @@ function toggleExpo(id){
   renderList();
 }
 function onChk(id){
-  const was = getTodo(id).done;
-  toggleDone(id);
-  if(!was){ const st=$("stamp-"+id); if(st){ st.classList.add("go"); } }
-  renderList();
+  const t = getTodo(id); if(!t) return;
+  const was = t.done;
+  // v.136：非当日内容弹窗选择补做/按时；选完再落定，故用回调里统一渲染
+  askMakeupThen(id, (tid, ov)=>{
+    toggleDone(tid, ov);
+    if(!was){ const st=$("stamp-"+tid); if(st){ st.classList.add("go"); } }
+    renderList();
+  });
 }
 
 /* ===== 作业统计（日统计：实际时长条 + 条目式列表） ===== */
@@ -5108,7 +5145,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.13.135";
+const APP_VERSION = "2026.11.16.136";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
