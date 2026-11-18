@@ -231,10 +231,15 @@
   .todo-top{display:flex; align-items:flex-start; gap:12px; padding:10px 2px; cursor:pointer;}
   .chk{width:26px; height:26px; flex:0 0 26px; border-radius:50%; border:2px solid var(--gray); display:flex; align-items:center; justify-content:center; color:#fff; transition:.2s; margin-top:1px;}
   .chk.done{background:var(--green); border-color:var(--green);}
+  /* v.137：半打卡 —— 复选框左半填充；标题旁徽章；可点切换的「半」chip */
+  .chk.half{background:linear-gradient(90deg, var(--green) 50%, #fff 50%); border-color:var(--green);}
   .chk:active{transform:scale(.9);}
   .todo-mid{flex:1 1 auto; min-width:0;}
   .todo-title{font-size:15.5px; font-weight:600; line-height:1.35; word-break:break-word;}
   .makeup-badge{display:inline-block; margin-left:7px; font-size:11px; font-weight:800; color:#fff; background:var(--sun); border-radius:6px; padding:1px 6px; line-height:15px; vertical-align:middle;}
+  .half-badge{display:inline-block; margin-left:7px; font-size:11px; font-weight:800; color:#fff; background:#5B8FB0; border-radius:6px; padding:1px 6px; line-height:15px; vertical-align:middle;}
+  .half-chip{display:inline-block; padding:1px 8px; font-size:11px; font-weight:700; border-radius:6px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; color:#5B8FB0; border:1.5px dashed #9dbdd2; background:rgba(91,143,176,.08);}
+  .half-chip.on{color:#fff; background:#5B8FB0; border:1.5px solid #5B8FB0;}
   .corr{display:inline-block; padding:1px 7px; font-size:11px; font-weight:700; border-radius:6px; cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent;}
   .corr:not(.done){color:var(--sun); border:1.5px solid var(--sun); background:rgba(232,133,59,.08);}
   .corr.done{color:#fff; background:var(--green); border:1.5px solid var(--green);}
@@ -1342,7 +1347,7 @@ function mkTodo(date, subject, title, o={}){
     detail:"", estMin:0, wrong:0, done:false,
     qualified:true,               // v.96：是否合格（默认合格；不合格需在展开栏内单独勾选）
     stats:true,                   // v.97：是否计入「统计栏」周/月/年清单（默认计入；其余结算不变）
-    makeup:false, completedOn:null, dinged:false, corrected:false,   // 补打卡标记 / 实际完成日 / 预估时间已提示 / 订正是否完成
+    makeup:false, halfDone:false, completedOn:null, dinged:false, corrected:false,   // 补打卡标记 / 半打卡(v.137) / 实际完成日 / 预估时间已提示 / 订正是否完成
     accum:0, timerRunning:false, startedAt:null,
     startClock:null, endClock:null,
     segments:[],           // 每次「开始–暂停」一段：{s:"HH:MM", e:"HH:MM"|null}
@@ -1508,17 +1513,37 @@ function applyDoneMakeup(t, makeupOverride){
 /* 该作业是否为「非当日内容」：作业日早于今天（过去日期）才需要询问补做；
    当日/未来（提前打卡）沿用自动判定=按时完成，不弹窗。 */
 function isPastTodo(t){ return !!(t && t.date && t.date < ymd(new Date())); }
+
+/* ===== v.137：半打卡（只完成一半，另一半待完成，时间按一半计） =====
+   - 仅「预估 > HALF_MIN 分钟」的未完成项可半打卡；
+   - doneFrac：全完成=1、半完成=0.5、未完成=0；所有时长/完成度统计均按该分数折算；
+   - 半完成不等于完成：仍留在「待完成」，不满足 allDone / 完成天数。 */
+const HALF_MIN = 15;
+function canHalf(t){ return !!(t && !t.done && (t.estMin||0) > HALF_MIN); }
+function isHalf(t){ return !!(t && t.halfDone && !t.done); }
+function doneFrac(t){ return t && t.done ? 1 : (t && t.halfDone ? 0.5 : 0); }
+function toggleHalf(id){
+  const t = getTodo(id); if(!t) return;
+  if(t.done){ toast("已完成的作业无需半打卡"); return; }
+  if(!canHalf(t)){ toast("预估超过 "+HALF_MIN+" 分钟的作业才能半打卡"); return; }
+  if(!t.halfDone && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法打卡"); return; }
+  t.halfDone = !t.halfDone;
+  touch(t); save(); renderList(); syncDerived();
+  toast(t.halfDone ? "已记半完成，另一半待完成" : "已取消半打卡");
+}
+
 function toggleDone(id, makeupOverride){
   const t = getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   t.done = !t.done; touch(t);
   if(t.done){
+    t.halfDone = false;                 // v.137：全完成覆盖半打卡
     // 计时中直接勾完成：先停表并闭合分段，避免后台继续虚增时长
     if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
     finalizeEnd(t, Date.now());
     applyDoneMakeup(t, makeupOverride);
   }
-  else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
+  else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.halfDone=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
   save(); syncDerived();
 }
 function finalizeEnd(t, now){
@@ -1555,7 +1580,7 @@ function timerDone(id, makeupOverride){
   const t=getTodo(id); if(!t) return;
   if(!t.done && makeupLocked(t)){ toast("该作业已逾期 "+MAKEUP_LOCK_DAYS+" 天，无法补打卡，仅保留未完成"); return; }
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
-  t.done=true; touch(t); finalizeEnd(t, Date.now());
+  t.done=true; t.halfDone=false; touch(t); finalizeEnd(t, Date.now());   // v.137：全完成清半打卡
   applyDoneMakeup(t, makeupOverride);
   save();
   afterTimer(); toast("计时已停止");
@@ -1810,7 +1835,7 @@ function dayStars(dateStr){
   const dl = dayListStats(ts, dateStr);
   // 「当天已完成」按完成日判定：completedOn 晚于当天 = 后期补做（不计入 2 星）；无完成日的老数据退回 makeup 标记
   const isLateDone = t => t.completedOn ? (t.completedOn > dateStr) : !!t.makeup;
-  const doneDayEst = ts.reduce((a,t)=> (t.done && !isLateDone(t)) ? a + (t.estMin||0) : a, 0);
+  const doneDayEst = ts.reduce((a,t)=> ((t.done||t.halfDone) && !isLateDone(t)) ? a + (t.estMin||0)*doneFrac(t) : a, 0);   // v.137：半完成按一半计
   const timeOk = (doneDayEst + dl.madeUpEst) >= dl.totalEst;              // 当天时长（当日完成 + 当日补做）是否达标
   const allItemsDone = ts.every(t=>t.done);                              // 当天作业清单是否全部做完
   const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI 仍含后期补做
@@ -2050,30 +2075,35 @@ function orderHw(arr, ids){
    注意命名：与下方已有的 dayStats(dateStr)（星数结算）不同，此处为 dayListStats。 */
 function dayListStats(ts, dsStr){
   // v.103：摆烂日视为无任务 —— 各项个数与时长全部清零
-  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, doneLateEst:0, madeUpEst:0, learnEst:0, undoneEst:0, actualEst:0, learnComplete:false };
+  if(isBailanDay(dsStr)) return { doneReal:0, doneMakeup:0, halfN:0, pendingCorr:0, pendingDone:0, totalEst:0, doneEst:0, doneLateEst:0, madeUpEst:0, learnEst:0, undoneEst:0, actualEst:0, learnComplete:false };
   // 混合口径：计时项按实际记录时长(recMs)，未计时按预估分(estMin)兜底
   const durOf = t => isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
   const estOf = t => (t.estMin||0);
-  const doneOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日自身项：按时完成（当日或提前）
+  const fracEst = t => estOf(t) * doneFrac(t);                        // v.137：完成度折算（全1/半0.5/未0）
+  const restEst = t => estOf(t) * (1 - doneFrac(t));                  // 剩余（未完成）部分
+  const durFrac = t => durOf(t) * doneFrac(t);
+  const fullOnTime = ts.filter(t=>t.done && !t.makeup);              // 当日自身项：全完成·按时（计数用）
+  const partOnTime = ts.filter(t=>(t.done||t.halfDone) && !t.makeup); // 完成+半完成·按时（时长用）
   const doneLate   = ts.filter(t=>t.done && t.makeup);               // 当日自身项：后期补做完成（完成日晚于作业日）
-  const undoneOwn  = ts.filter(t=>!t.done);                           // 当日自身项：未完成
+  const undoneOwn  = ts.filter(t=>!t.done);                           // 当日自身项：未完成（含半完成的另一半）
   // 当日补做「其他日期」清单项：完成日==当日 且 作业日≠当日（跨日统计）
-  const madeUp = state.todos.filter(t=>t.done && t.makeup && t.completedOn===dsStr && t.date!==dsStr);
-  const totalEst  = ts.reduce((a,t)=>a+estOf(t),0);                  // 预计时长 = 当日自身项全部预计
+  const madeUp = state.todos.filter(t=>(t.done||t.halfDone) && t.makeup && t.completedOn===dsStr && t.date!==dsStr);
+  const totalEst  = ts.reduce((a,t)=>a+estOf(t),0);                  // 预计时长 = 当日自身项全部预计（全量）
   // v.118：当日已做只算「当日做完」的项；后期补做（makeup）不计入当日已做，也不计入当日实际学习时长
-  const doneEst   = doneOnTime.reduce((a,t)=>a+estOf(t),0);          // 当日已做 = 当日自身项按时完成预计
+  const doneEst   = partOnTime.reduce((a,t)=>a+fracEst(t),0);        // 当日已做 = 全完成1 + 半完成0.5
   const doneLateEst = doneLate.reduce((a,t)=>a+estOf(t),0);          // 该日清单内「后期补做」预计（仅用于完成闸门，不展示）
-  const madeUpEst = madeUp.reduce((a,t)=>a+estOf(t),0);              // 当日补做 = 他日项当日补做预计
+  const madeUpEst = madeUp.reduce((a,t)=>a+fracEst(t),0);            // 当日补做 = 他日项当日补做预计（按完成度）
   const learnEst  = doneEst + madeUpEst;                             // v.117：当日学习时长 = 当日已做 + 当日补做
-  const undoneEst = undoneOwn.reduce((a,t)=>a+estOf(t),0);           // 当日未完成时长 = 自身未完成预计
-  const actualEst = doneOnTime.reduce((a,t)=>a+durOf(t),0) + madeUp.reduce((a,t)=>a+durOf(t),0); // 当日实际学习时长(计时优先，不含后期补做)
-  // 完成闸门仍按「该日清单全部已完成(含后期补做) + 他日补做」判定，保持 v.116 星规语义不变
+  const undoneEst = undoneOwn.reduce((a,t)=>a+restEst(t),0);         // 未完成 = 未做全量 + 半完成的剩余半量
+  const actualEst = partOnTime.reduce((a,t)=>a+durFrac(t),0) + madeUp.reduce((a,t)=>a+durFrac(t),0); // 实际学习时长(计时优先，按完成度折算)
+  // 完成闸门：半完成只算一半，故清单未全做完时无法达标
   const learnComplete = (doneEst + doneLateEst + madeUpEst) >= totalEst;
   return {
-    doneReal:     doneOnTime.length,                                 // 当日完成（真实完成、非补打卡）
+    doneReal:     fullOnTime.length,                                 // 当日完成（全完成、非补打卡）
     doneMakeup:   doneLate.length,                                   // 补打卡完成
+    halfN:        ts.filter(isHalf).length,                          // v.137：半完成项数
     pendingCorr:  ts.filter(t=>(t.wrong||0)>0 && !t.corrected).length,// 待订正
-    pendingDone:  undoneOwn.length,                                  // 待完成
+    pendingDone:  undoneOwn.length,                                  // 待完成（含半完成）
     totalEst, doneEst, doneLateEst, madeUpEst, learnEst, undoneEst, actualEst, learnComplete
   };
 }
@@ -2130,6 +2160,7 @@ function renderList(){
     const all = bySubj[subj]||[];
     const pending = all.filter(t=>!t.done);
     const done = all.filter(t=>t.done);
+    const halfN = all.filter(isHalf).length;                          // v.137：半完成项数
     const total = ts.filter(t=>normSubj(t.subject)===subj).length;
     const eOn = editBooks.has(subj);
     const style = ` style="--sc:${sObj.color||"#6B8E5A"}"`;
@@ -2138,7 +2169,7 @@ function renderList(){
       <div class="card-h">
         <span class="subj-dot" style="background:${sObj.color||"#6B8E5A"}"></span>
         <span class="subj-title" style="color:${sObj.color||"#6B8E5A"}">${esc(subj)}${arc?'<i class="arc-tag">已删除</i>':""}</span>
-        <span class="card-count">${done.length}/${total} 完成</span>
+        <span class="card-count">${done.length}/${total} 完成${halfN?` · ${halfN} 半`:''}</span>
         <button class="book-set${eOn?' on':''}" title="设置：显示本作业本各项的修改 / 删除 / 固定按钮" onclick="toggleEditBook('${esc(subj)}')">${gearSvg()}</button>
       </div>`;
     if(all.length===0){
@@ -2900,13 +2931,15 @@ function todoRow(t, subj, ds){
   if(locked) meta.push(`<span style="color:var(--muted)">逾期 · 不可补打卡</span>`);
   if(running) meta.push(`<span class="pulse"></span><span style="color:var(--sun);font-weight:700;" data-timer="${t.id}">● 计时中 ${fmtDur(spentOf(t))}</span>`);
   if(t.done && !running) meta.push(`<span style="color:var(--green);font-weight:600;">✓ 已完成</span>`);
+  // v.137：预估超过 15 分钟的未完成项 → 可点半打卡；已半完成显示为可点状态
+  if(!t.done && canHalf(t)) meta.push(`<span class="half-chip ${isHalf(t)?'on':''}" onclick="event.stopPropagation();toggleHalf('${t.id}')">${isHalf(t)?'◐ 半完成（另一半待完成）':'◐ 半打卡'}</span>`);
   if(t.estMin) meta.push(`预估 ${t.estMin} 分`);
   if(t.manualMin>0) meta.push(`<span style="color:var(--green);font-weight:700;">实际 ${t.manualMin} 分</span>`);
   if(t.wrong>0) meta.push(`<span style="color:${t.wrong>=5?RED:'inherit'};font-weight:${t.wrong>=5?700:400};">错题 ${t.wrong}</span>`);
   if(t.wrong>0) meta.push(`<span class="corr ${t.corrected?'done':''}" onclick="event.stopPropagation();toggleCorrected('${t.id}')">${t.corrected?'✓ 已订正':'待订正'}</span>`);
   if(t.qualified===false) meta.push(`<span class="qual-tag bad" onclick="event.stopPropagation();toggleQual('${t.id}')">不合格</span>`);
   const statusCls = running ? "run" : (t.done ? "stop" : "pause");
-  const statusTxt = running ? "计时中" : (t.done ? "已停止" : "未开始");
+  const statusTxt = running ? "计时中" : (t.done ? "已停止" : (isHalf(t) ? "半完成" : "未开始"));
   /* v.121：常用词来源的项保留「修改」按钮 —— 只改这一项的预估时间，名称只读；手写项仍可改名 */
   const renameBtn = `<button class="mini-btn" title="${t.hwId?'修改时间（名称不可改）':'改名'}" onclick="event.stopPropagation();editTodoItem('${t.id}')">${penSvg()}</button>`;
   const detail = `
@@ -2928,9 +2961,9 @@ function todoRow(t, subj, ds){
   return `<div class="todo" id="todo-${t.id}">
     ${ t.done?'<span class="stamp" id="stamp-'+t.id+'">已完成</span>':'' }
     <div class="todo-top">
-      <button class="chk ${t.done?'done':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
+      <button class="chk ${t.done?'done':''} ${isHalf(t)?'half':''} ${locked?'dis':''}" ${locked?'disabled':''} onclick="onChk('${t.id}')">${chkSvg(t.done)}</button>
       <div class="todo-mid" onclick="toggleExpo('${t.id}')">
-        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}</div>
+        <div class="todo-title ${t.done?'done':''}">${esc(t.title)}${t.makeup?'<span class="makeup-badge">补'+(t.completedOn?(' '+t.completedOn.slice(5)):'')+'</span>':''}${isHalf(t)?'<span class="half-badge">◐ 半</span>':''}</div>
         ${ meta.length?`<div class="todo-meta">${meta.join("")}</div>`:"" }
       </div>
       <div class="todo-acts">
@@ -3204,13 +3237,14 @@ function subjDurSplitOf(ts){
   const done={}, inc={};
   ts.forEach(t=>{
     const subj=t.subject||"其他";
-    if(t.done){
-      const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
-      done[subj] = (done[subj]||0) + m;
-    } else {
-      inc[subj] = (inc[subj]||0) + (t.estMin||0);
-    }
+    const f = doneFrac(t);
+    const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+    if(f>0) done[subj] = (done[subj]||0) + m*f;                 // v.137：半完成计一半时长
+    if(f<1) inc[subj] = (inc[subj]||0) + (t.estMin||0)*(1-f);   // 半完成的另一半计入未完成
   });
+  // 取整，避免半分钟小数显示
+  Object.keys(done).forEach(k=>done[k]=Math.round(done[k]));
+  Object.keys(inc).forEach(k=>inc[k]=Math.round(inc[k]));
   return {done, inc};
 }
 /* v.135：各科作业时长色条（已完成计入统计 / 未完成浅色不计入）
@@ -3283,11 +3317,13 @@ function renderStats(){
       <div class="srow-top">
         <span class="subj-dot subj-${t.subject}"></span>
         <span class="srow-title">${esc(t.title)}</span>
+        ${isHalf(t)?'<span class="half-badge">◐ 半</span>':''}
         <span class="srow-est">预估 ${t.estMin||'-'} 分</span>
       </div>
       <div class="srow-sub">
         <span>起止 <b>${segStr}</b></span>
         <span>用时 <b style="${isT?'':`color:var(--muted);font-weight:600;`}">${isT? sp+" 分" : "预计 "+(t.estMin||0)+" 分"}</b></span>
+        ${isHalf(t)?`<span>完成度 <b style="color:#5B8FB0">50%</b></span>`:""}
         <span>错题 <b style="color:${wr>=5?RED:'var(--ink)'}">${wr}</b></span>
         ${ wr>0 ? `<span>订正 <b style="color:${t.corrected?'var(--green)':'var(--sun)'}">${t.corrected?'已订正':'待订正'}</b></span>` : "" }
       </div>
@@ -3628,13 +3664,11 @@ function renderSummary(){
       let g = groups[key];
       if(!g){ g = groups[key] = { subject:t.subject||"其他", title:t.title||"(未命名)", items:[] }; }
       g.items.push(t);
-      // v.135：时长色条累计（done 计入，未完成仅记预计并标浅色）
-      if(t.done){
-        const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
-        const sk=t.subject||"其他"; durDone[sk]=(durDone[sk]||0)+m;
-      } else {
-        const sk=t.subject||"其他"; durInc[sk]=(durInc[sk]||0)+(t.estMin||0);
-      }
+      // v.135：时长色条累计（已完成计入，未完成仅记预计并标浅色）；v.137：按完成度折算
+      const sk=t.subject||"其他", f=doneFrac(t);
+      const m = isTimed(t) ? Math.round(recMs(t)/60000) : (t.estMin||0);
+      if(f>0) durDone[sk]=(durDone[sk]||0)+m*f;
+      if(f<1) durInc[sk]=(durInc[sk]||0)+(t.estMin||0)*(1-f);
     });
   });
   const keys = Object.keys(groups);
@@ -3745,7 +3779,7 @@ function renderMonth(){
       if(!t.done) unfinished++;                                       // 待完成：与清单一致（不含已完成的未订正）
       if((t.wrong||0)>0 && !t.corrected) uncorr++;                    // 待订正：与清单一致（不论是否完成）
       if(t.qualified===false) unqual++;                               // v.96：不合格（默认合格，展开栏内单独勾选）
-      if(!t.done) unfinMin += (t.estMin||0);                          // v.111：合格口径只计「未完成」（不再计入未订正）
+      if(!t.done) unfinMin += (t.estMin||0) * (1 - doneFrac(t));      // v.111：只计「未完成」；v.137：半完成只计剩余半量
     });
   }
   /* v.96：不合格扣星 —— 每 3 次不合格扣 1 颗星（向下取整，计入本月星星总数） */
@@ -3888,8 +3922,8 @@ function renderMonth(){
       const right = locked
         ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
         : `<span class="mu-left">${x.left===0 ? "今天截止" : "剩 "+x.left+" 天"}</span><span class="mu-go">去完成 ›</span>`;
-      const em = x.t.estMin||0;
-      const mid = em>0 ? `<span class="mu-time">(${em}min)</span>` : "";
+      const em = Math.round((x.t.estMin||0) * (1 - doneFrac(x.t)));   // v.137：半完成只剩余半量
+      const mid = (em>0 ? `<span class="mu-time">(${em}min)</span>` : "") + (isHalf(x.t) ? `<span class="mu-time">◐ 半</span>` : "");
       mu += muRow(x, right, cls, mid);
     });
   } else {
@@ -5145,7 +5179,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.16.136";
+const APP_VERSION = "2026.11.18.137";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
