@@ -401,6 +401,36 @@
   .read-cont .rc-pill{display:inline-flex; align-items:center; border:1.5px solid #e3d8f2; background:#f6f1ff; color:#6f5599; border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:700; cursor:pointer; line-height:1; white-space:nowrap;}
   .read-cont .rc-pill:active{transform:scale(.96);}
   .read-item .ri-cont{font-size:10.5px; font-weight:800; border-radius:999px; padding:1px 7px; background:#f6f1ff; color:#6f5599; white-space:nowrap; border:1px solid #e3d8f2;}
+  /* v.138：周计划卡 */
+  .wp-card{border:1.5px solid #C9D6E4; background:linear-gradient(135deg,#fff,#EEF3F8);}
+  .wp-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .wp-title{font-size:14px; font-weight:800; color:#3E5A78;}
+  .wp-nav{display:inline-flex; gap:6px; align-items:center;}
+  .wp-nav button{border:1px solid #C9D6E4; background:#fff; color:#3E5A78; border-radius:8px; width:26px; height:26px; font-size:15px; font-weight:800; cursor:pointer;}
+  .wp-weeklabel{font-size:12px; font-weight:700; color:#5A7089; min-width:96px; text-align:center;}
+  .wp-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:10px;}
+  .wp-kpi{background:#fff; border:1px solid #DDE6EF; border-radius:10px; padding:8px 4px; text-align:center;}
+  .wp-kpi .v{font-size:17px; font-weight:800; color:#3E5A78; line-height:1.1;}
+  .wp-kpi .k{font-size:10.5px; color:var(--muted); margin-top:3px; font-weight:700;}
+  .wp-list{margin-bottom:8px;}
+  .wp-item{display:flex; align-items:center; gap:6px; padding:7px 9px; background:#fff; border:1px solid #E1E8F0; border-radius:10px; margin-bottom:5px; font-size:13px;}
+  .wp-item .wp-dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
+  .wp-item .wp-nm{flex:1; min-width:0; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .wp-item .wp-est{font-size:11.5px; color:var(--muted); font-weight:700; flex:0 0 auto;}
+  .wp-item .wp-day{font-size:11px; color:#3E5A78; font-weight:700; flex:0 0 auto;}
+  .wp-item.done{opacity:.55;}
+  .wp-item.done .wp-nm{text-decoration:line-through;}
+  .wp-item.waived{opacity:.6; background:#F4F1EC;}
+  .wp-item.waived .wp-day{color:#9a8f7e;}
+  .wp-mini{border:1px solid #C9D6E4; background:#F7FAFD; color:#3E5A78; border-radius:7px; font-size:11px; font-weight:800; padding:2px 7px; cursor:pointer; flex:0 0 auto;}
+  .wp-mini.dis{opacity:.35; pointer-events:none;}
+  .wp-mini.danger{color:#b05a5a; border-color:#e4c9c9; background:#fdf7f7;}
+  .wp-addrow{display:flex; gap:6px; align-items:center; margin-top:8px;}
+  .wp-addrow select{flex:1; min-width:0; border:1.5px solid #C9D6E4; border-radius:10px; padding:9px 10px; font-size:13.5px; background:#fff; color:var(--ink); font-family:inherit;}
+  .wp-addrow button{border:none; background:#3E5A78; color:#fff; border-radius:10px; padding:9px 14px; font-size:13.5px; font-weight:800; cursor:pointer;}
+  .wp-foot{font-size:11px; color:var(--muted); line-height:1.5; margin-top:8px;}
+  .wp-reduce{display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; color:#5A7089; font-weight:700;}
+  .wp-reduce button{border:1px solid #C9D6E4; background:#fff; color:#3E5A78; border-radius:7px; width:24px; height:24px; font-weight:800; cursor:pointer;}
   /* v.103：摆烂卡 */
   .bailan-banner{ background:#EBDDE1; color:#6E4F59; border-radius:10px; padding:10px 12px; font-size:15px; font-weight:800; text-align:center; letter-spacing:2px; margin-bottom:10px;}
   .bailan-gray{ opacity:.4; filter:grayscale(1); pointer-events:none; }
@@ -1100,11 +1130,11 @@
 "use strict";
 /* ============ 常量 ============ */
 const STORE_KEY = "wb_hwdsk_v1";
-/* v.131：清单排序 —— 校内优先，其他最后；中间学科保持 语文、英语、数学 */
-const SUBJECTS = ["校内","语文","英语","数学","其他"];
+/* v.138：科目改名 —— 「校内」→「每日必做」（lvcheng 账号）；清单顺序仍为该科优先、其他最后 */
+const SUBJECTS = ["每日必做","语文","英语","数学","其他"];
 const INK = "#2F5D50", SUN = "#E8853B", GREEN="#3FA46A", GRAY="#C9C3B6", RED="#C0392B";
-const SUBJ_COLOR = {"校内":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
-const SUBJ_ORDER = {"校内":0,"语文":1,"英语":2,"数学":3,"其他":4};
+const SUBJ_COLOR = {"每日必做":"#7B5FA6","语文":"#C25B5B","数学":"#3F6FB0","英语":"#C2953B","其他":"#6B8E5A"};
+const SUBJ_ORDER = {"每日必做":0,"语文":1,"英语":2,"数学":3,"其他":4};
 
 /* ============ 可变科目表（v.80：支持改名 / 删除 / 新增 / 排序，随云端同步） ============
    - state.subjects：数组，每项 {name, color, arc?}；arc=true 表示「已删除归档」（今日前的历史内容保留、置灰只读）
@@ -1144,11 +1174,11 @@ function ensureSubjects(){
 /* v.131：清单排序 —— 校内优先，其他最后；中间学科保持 语文、英语、数学。
    对已有本地数据做一次性重排（用 _subjOrderV 版本闸门，跑过一次就不再覆盖用户手动排序）。
    其余自定义科目保持相对顺序；归档科目统一置末。 */
-const SUBJ_ORDER_VER = "2026.11.11.131";
+const SUBJ_ORDER_VER = "2026.11.23.138";
 function migrateSubjectOrder(){
   if(!Array.isArray(state.subjects) || !state.subjects.length) return;
   if(state._subjOrderV === SUBJ_ORDER_VER) return;
-  const canon = ["校内","语文","英语","数学","其他"];
+  const canon = ["每日必做","语文","英语","数学","其他"];
   const byName = new Map(state.subjects.map(s=>[s.name, s]));
   const next = [];
   const take = n=>{ const s=byName.get(n); if(s){ next.push(s); byName.delete(n); } };
@@ -1160,6 +1190,47 @@ function migrateSubjectOrder(){
   state.subjects = next;
   state._subjOrderV = SUBJ_ORDER_VER;
   bumpSubjects();
+}
+
+/* v.138：科目改名「校内」→「每日必做」+「其他」栏的「琵琶」迁入「每日必做」。
+   用 _subjRenameV 闸门只跑一次；对 todos/tasks/masters 的 subject、常用词分组键、当前选中一并改名；
+   每条打 _u + markLocal，确保随同步覆盖云端旧值（历史 v.78 曾改反方向，故按云端探查确认的方向迁移）。 */
+const SUBJ_RENAME_VER = "2026.11.23.138";
+function migrateSubjectRename(){
+  if(state._subjRenameV === SUBJ_RENAME_VER) return false;
+  ensureSubjects();
+  const OLD="校内", NEW="每日必做", PIPAS="琵琶";
+  let n=0;
+  // 1) 科目表改名（保留色/顺序/生效日）
+  state.subjects.forEach(s=>{ if(s && s.name===OLD){ s.name=NEW; n++; } });
+  // 2) todos/tasks/masters 的 subject 改名；「其他」栏且标题=琵琶 → 每日必做
+  ["todos","tasks","masters"].forEach(k=>(state[k]||[]).forEach(x=>{
+    if(!x) return;
+    let ch=false;
+    if(x.subject===OLD){ x.subject=NEW; ch=true; }
+    else if(x.subject==="其他" && (x.title||"")===PIPAS){ x.subject=NEW; ch=true; }
+    if(ch){ x._u=Date.now(); markLocal(x.id); n++; }
+  }));
+  // 3) 常用词分组键：校内 → 每日必做；其他栏的「琵琶」词 → 每日必做
+  if(state.hw){
+    if(Array.isArray(state.hw[OLD])){
+      state.hw[NEW] = (state.hw[NEW]||[]).concat(state.hw[OLD]);
+      delete state.hw[OLD];
+    }
+    if(Array.isArray(state.hw["其他"])){
+      const pipa = state.hw["其他"].filter(x=> hwItem(x).t===PIPAS);
+      if(pipa.length){
+        state.hw["其他"] = state.hw["其他"].filter(x=> hwItem(x).t!==PIPAS);
+        state.hw[NEW] = (state.hw[NEW]||[]).concat(pipa);
+      }
+    }
+  }
+  // 4) 当前选中 / 设置态同步改名
+  if(typeof addSubj!=="undefined" && addSubj===OLD) addSubj=NEW;
+  if(typeof editBooks!=="undefined" && editBooks){ if(editBooks.delete(OLD)) editBooks.add(NEW); }
+  state._subjRenameV = SUBJ_RENAME_VER;
+  if(n>0) bumpSubjects();
+  return n>0;
 }
 /* 科目是否归档（已删除）：归档卡只读、置灰，今日前的历史内容仍显示 */
 function subjArchived(name){ const f = subjList().find(s=>s.name===name); return !!(f && f.arc); }
@@ -1311,8 +1382,11 @@ function load(){
   { const ds = state._delSupp;
     state.suppRec = state.suppRec.filter(r=>r && !(ds[r.id] || (r.hwId&&ds[r.hwId]))); }
   ensureSubjects();                            // v.80：可变科目表（旧数据回退默认）
-  migrateSubjectOrder();                       // v.130：统一学科顺序（语文/英语/数学/其他，校内置底）
+  migrateSubjectRename();                      // v.138：「校内」→「每日必做」+「琵琶」迁入
+  migrateSubjectOrder();                       // v.130：统一学科顺序（每日必做优先，其他最后）
   ensureBailan();                              // v.103：摆烂卡数据初始化 + 当月发卡/清理过期
+  ensureWeekPlans();                           // v.138：周计划数据初始化
+  wpAutoSettle();                              // v.138：过期周自动清算（未完成顺延）
   ensureNights();                              // v.110：晚睡数据初始化
   /* v.96：兼容旧数据 —— 未标记过的作业一律视为「合格」 */
   (state.todos||[]).forEach(t=>{ if(t && typeof t.qualified==="undefined") t.qualified = true; });
@@ -1542,6 +1616,7 @@ function toggleDone(id, makeupOverride){
     if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
     finalizeEnd(t, Date.now());
     applyDoneMakeup(t, makeupOverride);
+    try{ wpOnTodoDone(t); }catch(e){}    // v.138：周计划派发项完成 → 移出周计划
   }
   else { t.endClock=null; t.timerRunning=false; t.startedAt=null; t.segments=[]; t.makeup=false; t.halfDone=false; t.completedOn=null; }  // 取消完成 → 清空分段重新计
   save(); syncDerived();
@@ -1582,6 +1657,7 @@ function timerDone(id, makeupOverride){
   if(t.timerRunning){ t.accum += (Date.now()-t.startedAt); t.timerRunning=false; t.startedAt=null; segClose(t, nowClock()); }
   t.done=true; t.halfDone=false; touch(t); finalizeEnd(t, Date.now());   // v.137：全完成清半打卡
   applyDoneMakeup(t, makeupOverride);
+  try{ wpOnTodoDone(t); }catch(e){}    // v.138：周计划派发项完成 → 移出周计划
   save();
   afterTimer(); toast("计时已停止");
 }
@@ -1668,6 +1744,11 @@ function bailanIssueCount(ym){
 }
 function issueBailanIfNeeded(){
   const cm = monthStrOf(new Date());
+  // v.138：清理过期卡前，先给「到期未用」的卡记 +10 星（记在到期那个月，避免重复发星）
+  if(!state.bailan.expireReward) state.bailan.expireReward = {};
+  state.bailan.cards.forEach(c=>{
+    if(c && !c.spent && c.expire < cm){ const em=c.expire||cm; state.bailan.expireReward[em]=(state.bailan.expireReward[em]||0)+1; }
+  });
   // 清理过期卡（expire < 当前月）：过期清零
   state.bailan.cards = state.bailan.cards.filter(c => c.expire >= cm);
   /* v.112：矫正多发 —— 已消耗的卡一张都不动（删掉会凭空多出可用卡），未消耗的只留到「应发数 − 已消耗数」。
@@ -1688,6 +1769,11 @@ function issueBailanIfNeeded(){
 }
 function availBailanCards(){ const cm=monthStrOf(new Date()); return state.bailan.cards.filter(c=>!c.spent && c.expire>=cm); }
 function availBailanCount(){ return availBailanCards().length; }
+/* v.138：某月因「摆烂卡到期未用」获得的奖励星（每张 +10） */
+function bailanExpiredRewardStars(ym){
+  const r=(state.bailan && state.bailan.expireReward)||{};
+  return (r[ym]||0)*10;
+}
 /* v.108：同步合并摆烂卡数据 —— mergeState 整体替换 state 时若不含 bailan 会把摆烂卡弄丢（同步成功后按钮失灵的根因）。
    合并策略：cards 按 id 合并、spent 取「或」（任一端消耗即消耗）；usedDays 并集；issuedMonth 取较新月份。 */
 function mergeBailan(cloudB, localB){
@@ -1822,48 +1908,64 @@ const STAR_ONDAY      = 2;              // 当天完成基础星
 const STAR_LATE_DAYS  = 2;              // D+2 天内完成 → 1 星
 const STAR_DEADLINE_MIN = 21*60;        // 21:00 前结束 → +1 星
 const STAR_WRONG_LT   = 5;              // 错题少于 5 题 → +1 星
+/* v.138：新加星规则（周日结算）——
+   2星 = 日计划完成 且 周计划完成；
+   1星 = 周计划未完成，但 日学习时长 > 每日必做时长 + 周计划平均时长；
+   0星 = 周计划未完成 且 时长不达标。
+   - 日计划完成 = 当天全部科目作业做完（用户确认口径）；
+   - 周计划完成 = 该周周计划项全部完成（无周计划则视为完成，不阻碍）；
+   - 每日必做时长 = 当天「每日必做」科目预计时长之和（含半完成折算）；
+   - 周计划平均时长 = 该周 wpStats().daily（每日时长目标，含临时减免）；
+   - 日学习时长 = 当天 learnEst（当日已做 + 当日补做）。
+   保留加分：21:00 前结束 +1、错题<5 +1（用户未要求取消）。
+   结算：一周的星在该周周日过后才 settled。 */
+function dailyMustMinOf(dateStr, ts){
+  return (ts||[]).reduce((a,t)=> (t.subject==="每日必做") ? a + (t.estMin||0)*doneFrac(t) : a, 0);
+}
 function dayStars(dateStr){
   if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};  // v.103：摆烂日不发星
   const s = dayStats(dateStr);
   const ts = s.ts || [];
   const total = ts.length;
-  const settled = dateStr < ymd(new Date());
+  // v.138：周日结算 —— 该周周日已过才算 settled
+  const wkKey=weekKeyOf(dateStr);
+  const settled = weekSunday(wkKey) < ymd(new Date());
   if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
-  // v.116：完成闸门由「全部完成」改为「学习时长(按预计) ≥ 预计时长」
-  // v.118：doneEst 已改为「不含后期补做」，闸门需把该日清单内后期补做的时长加回，保持星规语义不变
-  // v.116：完成闸门按学习时长；v.118：doneEst 不含后期补做；v.119：2 星只认「当天时长」，1 星改认「2 天内清单全做完」
+
   const dl = dayListStats(ts, dateStr);
-  // 「当天已完成」按完成日判定：completedOn 晚于当天 = 后期补做（不计入 2 星）；无完成日的老数据退回 makeup 标记
-  const isLateDone = t => t.completedOn ? (t.completedOn > dateStr) : !!t.makeup;
-  const doneDayEst = ts.reduce((a,t)=> ((t.done||t.halfDone) && !isLateDone(t)) ? a + (t.estMin||0)*doneFrac(t) : a, 0);   // v.137：半完成按一半计
-  const timeOk = (doneDayEst + dl.madeUpEst) >= dl.totalEst;              // 当天时长（当日完成 + 当日补做）是否达标
-  const allItemsDone = ts.every(t=>t.done);                              // 当天作业清单是否全部做完
-  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI 仍含后期补做
-  // 既没达标、清单也没全做完 → 0 星，且不参与后续加分
-  if(!timeOk && !allItemsDone) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:settled, pending:!settled, total:total};
-  // —— 分档：2 星看当天时长；1 星看 2 天内清单全部完成 ——
-  const base = parseDS(dateStr);
-  let delay = 0;                                   // 最晚完成日相对作业日的天数；提前完成按 0 计
-  ts.forEach(t=>{
-    const cd = t.completedOn ? parseDS(t.completedOn) : null;
-    if(!cd) return;                                // 老数据无完成日 → 视为按时
-    const dd = Math.round((cd - base)/86400000);
-    if(dd > delay) delay = dd;
-  });
-  const parts = [];
-  let stars;
-  if(timeOk){ stars = STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }        // 当天时长达标 → 2 星
-  else if(delay <= STAR_LATE_DAYS){ stars = 1; parts.push({k:"late", n:1}); }     // 2 天内清单全部完成 → 1 星
-  else stars = 0;                                                                 // 超 D+2 → 0 星
-  // 当天完成 且 21:00 前全部结束 → +1 星
-  if(delay <= 0){
-    let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
-    if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
+  const allItemsDone = ts.every(t=>t.done);                              // 日计划完成：当天全部科目作业做完
+  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI（兼容旧口径）
+
+  // 周计划维度
+  let wpDone=true, wpAvg=0;
+  try{
+    const wp=getWeekPlan(wkKey);
+    const hasWP=!!(wp && ((wp.addedN||0)>0 || (wp.items||[]).length>0 || (wp.doneN||0)>0));
+    if(hasWP){ wpDone=wpWeekComplete(wkKey); wpAvg=wpStats(wkKey).daily; }
+  }catch(e){}
+
+  const dailyMust=dailyMustMinOf(dateStr, ts);
+  const learnMin=dl.learnEst;
+  const timeExceeded=learnMin > (dailyMust + wpAvg);
+
+  const parts=[];
+  let stars=0;
+  if(allItemsDone && wpDone){ stars=STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }
+  else if(!wpDone && timeExceeded){ stars=1; parts.push({k:"late", n:1}); }
+  else stars=0;
+
+  // 加分只在已有基础星时叠加（基础 0 星不给加分，避免"没做完也拿星"）
+  if(stars>0){
+    // 当天完成且 21:00 前结束 → +1
+    if(allItemsDone){
+      let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
+      if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
+    }
+    const wrongSum = ts.reduce((a,t)=>a+(t.wrong||0),0);
+    if(wrongSum < STAR_WRONG_LT){ stars++; parts.push({k:"wrong", n:1}); }
   }
-  // 学习达标 且 错题少于 5 题 → +1 星
-  const wrongSum = ts.reduce((a,t)=>a+(t.wrong||0),0);
-  if(wrongSum < STAR_WRONG_LT){ stars++; parts.push({k:"wrong", n:1}); }
-  if(!settled) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:false, pending:true, total:total};  // 今日/未来：次日结算，先显示「待」
+
+  if(!settled) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:false, pending:true, total:total};
   return {stars:stars, parts:parts, allDone:learnComplete, learnComplete:learnComplete, settled:true, pending:false, total:total};
 }
 
@@ -2234,6 +2336,8 @@ function renderList(){
     </div>
   </div>`;
 
+  /* v.138：周计划卡 —— 出现在「添加作业」栏下方 */
+  html += weekPlanCardHtml(ds);
   /* v.110：晚上设置（晚睡）—— 出现在「添加作业」与「摆烂卡」之间 */
   html += nightCardHtml(ds);
   /* v.103：摆烂卡 —— 出现在「添加作业」下方；仅当天可摆烂，消耗摆烂卡 */
@@ -2263,6 +2367,240 @@ function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发�
    stats 缺省视为 true（统计）——保持 v.97 之前「所有作业都计入统计栏」的默认行为；
    新词由 addHW/editHW 让用户选择，非通过常用词直接添加的清单项默认不统计（见 doAdd）。 */
 function hwItem(x){ if(typeof x==="string") return {t:x, e:0, stats:true, supp:false}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0), stats: x && x.stats===false ? false : true, supp: !!(x&&x.supp)}; }
+
+/* ==================== v.138：周计划 ====================
+   模型：state.weekPlans = { "YYYY-MM-DD": { items:[...], reduce:0, settled:false } }
+   - key = 该周周日（ymd）；一周 = 周一~周日（用户口径），清算在周日。
+   - item: {id, subject, title, hwId, estMin, addDay(派发到的 ymd|null), done}
+   - 通过常用词添加；「派发」= 在 addDay 生成带 wpId 的 todo；完成该 todo → 从周计划移除；
+     未完成（周日清算）→ 从每日清单删掉该 todo，但周计划项保留并顺延到下周。
+   - 临时减免 = 该周调低「每日时长」目标（reduce 分钟/天）。 */
+function ensureWeekPlans(){ if(!state.weekPlans || typeof state.weekPlans!=="object" || Array.isArray(state.weekPlans)) state.weekPlans={}; return state.weekPlans; }
+/* 某日所在周的 key = 该周周一（一周 = 周一~周日，清算在周日） */
+function weekKeyOf(ds){
+  const d=parseDS(ds); const dow=d.getDay();               // 0=周日
+  const back = dow===0 ? 6 : dow-1;                        // 回退到本周一
+  d.setDate(d.getDate()-back);
+  return ymd(d);
+}
+/* 兼容：取某周 key 的周一/周日 */
+function weekMonday(key){ return parseDS(key); }
+function weekSunday(key){ const d=parseDS(key); d.setDate(d.getDate()+6); return ymd(d); }
+function getWeekPlan(key, create){
+  ensureWeekPlans();
+  let p=state.weekPlans[key];
+  if((!p||typeof p!=="object") && create){ p=state.weekPlans[key]={items:[], reduce:0, settled:false}; }
+  return p||null;
+}
+function wpCurrentKey(){ return weekKeyOf(ymd(viewDate)); }
+/* 周计划派发：把 item 加到某日清单（生成带 wpId 的 todo） */
+function wpDispatch(key, itemId, dayDs){
+  const p=getWeekPlan(key); if(!p) return;
+  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
+  if(it.done) return;
+  if(it.addDay && it.addDay!==dayDs){ toast("该项已派发到 "+it.addDay); return; }
+  const exist=(state.todos||[]).find(t=>t.wpId===it.id);
+  if(exist){ toast("该项已在 "+exist.date+" 的清单里"); return; }
+  const t=addTodo(it.subject, it.title, { date:dayDs, estMin:it.estMin, hwId:it.hwId||null, stats:true, wpId:it.id, wpKey:key });
+  it.addDay=dayDs; it._u=Date.now();
+  bumpWP(); save(); syncDerived();
+  toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单");
+}
+/* 周计划撤派：把某日清单里带 wpId 的 todo 删掉，item.addDay 清空（项仍留在周计划） */
+function wpRecall(key, itemId){
+  const p=getWeekPlan(key); if(!p) return;
+  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
+  state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id);
+  it.addDay=null; it._u=Date.now();
+  bumpWP(); save(); syncDerived(); toast("已从每日清单移除，周计划中保留");
+}
+/* 从常用词添加一项到周计划 */
+async function wpAddFromHW(key){
+  key=key||wpCurrentKey();
+  const p=getWeekPlan(key, true);
+  const subj=addSubj; const arr=orderHw(loadHW()[subj]||[], getHwOrder(subj));
+  if(!arr.length){ toast("科目「"+subj+"」还没有常用词，请先在下方常用词区添加"); return; }
+  const options=arr.map((x,i)=>({ value:String(i), label:hwItem(x).t+"（"+(hwItem(x).e||0)+"分）" }));
+  const v=await askSeg({ title:"添加到周计划 · "+subj, options, hint:"点选要加入本周计划的常用词" });
+  if(v==null) return;
+  const i=parseInt(v,10); if(!(i>=0 && i<arr.length)){ toast("选择无效"); return; }
+  const raw=arr[i], w=hwItem(raw);
+  p.items.push({ id:uid(), subject:subj, title:w.t, hwId:(raw&&raw.id)||null, estMin:w.e, addDay:null, done:false, _u:Date.now() });
+  p.addedN=(p.addedN||0)+1;
+  bumpWP(); save(); syncDerived(); toast("已加入周计划："+w.t);
+}
+/* 直接输文字添加（无常用词时） */
+async function wpAddCustom(key){
+  key=key||wpCurrentKey();
+  const v=await askInput({ title:"添加到周计划", label:"作业内容", placeholder:"如：练字" });
+  if(v==null||!v.trim()) return;
+  const e=await askInput({ title:"预估时长", label:"分钟", type:"number", value:"0" });
+  const p=getWeekPlan(key, true);
+  p.items.push({ id:uid(), subject:addSubj, title:v.trim(), hwId:null, estMin:Math.max(0,parseInt(e||"0",10)||0), addDay:null, done:false, _u:Date.now() });
+  p.addedN=(p.addedN||0)+1;
+  bumpWP(); save(); syncDerived();
+}
+function wpRemoveItem(key, itemId){
+  const p=getWeekPlan(key); if(!p) return;
+  state.todos=(state.todos||[]).filter(t=>t.wpId!==itemId);
+  p.items=(p.items||[]).filter(x=>x.id!==itemId);
+  bumpWP(); save(); syncDerived();
+}
+/* 临时减免：某周每日时长目标减少 reduce 分钟 */
+async function wpSetReduce(key){
+  key=key||wpCurrentKey(); const p=getWeekPlan(key, true);
+  const v=await askInput({ title:"本周临时减免", label:"每日减免时长（分钟）", type:"number", value:String(p.reduce||0), hint:"填 0 表示不减免；减免只影响本周每日时长目标与星规判定。" });
+  if(v==null) return;
+  p.reduce=Math.max(0, Math.min(600, parseInt(v,10)||0));
+  bumpWP(); save(); syncDerived();
+}
+/* 四项时长：总时间 / 每日时长 / 剩余时长 / 剩余每日时长（均考虑临时减免） */
+function wpStats(key){
+  const p=getWeekPlan(key); const items=p?(p.items||[]):[];
+  // 已清算：读固化的总量（items 已清空），剩余记 0
+  if(p && p.settled && p.result){
+    const total=p.result.totalMin||0, reduce=p.result.reduce||0;
+    return { total, daily:Math.max(0,Math.round(total/7)-reduce), remaining:0, remainDaily:0,
+             reduce, doneN:p.result.done||0, allN:p.result.added||0, settled:true };
+  }
+  const active=items.filter(x=>!x.waived);   // 本周跳过的项不计入
+  const total=active.reduce((a,x)=>a+(x.estMin||0),0) + (p?(p.doneMin||0):0);
+  const remaining=active.filter(x=>!x.done).reduce((a,x)=>a+(x.estMin||0),0);
+  const reduce=p?(p.reduce||0):0;
+  const dailyTarget=Math.max(0, Math.round(total/7)-reduce);
+  const remainDaily=Math.max(0, Math.round(remaining/7)-reduce);
+  return { total, daily:dailyTarget, remaining, remainDaily, reduce, doneN:items.filter(x=>x.done).length, allN:items.length, settled:false };
+}
+/* 周计划完成判定（供星规）：本周添加过项 且 未完成项为空。
+   已清算的周直接读清算时固化的 result.complete（items 已清空，不能再用实时数据判定）。 */
+function wpWeekComplete(key){
+  const p=getWeekPlan(key); if(!p) return false;
+  if(p.settled && p.result) return !!p.result.complete;
+  const added=p.addedN||((p.items||[]).length+(p.doneN||0));
+  return added>0 && (p.items||[]).filter(x=>!x.waived).length===0;
+}
+/* 周日清算（用户口径：直接清空）：未完成项从每日清单与周计划一并删除；一周只清算一次。
+   清算前固化本周结果供星规回溯：result={added,done,complete,reduce,totalMin}。 */
+function wpSettle(key){
+  const p=getWeekPlan(key); if(!p || p.settled) return 0;
+  const items=p.items||[];
+  const added=p.addedN||items.length;
+  const doneN=p.doneN||0;
+  const totalMin=items.reduce((a,x)=>a+(x.estMin||0),0)+ (p.doneMin||0);
+  p.result={ added, done:doneN, complete:wpWeekComplete(key), reduce:p.reduce||0, totalMin };
+  let cleared=0;
+  items.forEach(it=>{
+    state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id);  // 未完成：从每日清单删除
+    if(!it.waived) cleared++;
+  });
+  p.items=[]; p.settled=true; p._u=Date.now();
+  bumpWP(); save();
+  return cleared;
+}
+/* 自动清算：所有 key < 当前周 key 且未清算的周（含那些从未打开的空周则跳过） */
+function wpAutoSettle(){
+  ensureWeekPlans(); const cur=wpCurrentKey(); let n=0;
+  Object.keys(state.weekPlans).forEach(k=>{ if(k<cur){ n+=wpSettle(k); } });
+  if(n>0) toast("周计划已清算，"+n+" 项未完成已清空");
+  return n;
+}
+function bumpWP(){ if(state.weekPlans) state.weekPlans._u=Date.now(); }
+/* 本周临时「跳过」某周计划项：不计入未完成、不派发；星规不因此判失败 */
+function wpToggleWaive(key, itemId){
+  const p=getWeekPlan(key); if(!p) return;
+  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
+  it.waived=!it.waived; it._u=Date.now();
+  if(it.waived){ state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id); it.addDay=null; }
+  bumpWP(); save(); syncDerived();
+}
+/* 打卡完成时：若该 todo 来自周计划派发，则把周计划项标记完成并从列表移除 */
+function wpOnTodoDone(t){
+  if(!t || !t.wpId) return;
+  const key=t.wpKey || weekKeyOf(t.date||ymd(new Date()));
+  const p=getWeekPlan(key); if(!p) return;
+  const it=(p.items||[]).find(x=>x.id===t.wpId); if(!it) return;
+  it.done=true; it.addDay=t.date; it._u=Date.now();
+  p.doneN=(p.doneN||0)+1; p.doneMin=(p.doneMin||0)+(it.estMin||0);
+  p.items=(p.items||[]).filter(x=>x.id!==it.id);   // 完成即从周计划栏删除
+  bumpWP();
+}
+
+/* UI状态：当前查看的周 key（null=跟随 viewDate 所在周） */
+let wpViewKey = null;
+function wpShownKey(){ return wpViewKey || weekKeyOf(ymd(viewDate)); }
+function wpShiftWeek(delta){
+  const base=parseDS(wpShownKey()); base.setDate(base.getDate()+delta*7);
+  wpViewKey=ymd(base); renderList();
+}
+function wpResetWeek(){ wpViewKey=null; renderList(); }
+/* 把周计划项派发到某日：弹日期选择（本周内） */
+async function wpDispatchAsk(key, itemId){
+  const mon=parseDS(key); const days=[];
+  for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); days.push(ymd(d)); }
+  const options=days.map((ds,i)=>({ value:ds, label:WEEK[parseDS(ds).getDay()]+" "+(parseDS(ds).getMonth()+1)+"/"+parseDS(ds).getDate() }));
+  const v=await askSeg({ title:"派发到哪一天", options, hint:"派发后该项出现在当天清单；完成即从周计划移除，未完成周日清算时清空" });
+  if(v==null) return;
+  wpDispatch(key, itemId, v);
+}
+function weekPlanCardHtml(ds){
+  const key=wpShownKey();
+  const p=getWeekPlan(key); const st=wpStats(key);
+  const mon=parseDS(key), sun=parseDS(key); sun.setDate(mon.getDate()+6);
+  const label=(mon.getMonth()+1)+"/"+mon.getDate()+" – "+(sun.getMonth()+1)+"/"+sun.getDate();
+  const items=(p&&p.items)||[];
+  let rows="";
+  items.forEach(it=>{
+    const disp=it.addDay ? (((parseDS(it.addDay).getMonth()+1)+"/"+parseDS(it.addDay).getDate())) : "未派发";
+    rows+=`<div class="wp-item${it.done?' done':''}${it.waived?' waived':''}">
+      <span class="wp-dot" style="background:${subjColor(it.subject)}"></span>
+      <span class="wp-nm">${esc(it.title)}</span>
+      <span class="wp-est">${it.estMin||0}分</span>
+      <span class="wp-day">${it.done?'✓':(it.waived?'本周跳过':disp)}</span>
+      ${it.done||it.waived?'':`<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>`}
+      ${it.addDay&&!it.done&&!it.waived?`<button class="wp-mini" onclick="wpRecall('${key}','${it.id}')">撤回</button>`:''}
+      ${!it.done?`<button class="wp-mini" title="本周临时跳过，不计未完成" onclick="wpToggleWaive('${key}','${it.id}')">${it.waived?'恢复':'跳过'}</button>`:''}
+      <button class="wp-mini danger" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
+    </div>`;
+  });
+  if(!items.length) rows=`<div class="wp-foot">本周暂无周计划，从下方常用词添加。</div>`;
+  const isCur = key===weekKeyOf(ymd(new Date()));
+  return `<div class="card wp-card">
+    <div class="wp-head">
+      <span class="wp-title">周计划</span>
+      <span class="wp-nav">
+        <button onclick="wpShiftWeek(-1)" aria-label="上一周">‹</button>
+        <span class="wp-weeklabel">${label}${isCur?' · 本周':''}</span>
+        <button onclick="wpShiftWeek(1)" aria-label="下一周">›</button>
+        ${wpViewKey?'<button onclick="wpResetWeek()" title="回到本周" style="width:auto;padding:0 7px;font-size:11px;">今</button>':''}
+      </span>
+    </div>
+    <div class="wp-kpis">
+      <div class="wp-kpi"><div class="v">${st.total}</div><div class="k">总时间(分)</div></div>
+      <div class="wp-kpi"><div class="v">${st.daily}</div><div class="k">每日时长(分)</div></div>
+      <div class="wp-kpi"><div class="v">${st.remaining}</div><div class="k">剩余时长(分)</div></div>
+      <div class="wp-kpi"><div class="v">${st.remainDaily}</div><div class="k">剩余每日(分)</div></div>
+    </div>
+    <div class="wp-list">${rows}</div>
+    <div class="wp-reduce">本周临时减免：每日 ${st.reduce} 分
+      <button onclick="wpReduceStep('${key}',-15)">−</button>
+      <button onclick="wpReduceStep('${key}',15)">＋</button>
+      <button onclick="wpSetReduce('${key}')" style="width:auto;padding:0 7px;font-size:11px;">设定</button>
+    </div>
+    <div class="wp-addrow">
+      <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
+      <button onclick="wpAddAsk()">＋ 常用词添加</button>
+    </div>
+    <div class="wp-foot">周一~周日为一周；派发到每日清单后，完成即从周计划移除，未完成在周日清算时顺延到下周。星每周日结算。</div>
+  </div>`;
+}
+function wpReduceStep(key, d){
+  const p=getWeekPlan(key,true); p.reduce=Math.max(0,Math.min(600,(p.reduce||0)+d));
+  bumpWP(); save(); syncDerived();
+}
+async function wpAddAsk(){
+  const sel=$("wpSubjSel"); if(sel){ addSubj=sel.value; }
+  await wpAddFromHW(wpShownKey());
+}
 
 /* ===== v.99：统计口径「按最近的常用词定义」实时判定 =====
    背景：v.97/v.98 的 stats 是「添加当时的快照」。用户改了常用词的 统计/不统计 后，
@@ -3799,7 +4137,10 @@ function renderMonth(){
     else if(r.type==="bonus") bonusStars += (r.stars||0);
     else if(r.type==="penalty") penStars += (r.stars||0);
   });
-  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars - penStars - unqualStars - nightStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星 − 晚睡扣星
+  // v.138：摆烂卡到期未用奖励（每张 +10 星）
+  const ymKey = y+"-"+pad2(m+1);
+  const bailanRewardStars = bailanExpiredRewardStars(ymKey);
+  const monthStars = stars + goalStars + checkinStars + readStars + bonusStars + bailanRewardStars - penStars - unqualStars - nightStars;   // 本月星星 = 每日作业 + 目标 + 打卡 + 阅读 + 摆烂到期奖励 + 额外奖励(正) − 额外惩罚(负) − 不合格扣星 − 晚睡扣星
   let kpi = `<div class="kpi">
     <div class="kpi-cell"><div class="v g">${monthStars}</div><div class="k">本月星星</div></div>
     <div class="kpi-cell"><div class="v g">${full}</div><div class="k">完成天数</div></div>
@@ -3809,21 +4150,18 @@ function renderMonth(){
   </div>`;
 
   // 月度合格状态：未完成 预计时长（分钟）> 合格线 → 不合格；本月未结束（当月或未来月）→ 待结算
-  // v.114：合格标准 = 150 − 50×本月已用摆烂卡（用卡后**收紧**），且**含边界**：
-  //   0 张 ≤150 / 1 张 ≤100 / 2 张 ≤50 / ≥3 张 = 0（未完成必须为 0）
+  // v.138：合格标准 = 150 + 90×本月已用摆烂卡（每张卡 +90min 免做时间，放宽）+ 摆烂日已完成项时长
   //   判定：未完成分钟 > 标准 才不合格
-  // v.111：只计「未完成」，未订正不再计入时长（未订正仍单独在 KPI/清单里显示）
-  // v.116：摆烂日完成的作业清单时长计入月度合格标准 —— 标准 = max(0, 150 − 50N) + 摆烂日已完成项预计时长之和
   const curMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const isPastMonth = new Date(y,m,1) < curMonthStart;
   const bailanUsed = bailanDaysInRange(Array.from({length:days},(_,i)=>ymd(new Date(y,m,i+1))));
-  // v.116：摆烂日完成的作业清单时长（仅统计已完成的项）
+  // 摆烂日完成的作业清单时长（仅统计已完成的项）
   let bailanDoneMin = 0;
   for(let d=1; d<=days; d++){
     const ds = ymd(new Date(y,m,d));
     if(isBailanDay(ds)){ todosOf(ds).forEach(t=>{ if(t.done) bailanDoneMin += (t.estMin||0); }); }
   }
-  const stdMax = Math.max(0, 150 - 50*bailanUsed) + bailanDoneMin;   // 合格上限（含）：未完成 ≤ 该值即合格
+  const stdMax = 150 + 90*bailanUsed + bailanDoneMin;   // 合格上限（含）：未完成 ≤ 该值即合格（每张摆烂卡 +90min 免做）
   let qualCls, qualTxt;
   if(!isPastMonth){ qualCls="qual-pending"; qualTxt="本月待结算"; }
   else if(unfinMin > stdMax){ qualCls="qual-fail"; qualTxt="本月不合格"; }
@@ -3861,11 +4199,11 @@ function renderMonth(){
   </div>
   <div class="month-note">口径：只统计「未完成」的预计时长，不含未订正
     ${ (bailanUsed>0 || bailanDoneMin>0)
-        ? ` · 摆烂：已用 ${bailanUsed} 张（−${50*bailanUsed} 分）${ bailanDoneMin>0 ? `，摆烂日完成 +${bailanDoneMin} 分` : "" }`
+        ? ` · 摆烂：已用 ${bailanUsed} 张（+${90*bailanUsed} 分免做）${ bailanDoneMin>0 ? `，摆烂日完成 +${bailanDoneMin} 分` : "" }`
         : "" }
     ${ stdMax>0
         ? ` · 合格标准 = ${ (bailanUsed>0 || bailanDoneMin>0)
-            ? `150${(bailanUsed>0?` − ${50*bailanUsed}`:"")}${(bailanDoneMin>0?` + ${bailanDoneMin}`:"")} = ${stdMax}`
+            ? `150${(bailanUsed>0?` + ${90*bailanUsed}`:"")}${(bailanDoneMin>0?` + ${bailanDoneMin}`:"")} = ${stdMax}`
             : `${stdMax}` }，未完成超过 ${stdMax} 分钟即不合格`
         : ` · 标准已归零，未完成须为 0 分钟` }</div>
   <div class="month-qual ${qualCls}">${qualTxt}</div></div>`;
@@ -3879,10 +4217,11 @@ function renderMonth(){
     <div class="rs-row"><span>打卡奖励</span><b class="rs-g">+${checkinStars}</b></div>
     <div class="rs-row"><span>阅读奖励</span><b class="rs-g">+${readStars}</b></div>
     <div class="rs-row"><span>额外奖励</span><b class="rs-g">+${bonusStars}</b></div>
+    ${bailanRewardStars>0?`<div class="rs-row"><span>摆烂卡到期未用奖励</span><b class="rs-g">+${bailanRewardStars}</b></div>`:''}
     <div class="rs-row"><span>额外惩罚</span><b class="rs-pen">−${penStars}</b></div>
     <div class="rs-row"><span>不合格扣星</span><b class="rs-pen">−${unqualStars}</b></div>
     <div class="rs-row"><span>晚睡扣星</span><b class="rs-pen">−${nightStars}</b></div>
-    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars} − ${penStars} − ${unqualStars} − ${nightStars} = <b>${monthStars}</b></div>
+    <div class="rs-total">本月星星 = ${stars} + ${goalStars} + ${checkinStars} + ${readStars} + ${bonusStars}${bailanRewardStars>0?` + ${bailanRewardStars}`:""} − ${penStars} − ${unqualStars} − ${nightStars} = <b>${monthStars}</b></div>
   </div>`;
 
   // 本月未完成 & 未订正清单（不含今日及以后）
@@ -4783,6 +5122,13 @@ function mergeState(cloud, local){
   merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
   const bailan = mergeBailan(cloud.bailan, local.bailan);   // v.108：摆烂卡随同步合并，避免 applyMerged 整体替换 state 后丢失
   if(bailan) merged.bailan = bailan;
+  /* v.138：周计划按周 key 合并，取每周边较新者 */
+  const wp = Object.assign({}, cloud.weekPlans||{}, local.weekPlans||{});
+  Object.keys(wp).forEach(k=>{
+    const c=(cloud.weekPlans||{})[k], l=(local.weekPlans||{})[k];
+    if(c && l) wp[k] = ((l._u||0) >= (c._u||0)) ? l : c;
+  });
+  merged.weekPlans = wp;
   const nights = Object.assign({}, cloud.nights||{}, local.nights||{});   // v.110：晚睡按日期并集
   if(nights) merged.nights = nights;
   /* v.99：合并后按「最新常用词定义」把历史作业的统计口径写回（标记本地修改 → 随本轮同步上传云端） */
@@ -4823,7 +5169,9 @@ function dataSig(s){
   /* v.128：教辅记录纳入指纹（按 key 排序，避免合并顺序不同导致签名抖动） */
   const supp = ((s&&s.suppRec)||[]).map(r=>({ k:(r&&(r.hwId||r.id))||"", st:r&&r.status, u:(r&&r._u)||0, n:((r&&r.segs)||[]).length }))
     .sort((a,b)=>String(a.k).localeCompare(String(b.k)));
-  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null, (s&&s.nights)||{}, supp, (s&&s._delSupp)||{} ]);
+  const wp = ((s&&s.weekPlans)||{});   // v.138：周计划纳入指纹（按 key 排序避免抖动）
+  const wpSig = Object.keys(wp).sort().map(k=>[k, (wp[k]&&wp[k].reduce)||0, (wp[k]&&wp[k].settled)||false, ((wp[k]&&wp[k].items)||[]).map(i=>[i.id,i.title,i.estMin,i.addDay,i.done])]);
+  return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null, (s&&s.nights)||{}, supp, (s&&s._delSupp)||{}, wpSig ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
 function protectMerged(merged){
@@ -5179,7 +5527,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.18.137";
+const APP_VERSION = "2026.11.23.138";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
