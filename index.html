@@ -2673,6 +2673,37 @@ function wpAutoSettle(){
   return n;
 }
 function bumpWP(){ if(state.weekPlan) state.weekPlan._u=Date.now(); }
+/* v.150：某月内「已结束的周」的周计划缺口 —— 没派发 / 派发了没做完，都算未完成。
+   归属：按该周的周日（周计划截止日）所在月；本周及未来周未结束，暂不计。
+   返回 [{d, t:{subject,title,estMin}, left, short, min, wp:true}] */
+function wpMissListInMonth(y, m, todayStr){
+  todayStr = todayStr || ymd(new Date());
+  const out=[];
+  const weeks=state.weekPlanWeeks||{};
+  // 枚举本月各日所属的周（覆盖「整周没打开过 App」的周，不能只看已有周状态）
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const keys=new Set();
+  for(let d=1; d<=daysInMonth; d++) keys.add(weekKeyOf(ymd(new Date(y,m,d))));
+  Array.from(keys).sort().forEach(k=>{
+    if(k < WP_PLAN_START) return;
+    const sun=weekSunday(k);
+    if(sun >= todayStr) return;                         // 该周还没结束
+    const sd=parseDS(sun);
+    if(sd.getFullYear()!==y || sd.getMonth()!==m) return;
+    const ws=weeks[k]||{};
+    wpItemsFor(k).forEach(it=>{
+      const times=Math.max(1,it.times||1);
+      const done=Math.max(0, Math.min(times, (ws.done && ws.done[it.id]) || 0));
+      const short=times-done;
+      if(short<=0) return;                              // 该周已做够次数
+      out.push({ d: sd.getDate(), wp:true, short,
+                 left: makeupDaysLeft({ date:sun }),
+                 t:{ subject:it.subject||"其他", title:it.title||"", estMin:it.estMin||0, done:false },
+                 min: (it.estMin||0)*short });
+    });
+  });
+  return out;
+}
 /* 打卡完成时：本周该模板项完成次数 +1 */
 function wpOnTodoDone(t){
   if(!t || !t.wpId) return;
@@ -4457,6 +4488,8 @@ function renderMonth(){
       if(t.qualified===false) unq.push({d:d, t:t});     // v.96：不合格（默认合格）
     });
   }
+  /* v.150：已结束的周的周计划缺口（没派发 / 派发没做完）也计入未完成清单 */
+  try{ wpMissListInMonth(y, m, ymd(today)).forEach(x=>unf.push(x)); }catch(e){}
   unf.sort((a,b)=>{
     const al=a.left<0, bl=b.left<0;
     if(al!==bl) return al?1:-1;                         // 不可补打卡的一律沉底
@@ -4473,21 +4506,28 @@ function renderMonth(){
       </div>`;
   let mu = `<div class="mu"><div class="mu-h">本月未完成 &amp; 未订正（不含今日及以后）<span class="mu-n">未完成 ${unf.length} · 未订正 ${unc.length} · 不合格 ${unq.length}</span></div>`;
   // —— 未完成 ——
-  mu += `<div class="mu-sub">未完成 <b>${unf.length}</b> 项</div>`;
+  const wpMissN = unf.filter(x=>x.wp).length;
+  mu += `<div class="mu-sub">未完成 <b>${unf.length}</b> 项${wpMissN?` · 其中周计划 <b>${wpMissN}</b> 项`:""}</div>`;
   if(unf.length){
     unf.forEach(x=>{
       const locked = x.left < 0;
       const cls = locked ? "mu-row locked" : ("mu-row" + (x.left===0 ? " hot" : ""));
-      const right = locked
-        ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
-        : `<span class="mu-left">${x.left===0 ? "今天截止" : "剩 "+x.left+" 天"}</span><span class="mu-go">去完成 ›</span>`;
-      const em = Math.round((x.t.estMin||0) * (1 - doneFrac(x.t)));   // v.137：半完成只剩余半量
-      const mid = (em>0 ? `<span class="mu-time">(${em}min)</span>` : "") + (isHalf(x.t) ? `<span class="mu-time">◐ 半</span>` : "");
+      const right = x.wp
+        ? (locked
+            ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
+            : `<span class="mu-left">周计划差 ${x.short} 次</span><span class="mu-go">去查看 ›</span>`)
+        : (locked
+            ? `<span class="mu-go">已逾期 · 不可补打卡</span>`
+            : `<span class="mu-left">${x.left===0 ? "今天截止" : "剩 "+x.left+" 天"}</span><span class="mu-go">去完成 ›</span>`);
+      const em = x.wp ? x.min : Math.round((x.t.estMin||0) * (1 - doneFrac(x.t)));   // v.137：半完成只剩余半量
+      const mid = (em>0 ? `<span class="mu-time">(${em}min)</span>` : "")
+                + (x.wp ? `<span class="mu-time">周</span>` : (isHalf(x.t) ? `<span class="mu-time">◐ 半</span>` : ""));
       mu += muRow(x, right, cls, mid);
     });
   } else {
     mu += `<div class="mu-empty">本月暂无未完成项 🎉</div>`;
   }
+  if(wpMissN) mu += `<div class="qual-mu-note ok">「周」标记为周计划缺口（没派发 / 没做完），已计入此清单，但暂不计入「未完成时长」与月度合格标准。</div>`;
   // —— 未订正 ——
   mu += `<div class="mu-sub">未订正 <b>${unc.length}</b> 项</div>`;
   if(unc.length){
@@ -5755,7 +5795,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.149";
+const APP_VERSION = "2026.11.23.150";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
