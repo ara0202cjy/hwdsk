@@ -424,6 +424,9 @@
   .wp-item.wp-xlong .wp-nm{ font-weight:800; }
   .wp-item.wp-xlong .wp-est{ background:#3E6F9E; color:#fff; border-radius:6px; padding:1px 6px; font-weight:800; }
   .wp-item.wp-xlong .wp-day{ color:#2F5A82; }
+  /* v.147：朗读类 —— 黄色底（排在最后）；已完成的 .done 规则在后面，会覆盖成灰色 */
+  .wp-item.wp-read{ background:#FFF7D6; border-color:#EAD9A0; }
+  .wp-item.wp-read .wp-est{ color:#8A6D1F; }
   .wp-item .wp-dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
   .wp-item .wp-nm{flex:1; min-width:0; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .wp-item .wp-est{font-size:11.5px; color:var(--muted); font-weight:700; flex:0 0 auto;}
@@ -2665,21 +2668,41 @@ function weekPlanCardHtml(ds){
   const label=(mon.getMonth()+1)+"/"+mon.getDate()+" – "+(sun.getMonth()+1)+"/"+sun.getDate();
   const today=ymd(new Date());
   let rows="";
-  /* v.142：已完成的项灰色划线并置底显示（未完成的按原顺序排在前面） */
-  const ordered=tpl.items.map((it,i)=>({ it, i, full:(wpDoneCount(key,it.id) >= Math.max(1,it.times||1)) }))
-                         .sort((a,b)=> (a.full===b.full ? a.i-b.i : (a.full?1:-1)));
-  ordered.forEach(({it,full})=>{
+  /* v.147：周计划排序 —— 语文 → 数学 → 英语（其余科目排在语数外之后，按科目表顺序）；
+     同科目内「耗时长在前、耗时短在后」；朗读类（名称含「朗读」）一律排最后并标黄底；
+     已完成的划线变灰，并沉到各自分组的末尾。 */
+  const WP_SUBJ_MAIN = ["语文","数学","英语"];
+  const wpSubjRank = s => {
+    const i = WP_SUBJ_MAIN.indexOf(s||"");
+    if(i>=0) return i;
+    const list=(state.subjects||[]).map(x=>x.name);
+    const j=list.indexOf(s||"");
+    return 10 + (j<0?99:j);
+  };
+  const ordered = tpl.items.map((it,i)=>{
+    const full=(wpDoneCount(key,it.id) >= Math.max(1,it.times||1));
+    const read=isReadAloud(it.title);
+    const lvl = read ? (full?3:2) : (full?1:0);   // 0 未完成普通 / 1 已完成普通 / 2 未完成朗读 / 3 已完成朗读
+    return { it, i, full, read, lvl };
+  }).sort((a,b)=>
+    (a.lvl-b.lvl) ||
+    (wpSubjRank(a.it.subject)-wpSubjRank(b.it.subject)) ||
+    ((b.it.estMin||0)-(a.it.estMin||0)) ||
+    (a.i-b.i)
+  );
+  ordered.forEach(({it,full,read})=>{
     const times=Math.max(1,it.times||1);
     const doneN=wpDoneCount(key,it.id);        // 完成度（含半完成 0.5）
     const dispN=wpDispatchCount(key,it.id);    // 未完成派发数（不含已完成）
     const skipped=!!ws.skipped[it.id];
     const c=subjColor(it.subject);
     const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
-    const long=((it.estMin||0)>=20) && !full;     // v.141：≥20 分钟（含 20）→ 底色突出；已完成不再突出
-    const xlong=((it.estMin||0)>=60) && !full;    // v.145：≥60 分钟 → 更进一步突出
-    const nmColor = full ? 'var(--muted)' : (xlong ? '#1F4B73' : c);
-    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}${xlong?' wp-xlong':''}" style="border-left:${xlong?4:3}px solid ${full?'#C9C3B6':(xlong?'#3E6F9E':c)}">
-      <span class="wp-dot" style="background:${full?'#C9C3B6':(xlong?'#3E6F9E':c)}"></span>
+    const long=((it.estMin||0)>=20) && !full && !read;   // 朗读类统一黄底，不再叠长任务蓝底
+    const xlong=((it.estMin||0)>=60) && !full && !read;
+    const nmColor = full ? 'var(--muted)' : (read ? '#8A6D1F' : (xlong ? '#1F4B73' : c));
+    const edge = full ? '#C9C3B6' : (read ? '#E0C060' : (xlong ? '#3E6F9E' : c));
+    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${read?' wp-read':''}${long?' wp-long':''}${xlong?' wp-xlong':''}" style="border-left:${xlong?4:3}px solid ${edge}">
+      <span class="wp-dot" style="background:${edge}"></span>
       <span class="wp-nm" style="color:${nmColor}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
       <span class="wp-day">${Number.isInteger(doneN)?doneN:doneN.toFixed(1)}/${times} · ${dayTxt}</span>
@@ -3390,6 +3413,8 @@ function isTailTodo(t){
   return TAIL_TITLES.some(x=> s===x || s.indexOf(x)===0);
 }
 function sortTailLast(arr){ return (arr||[]).filter(t=>!isTailTodo(t)).concat((arr||[]).filter(isTailTodo)); }
+/* v.147：周计划里的「朗读类」—— 作业名称中含「朗读」两字即算（英语朗读 / 课文朗读 / 语文朗读…） */
+function isReadAloud(title){ return /朗读/.test(((title||"")+"").trim()); }
 function todoRow(t, subj, ds){
   const open = openExpo===t.id;
   const running = t.timerRunning;
@@ -5675,7 +5700,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.146";
+const APP_VERSION = "2026.11.23.147";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
