@@ -2668,9 +2668,12 @@ function weekPlanCardHtml(ds){
   const label=(mon.getMonth()+1)+"/"+mon.getDate()+" – "+(sun.getMonth()+1)+"/"+sun.getDate();
   const today=ymd(new Date());
   let rows="";
-  /* v.147：周计划排序 —— 语文 → 数学 → 英语（其余科目排在语数外之后，按科目表顺序）；
-     同科目内「耗时长在前、耗时短在后」；朗读类（名称含「朗读」）一律排最后并标黄底；
-     已完成的划线变灰，并沉到各自分组的末尾。 */
+  /* v.148：周计划排序 —— 顺序为：
+     ① 未完成 · 普通（语文 → 数学 → 英语 → 其他科目，同科内耗时长在前）
+     ② 未完成 · 朗读类（名称含「朗读」，标黄底）
+     ③ 已完成 · 普通（划线变灰）
+     ④ 已完成 · 朗读类
+     即「已做完的统一沉到朗读类之后」。 */
   const WP_SUBJ_MAIN = ["语文","数学","英语"];
   const wpSubjRank = s => {
     const i = WP_SUBJ_MAIN.indexOf(s||"");
@@ -2682,7 +2685,7 @@ function weekPlanCardHtml(ds){
   const ordered = tpl.items.map((it,i)=>{
     const full=(wpDoneCount(key,it.id) >= Math.max(1,it.times||1));
     const read=isReadAloud(it.title);
-    const lvl = read ? (full?3:2) : (full?1:0);   // 0 未完成普通 / 1 已完成普通 / 2 未完成朗读 / 3 已完成朗读
+    const lvl = full ? (read?3:2) : (read?1:0);   // 0 未完成普通 / 1 未完成朗读 / 2 已完成普通 / 3 已完成朗读（已做完统一沉到朗读之后）
     return { it, i, full, read, lvl };
   }).sort((a,b)=>
     (a.lvl-b.lvl) ||
@@ -5700,7 +5703,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.147";
+const APP_VERSION = "2026.11.23.148";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
