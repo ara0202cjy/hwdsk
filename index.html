@@ -414,6 +414,9 @@
   .wp-kpi .k{font-size:10.5px; color:var(--muted); margin-top:3px; font-weight:700;}
   .wp-list{margin-bottom:8px;}
   .wp-item{display:flex; align-items:center; gap:6px; padding:7px 9px; background:#fff; border:1px solid #E1E8F0; border-radius:10px; margin-bottom:5px; font-size:13px;}
+  /* v.140：超过 20 分钟的条目 → 底色突出 */
+  .wp-item.wp-long{ background:#E9F1FA; border-color:#B9CFE6; }
+  .wp-item.wp-long .wp-est{ color:#2F5A82; }
   .wp-item .wp-dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
   .wp-item .wp-nm{flex:1; min-width:0; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .wp-item .wp-est{font-size:11.5px; color:var(--muted); font-weight:700; flex:0 0 auto;}
@@ -2425,12 +2428,16 @@ function getWeekPlan(key){ ensureWeekPlans(); return { items: wpActive(key) }; }
 function wpCurrentKey(){ return weekKeyOf(ymd(viewDate)); }
 /* 本周已派发/已完成的次数 */
 function wpDoneCount(key, itemId){ const ws=wpWeekState(key); return ws.done[itemId]||0; }
-function wpDispatchCount(key, itemId){ const ws=wpWeekState(key); return (ws.days[itemId]||[]).length; }
+/* 本周「未完成」的派发数（已完成的不计入，否则会与 done 重复计数导致无法再派发） */
+function wpDispatchCount(key, itemId){
+  return (state.todos||[]).filter(t=>t.wpId===itemId && !t.done && weekKeyOf(t.date||key)===key).length;
+}
 /* 周计划派发：把模板项加到某日清单（生成带 wpId 的 todo）；受「可派发次数」限制 */
 function wpDispatch(key, itemId, dayDs){
   const tpl=wpTpl(); const ws=wpWeekState(key, true);
   const it=tpl.items.find(x=>x.id===itemId); if(!it) return;
   if(ws.skipped[itemId]){ toast("该项本周已跳过"); return; }
+  if(dayDs < ymd(new Date())){ toast("只能派发到今天及以后，不能派发到过去的日期"); return; }   // v.140
   const times=Math.max(1, it.times||1);
   const used=wpDoneCount(key,itemId)+wpDispatchCount(key,itemId);
   if(used>=times){ toast("本周已派发 "+used+"/"+times+" 次，达到可派发次数"); return; }
@@ -2444,8 +2451,9 @@ function wpDispatch(key, itemId, dayDs){
 /* 撤派：把某日清单里带 wpId 的未完成 todo 删掉，并回退本周派发计数 */
 function wpRecall(key, itemId){
   const ws=wpWeekState(key, true);
-  const cand=(state.todos||[]).filter(t=>t.wpId===itemId && !t.done);
-  if(!cand.length){ toast("本周没有可撤回的派发"); return; }
+  // 只撤回「本周、未完成」的派发；已完成的算已用次数，不可撤回
+  const cand=(state.todos||[]).filter(t=>t.wpId===itemId && !t.done && weekKeyOf(t.date||key)===key);
+  if(!cand.length){ toast("本周没有可撤回的派发（已完成的不能撤回）"); return; }
   const last=cand[cand.length-1];
   state.todos=state.todos.filter(t=>t.id!==last.id);
   const arr=ws.days[itemId]||[]; const i=arr.lastIndexOf(last.date); if(i>=0) arr.splice(i,1);
@@ -2570,12 +2578,19 @@ function wpShiftWeek(delta){
   wpViewKey=ymd(base); renderList();
 }
 function wpResetWeek(){ wpViewKey=null; renderList(); }
-/* 把周计划项派发到某日：弹日期选择（本周内） */
+/* 该周是否还有可派发日期（今天及以后） */
+function wpHasDispatchable(key){
+  const today=ymd(new Date()); const sun=weekSunday(key);
+  return sun>=today;
+}
+/* 把周计划项派发到某日：只允许今天及以后（v.140） */
 async function wpDispatchAsk(key, itemId){
+  const today=ymd(new Date());
   const mon=parseDS(key); const days=[];
-  for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); days.push(ymd(d)); }
-  const options=days.map((ds,i)=>({ value:ds, label:WEEK[parseDS(ds).getDay()]+" "+(parseDS(ds).getMonth()+1)+"/"+parseDS(ds).getDate() }));
-  const v=await askSeg({ title:"派发到哪一天", options, hint:"派发后该项出现在当天清单；完成即从周计划移除，未完成周日清算时清空" });
+  for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); const ds=ymd(d); if(ds>=today) days.push(ds); }
+  if(!days.length){ toast("该周已过去，只能派发到今天及以后"); return; }
+  const options=days.map(ds=>({ value:ds, label:WEEK[parseDS(ds).getDay()]+" "+(parseDS(ds).getMonth()+1)+"/"+parseDS(ds).getDate()+(ds===today?"（今天）":"") }));
+  const v=await askSeg({ title:"派发到哪一天", options, hint:"只能派发到今天及以后；派发后可在清单完成后计入本周次数，也可撤回" });
   if(v==null) return;
   wpDispatch(key, itemId, v);
 }
@@ -2590,17 +2605,19 @@ function weekPlanCardHtml(ds){
   tpl.items.forEach(it=>{
     const times=Math.max(1,it.times||1);
     const doneN=ws.done[it.id]||0;
-    const dispN=(ws.days[it.id]||[]).length;
+    const dispN=wpDispatchCount(key,it.id);   // 未完成派发数（不含已完成）
     const skipped=!!ws.skipped[it.id];
     const full=doneN>=times;
     const c=subjColor(it.subject);
     const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
-    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}" style="border-left:3px solid ${c}">
+    const long=((it.estMin||0)>20);      // v.140：超过 20 分钟 → 底色突出
+    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}" style="border-left:3px solid ${c}">
       <span class="wp-dot" style="background:${c}"></span>
       <span class="wp-nm" style="color:${c}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
       <span class="wp-day">${doneN}/${times} · ${dayTxt}</span>
-      ${ (!skipped && !full && dispN<times) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
+      ${ (!skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
+      ${ (dispN>0 && !skipped) ? `<button class="wp-mini" title="撤回最近一次派发（已完成的不可撤回）" onclick="wpRecall('${key}','${it.id}')">撤回</button>` : "" }
       ${ on ? `
         <button class="wp-mini" title="本周可派发次数" onclick="wpSetTimes('${it.id}')">次数 ${it.times||1}</button>
         <button class="wp-mini" onclick="wpToggleWaive('${key}','${it.id}')">${skipped?'恢复':'跳过本周'}</button>
@@ -5573,7 +5590,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.139";
+const APP_VERSION = "2026.11.23.140";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
