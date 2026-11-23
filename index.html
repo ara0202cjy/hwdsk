@@ -1936,12 +1936,12 @@ function dayStars(dateStr){
   const allItemsDone = ts.every(t=>t.done);                              // 日计划完成：当天全部科目作业做完
   const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI（兼容旧口径）
 
-  // 周计划维度
+  // 周计划维度（v.139：模板有项即为「有周计划」；周均 = 总时间/7）
   let wpDone=true, wpAvg=0;
   try{
-    const wp=getWeekPlan(wkKey);
-    const hasWP=!!(wp && ((wp.addedN||0)>0 || (wp.items||[]).length>0 || (wp.doneN||0)>0));
-    if(hasWP){ wpDone=wpWeekComplete(wkKey); wpAvg=wpStats(wkKey).daily; }
+    const tpl=wpTpl();
+    const hasWP=!!(tpl && (tpl.items||[]).length>0);
+    if(hasWP){ wpDone=wpWeekComplete(wkKey); wpAvg=Math.round(wpStats(wkKey).total/7); }
   }catch(e){}
 
   const dailyMust=dailyMustMinOf(dateStr, ts);
@@ -2286,7 +2286,10 @@ function renderList(){
     html += `</div>`;
   });
 
-  /* v.91：阅读栏 —— 排在所有科目卡之后（清单最后一个栏目项）。
+  /* v.139：周计划卡 —— 放在阅读栏之前 */
+  html += weekPlanCardHtml(ds);
+
+  /* v.91：阅读栏 —— 排在周计划之后。
      独立于 state.todos，不计入完成 / 未完成结算，只做阅读统计与阅读奖励。 */
   html += readCardHtml(ds);   // v.110：摆烂日阅读栏仍可使用（去掉 bailan-gray 灰显禁用）
 
@@ -2336,8 +2339,6 @@ function renderList(){
     </div>
   </div>`;
 
-  /* v.138：周计划卡 —— 出现在「添加作业」栏下方 */
-  html += weekPlanCardHtml(ds);
   /* v.110：晚上设置（晚睡）—— 出现在「添加作业」与「摆烂卡」之间 */
   html += nightCardHtml(ds);
   /* v.103：摆烂卡 —— 出现在「添加作业」下方；仅当天可摆烂，消耗摆烂卡 */
@@ -2368,14 +2369,47 @@ function saveHW(o){ state.hw = o||{}; save(); }   // save() 写本机并触发�
    新词由 addHW/editHW 让用户选择，非通过常用词直接添加的清单项默认不统计（见 doAdd）。 */
 function hwItem(x){ if(typeof x==="string") return {t:x, e:0, stats:true, supp:false}; return {t:(x&&x.t)||"", e:Math.max(0, parseInt((x&&x.e)||"0",10)||0), stats: x && x.stats===false ? false : true, supp: !!(x&&x.supp)}; }
 
-/* ==================== v.138：周计划 ====================
-   模型：state.weekPlans = { "YYYY-MM-DD": { items:[...], reduce:0, settled:false } }
-   - key = 该周周日（ymd）；一周 = 周一~周日（用户口径），清算在周日。
-   - item: {id, subject, title, hwId, estMin, addDay(派发到的 ymd|null), done}
-   - 通过常用词添加；「派发」= 在 addDay 生成带 wpId 的 todo；完成该 todo → 从周计划移除；
-     未完成（周日清算）→ 从每日清单删掉该 todo，但周计划项保留并顺延到下周。
-   - 临时减免 = 该周调低「每日时长」目标（reduce 分钟/天）。 */
-function ensureWeekPlans(){ if(!state.weekPlans || typeof state.weekPlans!=="object" || Array.isArray(state.weekPlans)) state.weekPlans={}; return state.weekPlans; }
+/* ==================== v.139：周计划（长期模板 + 每周实例） ====================
+   语义（用户 v.139 口径）：
+   - 周计划是**长期模板**，每周自动沿用相同内容；不是每周各自一份。
+   - 「可派发次数」= 每个模板项每周可派发几次（默认 1）；派发到每日清单后完成一次计 1 次。
+   - 「删除」= 从模板删除，**后续每一周都不再出现**；「跳过」= 只跳过**这一周**，下周照常。
+   - 无「临时减免」。
+   - 设置开关（state.weekPlan.on）打开后才显示 次数/删除/跳过；关闭时只显示「派发」。
+   数据：
+     state.weekPlan      = { items:[{id,subject,title,hwId,estMin,times}], on:false }
+     state.weekPlanWeeks = { "周一ymd": { skipped:{id:true}, done:{id:n}, days:{id:[ymd,...]} } }
+   兼容：旧 state.weekPlans（v.138 按周存）首次加载时并入模板。 */
+function ensureWeekPlans(){
+  if(!state.weekPlan || typeof state.weekPlan!=="object" || Array.isArray(state.weekPlan)) state.weekPlan={ items:[], on:false };
+  if(!Array.isArray(state.weekPlan.items)) state.weekPlan.items=[];
+  if(typeof state.weekPlan.on!=="boolean") state.weekPlan.on=false;
+  if(!state.weekPlanWeeks || typeof state.weekPlanWeeks!=="object" || Array.isArray(state.weekPlanWeeks)) state.weekPlanWeeks={};
+  // v.138 旧数据结构 → 并入模板（只做一次）
+  if(state.weekPlans && typeof state.weekPlans==="object" && !Array.isArray(state.weekPlans)){
+    const ids=new Set(state.weekPlan.items.map(x=>x.title+"||"+x.subject));
+    Object.keys(state.weekPlans).forEach(k=>{
+      ((state.weekPlans[k]&&state.weekPlans[k].items)||[]).forEach(it=>{
+        const sig=(it.title||"")+"||"+(it.subject||"");
+        if(!ids.has(sig)){ ids.add(sig); state.weekPlan.items.push({ id:it.id||uid(), subject:it.subject||"其他", title:it.title||"", hwId:it.hwId||null, estMin:it.estMin||0, times:1 }); }
+      });
+    });
+    delete state.weekPlans;
+  }
+  return state.weekPlan;
+}
+function wpTpl(){ return ensureWeekPlans(); }
+function wpWeekState(key, create){
+  ensureWeekPlans();
+  let s=state.weekPlanWeeks[key];
+  if((!s||typeof s!=="object") && create){ s=state.weekPlanWeeks[key]={ skipped:{}, done:{}, days:{} }; }
+  return s||{ skipped:{}, done:{}, days:{} };
+}
+/* 本周有效项（排除本周跳过的） */
+function wpActive(key){
+  const tpl=wpTpl(), ws=wpWeekState(key);
+  return tpl.items.filter(it=>!ws.skipped[it.id]);
+}
 /* 某日所在周的 key = 该周周一（一周 = 周一~周日，清算在周日） */
 function weekKeyOf(ds){
   const d=parseDS(ds); const dow=d.getDay();               // 0=周日
@@ -2386,142 +2420,145 @@ function weekKeyOf(ds){
 /* 兼容：取某周 key 的周一/周日 */
 function weekMonday(key){ return parseDS(key); }
 function weekSunday(key){ const d=parseDS(key); d.setDate(d.getDate()+6); return ymd(d); }
-function getWeekPlan(key, create){
-  ensureWeekPlans();
-  let p=state.weekPlans[key];
-  if((!p||typeof p!=="object") && create){ p=state.weekPlans[key]={items:[], reduce:0, settled:false}; }
-  return p||null;
-}
+/* 兼容旧调用：返回该周的模板视图（items 已按本周跳过过滤） */
+function getWeekPlan(key){ ensureWeekPlans(); return { items: wpActive(key) }; }
 function wpCurrentKey(){ return weekKeyOf(ymd(viewDate)); }
-/* 周计划派发：把 item 加到某日清单（生成带 wpId 的 todo） */
+/* 本周已派发/已完成的次数 */
+function wpDoneCount(key, itemId){ const ws=wpWeekState(key); return ws.done[itemId]||0; }
+function wpDispatchCount(key, itemId){ const ws=wpWeekState(key); return (ws.days[itemId]||[]).length; }
+/* 周计划派发：把模板项加到某日清单（生成带 wpId 的 todo）；受「可派发次数」限制 */
 function wpDispatch(key, itemId, dayDs){
-  const p=getWeekPlan(key); if(!p) return;
-  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
-  if(it.done) return;
-  if(it.addDay && it.addDay!==dayDs){ toast("该项已派发到 "+it.addDay); return; }
-  const exist=(state.todos||[]).find(t=>t.wpId===it.id);
-  if(exist){ toast("该项已在 "+exist.date+" 的清单里"); return; }
-  const t=addTodo(it.subject, it.title, { date:dayDs, estMin:it.estMin, hwId:it.hwId||null, stats:true, wpId:it.id, wpKey:key });
-  it.addDay=dayDs; it._u=Date.now();
-  bumpWP(); save(); syncDerived();
-  toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单");
+  const tpl=wpTpl(); const ws=wpWeekState(key, true);
+  const it=tpl.items.find(x=>x.id===itemId); if(!it) return;
+  if(ws.skipped[itemId]){ toast("该项本周已跳过"); return; }
+  const times=Math.max(1, it.times||1);
+  const used=wpDoneCount(key,itemId)+wpDispatchCount(key,itemId);
+  if(used>=times){ toast("本周已派发 "+used+"/"+times+" 次，达到可派发次数"); return; }
+  const exist=(state.todos||[]).find(t=>t.wpId===itemId && t.date===dayDs && !t.done);
+  if(exist){ toast("该项已在 "+dayDs+" 的清单里"); return; }
+  addTodo(it.subject, it.title, { date:dayDs, estMin:it.estMin, hwId:it.hwId||null, stats:true, wpId:itemId, wpKey:key });
+  (ws.days[itemId]=ws.days[itemId]||[]).push(dayDs);
+  bumpWP(); save(); renderList(); syncDerived();
+  toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单（本周 "+used+1+"/"+times+" 次）");
 }
-/* 周计划撤派：把某日清单里带 wpId 的 todo 删掉，item.addDay 清空（项仍留在周计划） */
+/* 撤派：把某日清单里带 wpId 的未完成 todo 删掉，并回退本周派发计数 */
 function wpRecall(key, itemId){
-  const p=getWeekPlan(key); if(!p) return;
-  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
-  state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id);
-  it.addDay=null; it._u=Date.now();
-  bumpWP(); save(); syncDerived(); toast("已从每日清单移除，周计划中保留");
+  const ws=wpWeekState(key, true);
+  const cand=(state.todos||[]).filter(t=>t.wpId===itemId && !t.done);
+  if(!cand.length){ toast("本周没有可撤回的派发"); return; }
+  const last=cand[cand.length-1];
+  state.todos=state.todos.filter(t=>t.id!==last.id);
+  const arr=ws.days[itemId]||[]; const i=arr.lastIndexOf(last.date); if(i>=0) arr.splice(i,1);
+  bumpWP(); save(); renderList(); syncDerived(); toast("已从每日清单移除，周计划中保留");
 }
-/* 从常用词添加一项到周计划 */
+/* 从常用词添加一项到周计划模板（长期） */
 async function wpAddFromHW(key){
-  key=key||wpCurrentKey();
-  const p=getWeekPlan(key, true);
+  const tpl=wpTpl();
   const subj=addSubj; const arr=orderHw(loadHW()[subj]||[], getHwOrder(subj));
   if(!arr.length){ toast("科目「"+subj+"」还没有常用词，请先在下方常用词区添加"); return; }
   const options=arr.map((x,i)=>({ value:String(i), label:hwItem(x).t+"（"+(hwItem(x).e||0)+"分）" }));
-  const v=await askSeg({ title:"添加到周计划 · "+subj, options, hint:"点选要加入本周计划的常用词" });
+  const v=await askSeg({ title:"添加到周计划 · "+subj, options, hint:"点选要加入周计划的常用词（每周沿用）" });
   if(v==null) return;
   const i=parseInt(v,10); if(!(i>=0 && i<arr.length)){ toast("选择无效"); return; }
   const raw=arr[i], w=hwItem(raw);
-  p.items.push({ id:uid(), subject:subj, title:w.t, hwId:(raw&&raw.id)||null, estMin:w.e, addDay:null, done:false, _u:Date.now() });
-  p.addedN=(p.addedN||0)+1;
-  bumpWP(); save(); syncDerived(); toast("已加入周计划："+w.t);
+  tpl.items.push({ id:uid(), subject:subj, title:w.t, hwId:(raw&&raw.id)||null, estMin:w.e, times:1 });
+  bumpWP(); save(); renderList(); syncDerived(); toast("已加入周计划："+w.t);
 }
 /* 直接输文字添加（无常用词时） */
 async function wpAddCustom(key){
-  key=key||wpCurrentKey();
   const v=await askInput({ title:"添加到周计划", label:"作业内容", placeholder:"如：练字" });
   if(v==null||!v.trim()) return;
   const e=await askInput({ title:"预估时长", label:"分钟", type:"number", value:"0" });
-  const p=getWeekPlan(key, true);
-  p.items.push({ id:uid(), subject:addSubj, title:v.trim(), hwId:null, estMin:Math.max(0,parseInt(e||"0",10)||0), addDay:null, done:false, _u:Date.now() });
-  p.addedN=(p.addedN||0)+1;
-  bumpWP(); save(); syncDerived();
+  const tpl=wpTpl();
+  tpl.items.push({ id:uid(), subject:addSubj, title:v.trim(), hwId:null, estMin:Math.max(0,parseInt(e||"0",10)||0), times:1 });
+  bumpWP(); save(); renderList(); syncDerived();
 }
-function wpRemoveItem(key, itemId){
-  const p=getWeekPlan(key); if(!p) return;
+/* 从模板删除（后续每一周都不再出现） */
+async function wpRemoveItem(key, itemId){
+  const tpl=wpTpl(); const it=tpl.items.find(x=>x.id===itemId); if(!it) return;
+  if(!await askConfirm("从周计划删除「"+it.title+"」？","删除后**后续每一周**都不再出现；只想跳过这一周请用「跳过」。")) return;
   state.todos=(state.todos||[]).filter(t=>t.wpId!==itemId);
-  p.items=(p.items||[]).filter(x=>x.id!==itemId);
-  bumpWP(); save(); syncDerived();
+  tpl.items=tpl.items.filter(x=>x.id!==itemId);
+  Object.keys(state.weekPlanWeeks||{}).forEach(k=>{ const ws=state.weekPlanWeeks[k]; if(ws){ delete ws.skipped[itemId]; delete ws.done[itemId]; delete ws.days[itemId]; } });
+  bumpWP(); save(); renderList(); syncDerived(); toast("已从周计划删除（后续每周都不再出现）");
 }
-/* 临时减免：某周每日时长目标减少 reduce 分钟 */
-async function wpSetReduce(key){
-  key=key||wpCurrentKey(); const p=getWeekPlan(key, true);
-  const v=await askInput({ title:"本周临时减免", label:"每日减免时长（分钟）", type:"number", value:String(p.reduce||0), hint:"填 0 表示不减免；减免只影响本周每日时长目标与星规判定。" });
+/* 修改某项「可派发次数」（每周可做几次） */
+async function wpSetTimes(itemId){
+  const tpl=wpTpl(); const it=tpl.items.find(x=>x.id===itemId); if(!it) return;
+  const v=await askInput({ title:"可派发次数", label:"每周可派发几次", type:"number", value:String(it.times||1), hint:"例如 3 表示本周最多派发 3 次；派发并完成一次计 1 次。" });
   if(v==null) return;
-  p.reduce=Math.max(0, Math.min(600, parseInt(v,10)||0));
-  bumpWP(); save(); syncDerived();
+  it.times=Math.max(1, Math.min(21, parseInt(v,10)||1));
+  bumpWP(); save(); renderList(); syncDerived(); toast("「"+it.title+"」每周可派发 "+it.times+" 次");
 }
-/* 四项时长：总时间 / 每日时长 / 剩余时长 / 剩余每日时长（均考虑临时减免） */
+/* 本周跳过（只影响这一周） */
+function wpToggleWaive(key, itemId){
+  key=key||wpCurrentKey();
+  const ws=wpWeekState(key, true);
+  const on=!ws.skipped[itemId];
+  if(on){ ws.skipped[itemId]=true; state.todos=(state.todos||[]).filter(t=>!(t.wpId===itemId && weekKeyOf(t.date||key)===key)); }
+  else delete ws.skipped[itemId];
+  bumpWP(); save(); renderList(); syncDerived();
+  toast(on ? "本周跳过该项（下周恢复）" : "已恢复本周该项");
+}
+/* 设置开关 */
+function wpToggleSettings(){ const tpl=wpTpl(); tpl.on=!tpl.on; bumpWP(); save(); renderList(); }
+/* 四项时长：总时间 / 今日做题时长 / 剩余时长 / 剩余每日时长 */
 function wpStats(key){
-  const p=getWeekPlan(key); const items=p?(p.items||[]):[];
-  // 已清算：读固化的总量（items 已清空），剩余记 0
-  if(p && p.settled && p.result){
-    const total=p.result.totalMin||0, reduce=p.result.reduce||0;
-    return { total, daily:Math.max(0,Math.round(total/7)-reduce), remaining:0, remainDaily:0,
-             reduce, doneN:p.result.done||0, allN:p.result.added||0, settled:true };
-  }
-  const active=items.filter(x=>!x.waived);   // 本周跳过的项不计入
-  const total=active.reduce((a,x)=>a+(x.estMin||0),0) + (p?(p.doneMin||0):0);
-  const remaining=active.filter(x=>!x.done).reduce((a,x)=>a+(x.estMin||0),0);
-  const reduce=p?(p.reduce||0):0;
-  const dailyTarget=Math.max(0, Math.round(total/7)-reduce);
-  const remainDaily=Math.max(0, Math.round(remaining/7)-reduce);
-  return { total, daily:dailyTarget, remaining, remainDaily, reduce, doneN:items.filter(x=>x.done).length, allN:items.length, settled:false };
+  key=key||wpCurrentKey();
+  const active=wpActive(key), ws=wpWeekState(key);
+  const today=ymd(new Date());
+  const timesOf=it=>Math.max(1,it.times||1);
+  const total=active.reduce((a,it)=>a+it.estMin*timesOf(it),0);          // 总时间 = 各项 estMin × 次数
+  const todayMin=active.reduce((a,it)=>{                                   // 今日做题时长 = 今天派发的项时长
+    const days=(ws.days[it.id]||[]); return a + days.filter(d=>d===today).length*it.estMin;
+  },0);
+  const doneMin=active.reduce((a,it)=>a+(ws.done[it.id]||0)*it.estMin,0); // 已完成时长
+  const remaining=Math.max(0,total-doneMin);
+  // 剩余天数：今天→周日（含今天）；已过该周则按 1
+  const sun=parseDS(weekSunday(key)); const t=new Date(today+"T00:00:00");
+  let leftDays=Math.round((sun-t)/86400000)+1; if(leftDays<1) leftDays=1;
+  const remainDaily=Math.round(remaining/leftDays);
+  const allN=active.length, doneN=active.filter(it=>(ws.done[it.id]||0)>=timesOf(it)).length;
+  return { total, todayMin, remaining, remainDaily, doneN, allN, leftDays, settled:false };
 }
-/* 周计划完成判定（供星规）：本周添加过项 且 未完成项为空。
-   已清算的周直接读清算时固化的 result.complete（items 已清空，不能再用实时数据判定）。 */
+/* 周计划完成判定（供星规）：模板非空 且 本周所有有效项都达到可派发次数 */
 function wpWeekComplete(key){
-  const p=getWeekPlan(key); if(!p) return false;
-  if(p.settled && p.result) return !!p.result.complete;
-  const added=p.addedN||((p.items||[]).length+(p.doneN||0));
-  return added>0 && (p.items||[]).filter(x=>!x.waived).length===0;
+  const active=wpActive(key); if(!active.length) return false;
+  const ws=wpWeekState(key);
+  return active.every(it=>(ws.done[it.id]||0)>=Math.max(1,it.times||1));
 }
-/* 周日清算（用户口径：直接清空）：未完成项从每日清单与周计划一并删除；一周只清算一次。
-   清算前固化本周结果供星规回溯：result={added,done,complete,reduce,totalMin}。 */
+/* 周日清算：把本周未完成的派发项从每日清单删除；固化结果供星规回溯；模板保留 */
 function wpSettle(key){
-  const p=getWeekPlan(key); if(!p || p.settled) return 0;
-  const items=p.items||[];
-  const added=p.addedN||items.length;
-  const doneN=p.doneN||0;
-  const totalMin=items.reduce((a,x)=>a+(x.estMin||0),0)+ (p.doneMin||0);
-  p.result={ added, done:doneN, complete:wpWeekComplete(key), reduce:p.reduce||0, totalMin };
+  const ws=wpWeekState(key);
+  const stat=wpStats(key);
+  const complete=wpWeekComplete(key);
   let cleared=0;
-  items.forEach(it=>{
-    state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id);  // 未完成：从每日清单删除
-    if(!it.waived) cleared++;
+  Object.keys(ws.days||{}).forEach(id=>{
+    const before=(state.todos||[]).length;
+    state.todos=(state.todos||[]).filter(t=>!(t.wpId===id && weekKeyOf(t.date||key)===key));
+    cleared += before-(state.todos||[]).length;
   });
-  p.items=[]; p.settled=true; p._u=Date.now();
+  if(state.weekPlanWeeks) state.weekPlanWeeks[key]=Object.assign({}, ws, { settled:true, result:{ complete, total:stat.total, done:stat.doneN, all:stat.allN } });
   bumpWP(); save();
   return cleared;
 }
-/* 自动清算：所有 key < 当前周 key 且未清算的周（含那些从未打开的空周则跳过） */
+/* 自动清算：所有 key < 当前周且未清算的周 */
 function wpAutoSettle(){
   ensureWeekPlans(); const cur=wpCurrentKey(); let n=0;
-  Object.keys(state.weekPlans).forEach(k=>{ if(k<cur){ n+=wpSettle(k); } });
+  Object.keys(state.weekPlanWeeks||{}).forEach(k=>{
+    const ws=state.weekPlanWeeks[k];
+    if(k<cur && ws && !ws.settled){ n+=wpSettle(k); }
+  });
   if(n>0) toast("周计划已清算，"+n+" 项未完成已清空");
   return n;
 }
-function bumpWP(){ if(state.weekPlans) state.weekPlans._u=Date.now(); }
-/* 本周临时「跳过」某周计划项：不计入未完成、不派发；星规不因此判失败 */
-function wpToggleWaive(key, itemId){
-  const p=getWeekPlan(key); if(!p) return;
-  const it=(p.items||[]).find(x=>x.id===itemId); if(!it) return;
-  it.waived=!it.waived; it._u=Date.now();
-  if(it.waived){ state.todos=(state.todos||[]).filter(t=>t.wpId!==it.id); it.addDay=null; }
-  bumpWP(); save(); syncDerived();
-}
-/* 打卡完成时：若该 todo 来自周计划派发，则把周计划项标记完成并从列表移除 */
+function bumpWP(){ if(state.weekPlan) state.weekPlan._u=Date.now(); }
+/* 打卡完成时：本周该模板项完成次数 +1 */
 function wpOnTodoDone(t){
   if(!t || !t.wpId) return;
   const key=t.wpKey || weekKeyOf(t.date||ymd(new Date()));
-  const p=getWeekPlan(key); if(!p) return;
-  const it=(p.items||[]).find(x=>x.id===t.wpId); if(!it) return;
-  it.done=true; it.addDay=t.date; it._u=Date.now();
-  p.doneN=(p.doneN||0)+1; p.doneMin=(p.doneMin||0)+(it.estMin||0);
-  p.items=(p.items||[]).filter(x=>x.id!==it.id);   // 完成即从周计划栏删除
+  const ws=wpWeekState(key, true);
+  ws.done[t.wpId]=(ws.done[t.wpId]||0)+1;
   bumpWP();
 }
 
@@ -2544,26 +2581,35 @@ async function wpDispatchAsk(key, itemId){
 }
 function weekPlanCardHtml(ds){
   const key=wpShownKey();
-  const p=getWeekPlan(key); const st=wpStats(key);
+  const tpl=wpTpl(); const ws=wpWeekState(key); const st=wpStats(key);
+  const on=!!tpl.on;
   const mon=parseDS(key), sun=parseDS(key); sun.setDate(mon.getDate()+6);
   const label=(mon.getMonth()+1)+"/"+mon.getDate()+" – "+(sun.getMonth()+1)+"/"+sun.getDate();
-  const items=(p&&p.items)||[];
+  const today=ymd(new Date());
   let rows="";
-  items.forEach(it=>{
-    const disp=it.addDay ? (((parseDS(it.addDay).getMonth()+1)+"/"+parseDS(it.addDay).getDate())) : "未派发";
-    rows+=`<div class="wp-item${it.done?' done':''}${it.waived?' waived':''}">
-      <span class="wp-dot" style="background:${subjColor(it.subject)}"></span>
-      <span class="wp-nm">${esc(it.title)}</span>
+  tpl.items.forEach(it=>{
+    const times=Math.max(1,it.times||1);
+    const doneN=ws.done[it.id]||0;
+    const dispN=(ws.days[it.id]||[]).length;
+    const skipped=!!ws.skipped[it.id];
+    const full=doneN>=times;
+    const c=subjColor(it.subject);
+    const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
+    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}" style="border-left:3px solid ${c}">
+      <span class="wp-dot" style="background:${c}"></span>
+      <span class="wp-nm" style="color:${c}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
-      <span class="wp-day">${it.done?'✓':(it.waived?'本周跳过':disp)}</span>
-      ${it.done||it.waived?'':`<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>`}
-      ${it.addDay&&!it.done&&!it.waived?`<button class="wp-mini" onclick="wpRecall('${key}','${it.id}')">撤回</button>`:''}
-      ${!it.done?`<button class="wp-mini" title="本周临时跳过，不计未完成" onclick="wpToggleWaive('${key}','${it.id}')">${it.waived?'恢复':'跳过'}</button>`:''}
-      <button class="wp-mini danger" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
+      <span class="wp-day">${doneN}/${times} · ${dayTxt}</span>
+      ${ (!skipped && !full && dispN<times) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
+      ${ on ? `
+        <button class="wp-mini" title="本周可派发次数" onclick="wpSetTimes('${it.id}')">次数 ${it.times||1}</button>
+        <button class="wp-mini" onclick="wpToggleWaive('${key}','${it.id}')">${skipped?'恢复':'跳过本周'}</button>
+        <button class="wp-mini danger" title="从周计划删除（后续每周都不再出现）" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
+      ` : "" }
     </div>`;
   });
-  if(!items.length) rows=`<div class="wp-foot">本周暂无周计划，从下方常用词添加。</div>`;
-  const isCur = key===weekKeyOf(ymd(new Date()));
+  if(!tpl.items.length) rows=`<div class="wp-foot">周计划还是空的，用下方「常用词添加」加入（每周沿用）。</div>`;
+  const isCur = key===weekKeyOf(today);
   return `<div class="card wp-card">
     <div class="wp-head">
       <span class="wp-title">周计划</span>
@@ -2572,30 +2618,22 @@ function weekPlanCardHtml(ds){
         <span class="wp-weeklabel">${label}${isCur?' · 本周':''}</span>
         <button onclick="wpShiftWeek(1)" aria-label="下一周">›</button>
         ${wpViewKey?'<button onclick="wpResetWeek()" title="回到本周" style="width:auto;padding:0 7px;font-size:11px;">今</button>':''}
+        <button onclick="wpToggleSettings()" title="设置：显示可派发次数 / 跳过 / 删除" style="width:auto;padding:0 7px;font-size:11px;${on?'background:#3E5A78;color:#fff;border-color:#3E5A78;':''}">⚙</button>
       </span>
     </div>
     <div class="wp-kpis">
       <div class="wp-kpi"><div class="v">${st.total}</div><div class="k">总时间(分)</div></div>
-      <div class="wp-kpi"><div class="v">${st.daily}</div><div class="k">每日时长(分)</div></div>
+      <div class="wp-kpi"><div class="v">${st.todayMin}</div><div class="k">今日做题(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.remaining}</div><div class="k">剩余时长(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.remainDaily}</div><div class="k">剩余每日(分)</div></div>
     </div>
     <div class="wp-list">${rows}</div>
-    <div class="wp-reduce">本周临时减免：每日 ${st.reduce} 分
-      <button onclick="wpReduceStep('${key}',-15)">−</button>
-      <button onclick="wpReduceStep('${key}',15)">＋</button>
-      <button onclick="wpSetReduce('${key}')" style="width:auto;padding:0 7px;font-size:11px;">设定</button>
-    </div>
     <div class="wp-addrow">
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>
-    <div class="wp-foot">周一~周日为一周；派发到每日清单后，完成即从周计划移除，未完成在周日清算时顺延到下周。星每周日结算。</div>
+    <div class="wp-foot">周计划每周沿用相同内容；「删除」对后续每周生效，「跳过」只影响这一周。派发后完成计入本周次数，未完成周日清算时从清单清空。</div>
   </div>`;
-}
-function wpReduceStep(key, d){
-  const p=getWeekPlan(key,true); p.reduce=Math.max(0,Math.min(600,(p.reduce||0)+d));
-  bumpWP(); save(); syncDerived();
 }
 async function wpAddAsk(){
   const sel=$("wpSubjSel"); if(sel){ addSubj=sel.value; }
@@ -5122,13 +5160,18 @@ function mergeState(cloud, local){
   merged._delSubj = Object.assign({}, local._delSubj||{}, cloud._delSubj||{});   // v.90：墓碑也要合并
   const bailan = mergeBailan(cloud.bailan, local.bailan);   // v.108：摆烂卡随同步合并，避免 applyMerged 整体替换 state 后丢失
   if(bailan) merged.bailan = bailan;
-  /* v.138：周计划按周 key 合并，取每周边较新者 */
-  const wp = Object.assign({}, cloud.weekPlans||{}, local.weekPlans||{});
-  Object.keys(wp).forEach(k=>{
-    const c=(cloud.weekPlans||{})[k], l=(local.weekPlans||{})[k];
-    if(c && l) wp[k] = ((l._u||0) >= (c._u||0)) ? l : c;
+  /* v.139：周计划 = 长期模板（整表按 _u 取新）+ 每周状态（按周 key 取新） */
+  const ctpl=cloud.weekPlan||{}, ltpl=local.weekPlan||{};
+  if(Array.isArray(ltpl.items) || Array.isArray(ctpl.items)){
+    merged.weekPlan = ((ltpl._u||0) >= (ctpl._u||0)) ? ltpl : ctpl;
+  }
+  const cwk=cloud.weekPlanWeeks||{}, lwk=local.weekPlanWeeks||{};
+  const wk=Object.assign({}, cwk, lwk);
+  Object.keys(wk).forEach(k=>{
+    const c=cwk[k], l=lwk[k];
+    if(c && l) wk[k]=((l._u||0)>=(c._u||0))?l:c;
   });
-  merged.weekPlans = wp;
+  merged.weekPlanWeeks = wk;
   const nights = Object.assign({}, cloud.nights||{}, local.nights||{});   // v.110：晚睡按日期并集
   if(nights) merged.nights = nights;
   /* v.99：合并后按「最新常用词定义」把历史作业的统计口径写回（标记本地修改 → 随本轮同步上传云端） */
@@ -5169,8 +5212,11 @@ function dataSig(s){
   /* v.128：教辅记录纳入指纹（按 key 排序，避免合并顺序不同导致签名抖动） */
   const supp = ((s&&s.suppRec)||[]).map(r=>({ k:(r&&(r.hwId||r.id))||"", st:r&&r.status, u:(r&&r._u)||0, n:((r&&r.segs)||[]).length }))
     .sort((a,b)=>String(a.k).localeCompare(String(b.k)));
-  const wp = ((s&&s.weekPlans)||{});   // v.138：周计划纳入指纹（按 key 排序避免抖动）
-  const wpSig = Object.keys(wp).sort().map(k=>[k, (wp[k]&&wp[k].reduce)||0, (wp[k]&&wp[k].settled)||false, ((wp[k]&&wp[k].items)||[]).map(i=>[i.id,i.title,i.estMin,i.addDay,i.done])]);
+  // v.139：周计划模板 + 每周状态纳入指纹
+  const tpl = (s&&s.weekPlan)||{};
+  const tplSig = ((tpl.items)||[]).map(i=>[i.id,i.title,i.subject,i.estMin,i.times]);
+  const wk = (s&&s.weekPlanWeeks)||{};
+  const wpSig = { tpl:tplSig, weeks:Object.keys(wk).sort().map(k=>[k,!!(wk[k]&&wk[k].settled),JSON.stringify(wk[k]&&wk[k].done||{}),JSON.stringify(wk[k]&&wk[k].skipped||{})]) };
   return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null, (s&&s.nights)||{}, supp, (s&&s._delSupp)||{}, wpSig ]);
 }
 /* 同步时保留本机正在编辑 / 刚修改（未过期）的条目，不被云端旧值覆盖 */
@@ -5527,7 +5573,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.138";
+const APP_VERSION = "2026.11.23.139";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
