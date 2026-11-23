@@ -421,8 +421,9 @@
   .wp-item .wp-nm{flex:1; min-width:0; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .wp-item .wp-est{font-size:11.5px; color:var(--muted); font-weight:700; flex:0 0 auto;}
   .wp-item .wp-day{font-size:11px; color:#3E5A78; font-weight:700; flex:0 0 auto;}
-  .wp-item.done{opacity:.55;}
-  .wp-item.done .wp-nm{text-decoration:line-through;}
+  .wp-item.done{opacity:.6; background:#F5F3EF; border-color:#E4E0D8;}
+  .wp-item.done .wp-nm{text-decoration:line-through; color:var(--muted);}
+  .wp-item.done .wp-day{color:#9a948a;}
   .wp-item.waived{opacity:.6; background:#F4F1EC;}
   .wp-item.waived .wp-day{color:#9a8f7e;}
   .wp-mini{border:1px solid #C9D6E4; background:#F7FAFD; color:#3E5A78; border-radius:7px; font-size:11px; font-weight:800; padding:2px 7px; cursor:pointer; flex:0 0 auto;}
@@ -1921,25 +1922,71 @@ const STAR_WRONG_LT   = 5;              // 错题少于 5 题 → +1 星
    - 周计划平均时长 = 该周 wpStats().daily（每日时长目标，含临时减免）；
    - 日学习时长 = 当天 learnEst（当日已做 + 当日补做）。
    保留加分：21:00 前结束 +1、错题<5 +1（用户未要求取消）。
-   结算：一周的星在该周周日过后才 settled。 */
+   结算：一周的星在该周周日过后才 settled。
+   v.142：该规则只对 2026-11-23（含）之后的日期生效；之前的日期走 dayStarsLegacy（原星规）。 */
 function dailyMustMinOf(dateStr, ts){
   return (ts||[]).reduce((a,t)=> (t.subject==="每日必做") ? a + (t.estMin||0)*doneFrac(t) : a, 0);
 }
-function dayStars(dateStr){
+/* v.142：周计划星规的生效日 —— 这一天（含）之后按周计划规则结算；
+   之前的日期（历史）一律沿用原星规，保证已过去的日程与星不变（那时候还没有周计划）。 */
+const WP_RULE_START = "2026-11-23";
+function wpRuleOn(dateStr){ return (dateStr||"") >= WP_RULE_START; }
+function dayStars(dateStr, settledForce){
+  return wpRuleOn(dateStr) ? dayStarsWP(dateStr, settledForce) : dayStarsLegacy(dateStr, settledForce);
+}
+/* —— 原星规（≤ v.137，用于 2026-11-23 之前的日期，逻辑与历史完全一致）—— */
+function dayStarsLegacy(dateStr, settledForce){
   if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};  // v.103：摆烂日不发星
   const s = dayStats(dateStr);
   const ts = s.ts || [];
   const total = ts.length;
-  // v.138：周日结算 —— 该周周日已过才算 settled
+  const settled = (settledForce===true||settledForce===false) ? settledForce : (dateStr < ymd(new Date()));
+  if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
+  const dl = dayListStats(ts, dateStr);
+  const isLateDone = t => t.completedOn ? (t.completedOn > dateStr) : !!t.makeup;
+  const doneDayEst = ts.reduce((a,t)=> ((t.done||t.halfDone) && !isLateDone(t)) ? a + (t.estMin||0)*doneFrac(t) : a, 0);
+  const timeOk = (doneDayEst + dl.madeUpEst) >= dl.totalEst;
+  const allItemsDone = ts.every(t=>t.done);
+  const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;
+  if(!timeOk && !allItemsDone) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:settled, pending:!settled, total:total};
+  const base = parseDS(dateStr);
+  let delay = 0;
+  ts.forEach(t=>{
+    const cd = t.completedOn ? parseDS(t.completedOn) : null;
+    if(!cd) return;
+    const dd = Math.round((cd - base)/86400000);
+    if(dd > delay) delay = dd;
+  });
+  const parts = [];
+  let stars;
+  if(timeOk){ stars = STAR_ONDAY; parts.push({k:"onday", n:STAR_ONDAY}); }
+  else if(delay <= STAR_LATE_DAYS){ stars = 1; parts.push({k:"late", n:1}); }
+  else stars = 0;
+  if(delay <= 0){
+    let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
+    if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
+  }
+  const wrongSum = ts.reduce((a,t)=>a+(t.wrong||0),0);
+  if(wrongSum < STAR_WRONG_LT){ stars++; parts.push({k:"wrong", n:1}); }
+  if(!settled) return {stars:0, parts:[], allDone:learnComplete, learnComplete:learnComplete, settled:false, pending:true, total:total};
+  return {stars:stars, parts:parts, allDone:learnComplete, learnComplete:learnComplete, settled:true, pending:false, total:total};
+}
+/* —— v.138+：周计划星规（2026-11-23 起生效，周日结算）—— */
+function dayStarsWP(dateStr, settledForce){
+  if(isBailanDay(dateStr)) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
+  const s = dayStats(dateStr);
+  const ts = s.ts || [];
+  const total = ts.length;
+  // 周日结算 —— 该周周日已过才算 settled
   const wkKey=weekKeyOf(dateStr);
-  const settled = weekSunday(wkKey) < ymd(new Date());
+  const settled = (settledForce===true||settledForce===false) ? settledForce : (weekSunday(wkKey) < ymd(new Date()));
   if(total===0) return {stars:0, parts:[], allDone:false, learnComplete:false, settled:false, pending:false, total:0};
 
   const dl = dayListStats(ts, dateStr);
   const allItemsDone = ts.every(t=>t.done);                              // 日计划完成：当天全部科目作业做完
   const learnComplete = (dl.doneEst + (dl.doneLateEst||0) + dl.madeUpEst) >= dl.totalEst;  // 完成天数 KPI（兼容旧口径）
 
-  // 周计划维度（v.139：模板有项即为「有周计划」；周均 = 总时间/7）
+  // 周计划维度（模板有项即为「有周计划」；周均 = 总时间/7）
   let wpDone=true, wpAvg=0;
   try{
     const tpl=wpTpl();
@@ -1959,7 +2006,6 @@ function dayStars(dateStr){
 
   // 加分只在已有基础星时叠加（基础 0 星不给加分，避免"没做完也拿星"）
   if(stars>0){
-    // 当天完成且 21:00 前结束 → +1
     if(allItemsDone){
       let maxEnd=null; ts.forEach(t=>{ const e=endMinOf(t); if(e!=null) maxEnd = maxEnd==null?e:Math.max(maxEnd,e); });
       if(maxEnd != null && maxEnd < STAR_DEADLINE_MIN){ stars++; parts.push({k:"early", n:1}); }
@@ -2457,17 +2503,7 @@ function wpDispatch(key, itemId, dayDs){
   bumpWP(); save(); renderList(); syncDerived();
   toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单（本周 "+used+1+"/"+times+" 次）");
 }
-/* 撤派：把某日清单里带 wpId 的未完成 todo 删掉，并回退本周派发计数 */
-function wpRecall(key, itemId){
-  const ws=wpWeekState(key, true);
-  // 只撤回「本周、未完成」的派发；已完成的算已用次数，不可撤回
-  const cand=(state.todos||[]).filter(t=>t.wpId===itemId && !t.done && weekKeyOf(t.date||key)===key);
-  if(!cand.length){ toast("本周没有可撤回的派发（已完成的不能撤回）"); return; }
-  const last=cand[cand.length-1];
-  state.todos=state.todos.filter(t=>t.id!==last.id);
-  const arr=ws.days[itemId]||[]; const i=arr.lastIndexOf(last.date); if(i>=0) arr.splice(i,1);
-  bumpWP(); save(); renderList(); syncDerived(); toast("已从每日清单移除，周计划中保留");
-}
+/* v.142：取消「撤回」按钮 —— 在每日清单内删除该派发项即视为撤回（见 delTodo 同步逻辑） */
 /* 从常用词添加一项到周计划模板（长期） */
 async function wpAddFromHW(key){
   const tpl=wpTpl();
@@ -2602,7 +2638,7 @@ async function wpDispatchAsk(key, itemId){
   for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); const ds=ymd(d); if(ds>=today) days.push(ds); }
   if(!days.length){ toast("该周已过去，只能派发到今天及以后"); return; }
   const options=days.map(ds=>({ value:ds, label:WEEK[parseDS(ds).getDay()]+" "+(parseDS(ds).getMonth()+1)+"/"+parseDS(ds).getDate()+(ds===today?"（今天）":"") }));
-  const v=await askSeg({ title:"派发到哪一天", options, hint:"只能派发到今天及以后；派发后可在清单完成后计入本周次数，也可撤回" });
+  const v=await askSeg({ title:"派发到哪一天", options, hint:"只能派发到今天及以后；派发后在清单完成计入本周次数，若要撤回，到那天的清单里删除该条即可" });
   if(v==null) return;
   wpDispatch(key, itemId, v);
 }
@@ -2614,22 +2650,23 @@ function weekPlanCardHtml(ds){
   const label=(mon.getMonth()+1)+"/"+mon.getDate()+" – "+(sun.getMonth()+1)+"/"+sun.getDate();
   const today=ymd(new Date());
   let rows="";
-  tpl.items.forEach(it=>{
+  /* v.142：已完成的项灰色划线并置底显示（未完成的按原顺序排在前面） */
+  const ordered=tpl.items.map((it,i)=>({ it, i, full:(wpDoneCount(key,it.id) >= Math.max(1,it.times||1)) }))
+                         .sort((a,b)=> (a.full===b.full ? a.i-b.i : (a.full?1:-1)));
+  ordered.forEach(({it,full})=>{
     const times=Math.max(1,it.times||1);
     const doneN=wpDoneCount(key,it.id);        // 完成度（含半完成 0.5）
     const dispN=wpDispatchCount(key,it.id);    // 未完成派发数（不含已完成）
     const skipped=!!ws.skipped[it.id];
-    const full=doneN>=times;
     const c=subjColor(it.subject);
     const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
-    const long=((it.estMin||0)>=20);     // v.141：≥20 分钟（含 20）→ 底色突出
-    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}" style="border-left:3px solid ${c}">
-      <span class="wp-dot" style="background:${c}"></span>
-      <span class="wp-nm" style="color:${c}">${esc(it.title)}</span>
+    const long=((it.estMin||0)>=20) && !full;     // v.141：≥20 分钟（含 20）→ 底色突出；已完成不再突出
+    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}" style="border-left:3px solid ${full?'#C9C3B6':c}">
+      <span class="wp-dot" style="background:${full?'#C9C3B6':c}"></span>
+      <span class="wp-nm" style="color:${full?'var(--muted)':c}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
       <span class="wp-day">${Number.isInteger(doneN)?doneN:doneN.toFixed(1)}/${times} · ${dayTxt}</span>
       ${ (!skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
-      ${ (dispN>0 && !skipped) ? `<button class="wp-mini" title="撤回最近一次派发（已完成的不可撤回）" onclick="wpRecall('${key}','${it.id}')">撤回</button>` : "" }
       ${ on ? `
         <button class="wp-mini" title="本周可派发次数" onclick="wpSetTimes('${it.id}')">次数 ${it.times||1}</button>
         <button class="wp-mini" onclick="wpToggleWaive('${key}','${it.id}')">${skipped?'恢复':'跳过本周'}</button>
@@ -5612,7 +5649,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.141";
+const APP_VERSION = "2026.11.23.142";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
