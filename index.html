@@ -2566,10 +2566,14 @@ function wpStats(key){
   },0);
   const doneMin=active.reduce((a,it)=>a+wpDoneCount(key,it.id)*it.estMin,0);   // 已完成时长（半完成按 0.5）
   const remaining=Math.max(0,total-doneMin);
-  // 剩余天数：今天→周日（含今天）；已过该周则按 1
-  const sun=parseDS(weekSunday(key)); const t=new Date(today+"T00:00:00");
-  let leftDays=Math.round((sun-t)/86400000)+1; if(leftDays<1) leftDays=1;
-  const remainDaily=Math.round(remaining/leftDays);
+  /* v.144：剩余每日 = 剩余工作量 ÷ 本周剩余天数（今天~周日，含今天）；
+     只有「本周」计入 —— 其他周（过去/未来）不计入，剩余每日记 0。 */
+  let leftDays=0;
+  if(key===weekKeyOf(today)){
+    const sun=parseDS(weekSunday(key)); const t=new Date(today+"T00:00:00");
+    leftDays=Math.round((sun-t)/86400000)+1; if(leftDays<1) leftDays=1;
+  }
+  const remainDaily = leftDays>0 ? Math.round(remaining/leftDays) : 0;
   const allN=active.length, doneN=active.filter(it=>wpDoneCount(key,it.id)>=timesOf(it)).length;
   return { total, todayMin, remaining, remainDaily, doneN, allN, leftDays, settled:false };
 }
@@ -2690,14 +2694,14 @@ function weekPlanCardHtml(ds){
       <div class="wp-kpi"><div class="v">${st.total}</div><div class="k">总时间(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.todayMin}</div><div class="k">今日做题(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.remaining}</div><div class="k">剩余时长(分)</div></div>
-      <div class="wp-kpi"><div class="v">${st.remainDaily}</div><div class="k">剩余每日(分)</div></div>
+      <div class="wp-kpi"><div class="v">${st.leftDays>0 ? st.remainDaily : "—"}</div><div class="k">剩余每日(分)${st.leftDays>0?` · 余${st.leftDays}天`:" · 仅本周"}</div></div>
     </div>
     <div class="wp-list">${rows}</div>
     <div class="wp-addrow">
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>
-    <div class="wp-foot">周计划每周沿用相同内容；「删除」对后续每周生效，「跳过」只影响这一周。派发后完成计入本周次数，未完成周日清算时从清单清空。</div>
+    <div class="wp-foot">周计划每周沿用相同内容；「删除」对后续每周生效，「跳过」只影响这一周。派发后完成计入本周次数，未完成周日清算时从清单清空。<br>剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天），其他周不计入。</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5648,7 +5652,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.143";
+const APP_VERSION = "2026.11.23.144";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
