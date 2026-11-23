@@ -417,6 +417,11 @@
   /* v.140：超过 20 分钟的条目 → 底色突出 */
   .wp-item.wp-long{ background:#E9F1FA; border-color:#B9CFE6; }
   .wp-item.wp-long .wp-est{ color:#2F5A82; }
+  /* v.145：≥60 分钟在工作中进一步加强 —— 更深底色 + 粗边框 + 深色加粗标题 + 反色时长徽章 */
+  .wp-item.wp-xlong{ background:#D3E4F7; border-color:#6F9DCE; }
+  .wp-item.wp-xlong .wp-nm{ font-weight:800; }
+  .wp-item.wp-xlong .wp-est{ background:#3E6F9E; color:#fff; border-radius:6px; padding:1px 6px; font-weight:800; }
+  .wp-item.wp-xlong .wp-day{ color:#2F5A82; }
   .wp-item .wp-dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
   .wp-item .wp-nm{flex:1; min-width:0; color:var(--ink); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .wp-item .wp-est{font-size:11.5px; color:var(--muted); font-weight:700; flex:0 0 auto;}
@@ -2566,12 +2571,17 @@ function wpStats(key){
   },0);
   const doneMin=active.reduce((a,it)=>a+wpDoneCount(key,it.id)*it.estMin,0);   // 已完成时长（半完成按 0.5）
   const remaining=Math.max(0,total-doneMin);
-  /* v.144：剩余每日 = 剩余工作量 ÷ 本周剩余天数（今天~周日，含今天）；
-     只有「本周」计入 —— 其他周（过去/未来）不计入，剩余每日记 0。 */
+  /* v.145：剩余天数 —— 只有「本周」计入（其他周不计入，记 0）。
+     口径：今天还没派发 → 今天算剩余（周一=7 天，周一~周日）；
+           今天已经派发过（今天的量已安排）→ 今天不再计入（周一=6 天，周二~周日）。
+     周日若已派发则剩余天数按 1 兜底，避免除零。 */
   let leftDays=0;
   if(key===weekKeyOf(today)){
     const sun=parseDS(weekSunday(key)); const t=new Date(today+"T00:00:00");
-    leftDays=Math.round((sun-t)/86400000)+1; if(leftDays<1) leftDays=1;
+    leftDays=Math.round((sun-t)/86400000)+1;                    // 含今天
+    const usedToday=(state.todos||[]).some(x=>x.wpId && x.date===today && weekKeyOf(x.date||today)===key);
+    if(usedToday) leftDays-=1;                                  // 今天已派发 → 从明天算起
+    if(leftDays<1) leftDays=1;
   }
   const remainDaily = leftDays>0 ? Math.round(remaining/leftDays) : 0;
   const allN=active.length, doneN=active.filter(it=>wpDoneCount(key,it.id)>=timesOf(it)).length;
@@ -2664,9 +2674,11 @@ function weekPlanCardHtml(ds){
     const c=subjColor(it.subject);
     const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
     const long=((it.estMin||0)>=20) && !full;     // v.141：≥20 分钟（含 20）→ 底色突出；已完成不再突出
-    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}" style="border-left:3px solid ${full?'#C9C3B6':c}">
-      <span class="wp-dot" style="background:${full?'#C9C3B6':c}"></span>
-      <span class="wp-nm" style="color:${full?'var(--muted)':c}">${esc(it.title)}</span>
+    const xlong=((it.estMin||0)>=60) && !full;    // v.145：≥60 分钟 → 更进一步突出
+    const nmColor = full ? 'var(--muted)' : (xlong ? '#1F4B73' : c);
+    rows+=`<div class="wp-item${full?' done':''}${skipped?' waived':''}${long?' wp-long':''}${xlong?' wp-xlong':''}" style="border-left:${xlong?4:3}px solid ${full?'#C9C3B6':(xlong?'#3E6F9E':c)}">
+      <span class="wp-dot" style="background:${full?'#C9C3B6':(xlong?'#3E6F9E':c)}"></span>
+      <span class="wp-nm" style="color:${nmColor}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
       <span class="wp-day">${Number.isInteger(doneN)?doneN:doneN.toFixed(1)}/${times} · ${dayTxt}</span>
       ${ (!skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
@@ -5652,7 +5664,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.144";
+const APP_VERSION = "2026.11.23.145";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
