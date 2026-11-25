@@ -445,6 +445,7 @@
   .wp-addrow select{flex:1; min-width:0; border:1.5px solid #C9D6E4; border-radius:10px; padding:9px 10px; font-size:13.5px; background:#fff; color:var(--ink); font-family:inherit;}
   .wp-addrow button{border:none; background:#3E5A78; color:#fff; border-radius:10px; padding:9px 14px; font-size:13.5px; font-weight:800; cursor:pointer;}
   .wp-foot{font-size:11px; color:var(--muted); line-height:1.5; margin-top:8px;}
+  .wp-adj-sum{color:#3E5A78; font-weight:700;}
   .wp-reduce{display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; color:#5A7089; font-weight:700;}
   .wp-reduce button{border:1px solid #C9D6E4; background:#fff; color:#3E5A78; border-radius:7px; width:24px; height:24px; font-weight:800; cursor:pointer;}
   /* v.103：摆烂卡 */
@@ -2798,12 +2799,8 @@ function weekPlanCardHtml(ds){
     const full=(wpDoneCount(key,it.id) >= wpTimesOf(key,it));
     const read=isReadAloud(it.title);
     const lvl = full ? (read?3:2) : (read?1:0);   // 0 未完成普通 / 1 未完成朗读 / 2 已完成普通 / 3 已完成朗读（已做完统一沉到朗读之后）
-    /* v.155：本周有临时调整的项统一置底 —— 跳过（−）在前、增加（+）在后，依次显示 */
-    const adj=((ws&&ws.adj)||{})[it.id]||0;
-    const adjRank = adj<0 ? 1 : (adj>0 ? 2 : 0);
-    return { it, i, full, read, lvl, adj, adjRank };
+    return { it, i, full, read, lvl };
   }).sort((a,b)=>
-    (a.adjRank-b.adjRank) ||
     (a.lvl-b.lvl) ||
     (wpSubjRank(a.it.subject)-wpSubjRank(b.it.subject)) ||
     ((b.it.estMin||0)-(a.it.estMin||0)) ||
@@ -2841,10 +2838,15 @@ function weekPlanCardHtml(ds){
   }
   const isCur = key===weekKeyOf(today);
   /* v.154：底部显示本周临时增减情况（基础次数每周固定，不在此列） */
-  const adjItems=planItems.filter(it=>(((ws&&ws.adj)||{})[it.id]||0)!==0);
-  const adjLine = adjItems.length
-    ? `本周临时增减：`+adjItems.map(it=>{ const d=(ws.adj||{})[it.id]; return esc(it.title)+" "+(d>0?"+"+d:d)+"次（有效 "+wpTimesOf(key,it)+"次）"; }).join(" · ")
-    : `本周临时增减：无（基础次数每周固定不变）`;
+  /* v.156：增减汇总 —— 只在底部罗列，计划条目本身保持在原排序位置（不置底）。
+     格式：增加：内容1：N次；内容2：M次；跳过：内容3：K次； */
+  const adjOf=it=>(((ws&&ws.adj)||{})[it.id]||0);
+  const addParts=planItems.filter(it=>adjOf(it)>0).map(it=>esc(it.title)+"："+adjOf(it)+"次");
+  const skipParts=planItems.filter(it=>adjOf(it)<0).map(it=>esc(it.title)+"："+(-adjOf(it))+"次");
+  const adjSegs=[];
+  if(addParts.length) adjSegs.push("增加："+addParts.join("；")+"；");
+  if(skipParts.length) adjSegs.push("跳过："+skipParts.join("；")+"；");
+  const adjLine=adjSegs.join("");
   return `<div class="card wp-card">
     <div class="wp-head">
       <span class="wp-title">周计划</span>
@@ -2864,7 +2866,7 @@ function weekPlanCardHtml(ds){
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>` }
-    <div class="wp-foot">周计划只显示本周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响本周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>${adjLine}<br>半打卡项可再派发（该次计 0.5 次）。剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天）。</div>
+    <div class="wp-foot">周计划只显示本周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响本周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>半打卡项可再派发（该次计 0.5 次）。剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天）。${adjLine?`<br><span class="wp-adj-sum">${adjLine}</span>`:""}</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5835,7 +5837,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.25.155";
+const APP_VERSION = "2026.11.25.156";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
