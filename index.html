@@ -2811,13 +2811,12 @@ function weekPlanCardHtml(ds){
       <span class="wp-dot" style="background:${edge}"></span>
       <span class="wp-nm" style="color:${nmColor}">${esc(it.title)}</span>
       <span class="wp-est">${it.estMin||0}分</span>
-      <span class="wp-day">${Number.isInteger(doneN)?doneN:doneN.toFixed(1)}/${times} · ${dayTxt}</span>
-      ${ (!skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
+      <span class="wp-day">${ on ? (times+"次") : ((Number.isInteger(doneN)?doneN:doneN.toFixed(1))+"/"+times+" · "+dayTxt) }</span>
+      ${ (!on && !skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
       ${ on ? `
-        <button class="wp-mini" title="长期次数（从本周起生效）" onclick="wpSetTimes('${it.id}','${key}')">长期 ${it.times||1}次</button>
-        <button class="wp-mini" title="本周临时跳过 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',-1)">−跳过</button>
-        <button class="wp-mini" title="本周临时增加 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',1)">＋增加</button>
-        <button class="wp-mini danger" title="从周计划删除（本周及之后不再出现，更早的周不受影响）" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
+        <button class="wp-mini" title="本周临时增加 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',1)">+</button>
+        <button class="wp-mini" title="本周临时跳过 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',-1)">−</button>
+        <button class="wp-mini danger" title="从周计划删除（本周及之后不再出现）" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
       ` : "" }
     </div>`;
   });
@@ -2832,7 +2831,7 @@ function weekPlanCardHtml(ds){
       <span class="wp-title">周计划</span>
       <span class="wp-nav">
         <span class="wp-weeklabel">${label} · 本周</span>
-        <button onclick="wpToggleSettings()" title="设置：本周临时跳过/增加次数、长期次数、删除" style="width:auto;padding:0 7px;font-size:11px;${on?'background:#3E5A78;color:#fff;border-color:#3E5A78;':''}">⚙</button>
+        <button onclick="wpToggleSettings()" title="设置：本周临时跳过/增加次数、删除" style="width:auto;padding:0 7px;font-size:11px;${on?'background:#3E5A78;color:#fff;border-color:#3E5A78;':''}">⚙</button>
       </span>
     </div>
     <div class="wp-kpis">
@@ -5817,7 +5816,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.25.151";
+const APP_VERSION = "2026.11.25.152";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
