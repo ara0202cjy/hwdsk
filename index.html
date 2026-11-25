@@ -2500,12 +2500,19 @@ function wpWeekState(key, create){
   if((!s||typeof s!=="object") && create){ s=state.weekPlanWeeks[key]={ skipped:{}, done:{}, days:{} }; }
   return s||{ skipped:{}, done:{}, days:{} };
 }
-/* v.151：本周「有效可派发次数」= 模板次数 + 本周临时调整（每次 ±1，可连按）。
-   调整只写到该周状态，不影响模板/其他周。有效次数下限 0（全跳过）。 */
+/* v.154：基础次数 —— 全局、跨周固定不变（存在 state.weekPlan.baseTimes[id]；
+   没设过则用该项自身的 times）。临时增减只写每周 ws.adj，不动基础值。 */
+function wpBaseTimesOf(it){
+  if(!it) return 1;
+  const base=(state.weekPlan && state.weekPlan.baseTimes)||{};
+  return Math.max(1, base[it.id] || it.times || 1);
+}
+/* 本周「有效可派发次数」= 基础次数（每周固定） + 本周临时调整（每次 ±1，可连按）。
+   有效次数下限 0（全跳过）。 */
 function wpTimesOf(key, it){
   const ws=wpWeekState(key);
   const adj=((ws&&ws.adj)||{})[it.id]||0;
-  return Math.max(0, Math.min(21, ((it&&it.times)||1) + adj));
+  return Math.max(0, Math.min(21, wpBaseTimesOf(it) + adj));
 }
 /* 本周有效项（排除本周跳过的） */
 function wpActive(key){
@@ -2601,16 +2608,16 @@ async function wpRemoveItem(key, itemId){
   });
   bumpWP(); save(); renderList(); syncDerived(); toast("已从周计划删除（本周及之后不再出现）");
 }
-/* 修改某项「可派发次数」—— 只作用于当前查看的周及其之后 */
+/* 修改某项「基础次数」—— 全局固定，每周都一样（v.154 不再只从本周起生效） */
 async function wpSetTimes(itemId, key){
-  key=key||wpShownKey();
-  const items=wpEditItems(key);
-  const it=items.find(x=>x.id===itemId); if(!it) return;
-  const v=await askInput({ title:"可派发次数", label:"每周可派发几次", type:"number", value:String(it.times||1), hint:"例如 3 表示每周最多派发 3 次；从本周起生效，更早的周不受影响。" });
+  const it=wpItemsFor(key||wpShownKey()).find(x=>x.id===itemId); if(!it) return;
+  const v=await askInput({ title:"基础次数（每周固定）", label:"每周可派发几次", type:"number", value:String(wpBaseTimesOf(it)), hint:"基础次数每周固定不变；本周临时增减请用 + / −。" });
   if(v==null) return;
-  it.times=Math.max(1, Math.min(21, parseInt(v,10)||1));
-  wpWeekState(key,true)._u=Date.now();
-  bumpWP(); save(); renderList(); syncDerived(); toast("「"+it.title+"」本周起每周可派发 "+it.times+" 次");
+  const n=Math.max(1, Math.min(21, parseInt(v,10)||1));
+  ensureWeekPlans();
+  state.weekPlan.baseTimes=state.weekPlan.baseTimes||{};
+  state.weekPlan.baseTimes[itemId]=n;
+  bumpWP(); save(); renderList(); syncDerived(); toast("「"+it.title+"」基础次数已设为 "+n+" 次（每周固定）");
 }
 /* v.151：本周临时「跳过 / 增加」次数 —— 每次 1 次，可连续按键多次；只改本周状态。 */
 function wpAdjust(key, itemId, delta){
@@ -2818,7 +2825,7 @@ function weekPlanCardHtml(ds){
       ${ on ? `
         <button class="wp-mini wp-big" title="本周临时增加 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',1)">+</button>
         <button class="wp-mini wp-big" title="本周临时跳过 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',-1)">−</button>
-        <button class="wp-mini wp-big" title="调整基础次数（长期，每周几次）" onclick="wpSetTimes('${it.id}','${key}')">${it.times||1}次</button>
+        <button class="wp-mini wp-big" title="调整基础次数（每周固定，所有周一致）" onclick="wpSetTimes('${it.id}','${key}')">${wpBaseTimesOf(it)}次</button>
         <button class="wp-mini wp-big danger" title="从周计划删除（本周及之后不再出现，删除前会再次确认）" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
       ` : "" }
     </div>`;
@@ -2829,6 +2836,11 @@ function weekPlanCardHtml(ds){
       : `<div class="wp-foot">周计划还是空的，用下方「常用词添加」加入（每周沿用）。</div>`;
   }
   const isCur = key===weekKeyOf(today);
+  /* v.154：底部显示本周临时增减情况（基础次数每周固定，不在此列） */
+  const adjItems=planItems.filter(it=>(((ws&&ws.adj)||{})[it.id]||0)!==0);
+  const adjLine = adjItems.length
+    ? `本周临时增减：`+adjItems.map(it=>{ const d=(ws.adj||{})[it.id]; return esc(it.title)+" "+(d>0?"+"+d:d)+"次（有效 "+wpTimesOf(key,it)+"次）"; }).join(" · ")
+    : `本周临时增减：无（基础次数每周固定不变）`;
   return `<div class="card wp-card">
     <div class="wp-head">
       <span class="wp-title">周计划</span>
@@ -2848,7 +2860,7 @@ function weekPlanCardHtml(ds){
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>` }
-    <div class="wp-foot">周计划只显示本周。设置里「−跳过 / ＋增加」每次 1 次，可连按，只影响本周；长期次数与删除从本周起生效，更早的周不变。半打卡项可再派发（该次计 0.5 次）。<br>剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天）。</div>
+    <div class="wp-foot">周计划只显示本周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响本周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>${adjLine}<br>半打卡项可再派发（该次计 0.5 次）。剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天）。</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5460,7 +5472,7 @@ function dataSig(s){
     .sort((a,b)=>String(a.k).localeCompare(String(b.k)));
   // v.139：周计划模板 + 每周状态纳入指纹
   const tpl = (s&&s.weekPlan)||{};
-  const tplSig = ((tpl.items)||[]).map(i=>[i.id,i.title,i.subject,i.estMin,i.times]);
+  const tplSig = { items:((tpl.items)||[]).map(i=>[i.id,i.title,i.subject,i.estMin,i.times]), base:(tpl.baseTimes)||{} };
   const wk = (s&&s.weekPlanWeeks)||{};
   const wpSig = { tpl:tplSig, weeks:Object.keys(wk).sort().map(k=>[k,!!(wk[k]&&wk[k].settled),JSON.stringify(wk[k]&&wk[k].done||{}),JSON.stringify(wk[k]&&wk[k].skipped||{}),((wk[k]&&wk[k].items)||[]).map(i=>[i.id,i.title,i.subject,i.estMin,i.times])]) };
   return JSON.stringify([ (s&&s.todos)||[], (s&&s.tasks)||[], (s&&s.masters)||[], (s&&s.rewards)||[], (s&&s._del)||{}, (s&&s._delM)||{}, (s&&s._delR)||{}, (s&&s.hw)||{}, (s&&s._delHW)||{}, (s&&s.reads)||[], (s&&s._delRd)||{}, subs, (s&&s.bailan)||null, (s&&s.nights)||{}, supp, (s&&s._delSupp)||{}, wpSig ]);
@@ -5819,7 +5831,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.25.153";
+const APP_VERSION = "2026.11.25.154";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
