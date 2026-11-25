@@ -1604,10 +1604,10 @@ function applyDoneMakeup(t, makeupOverride){
 function isPastTodo(t){ return !!(t && t.date && t.date < ymd(new Date())); }
 
 /* ===== v.137：半打卡（只完成一半，另一半待完成，时间按一半计） =====
-   - 仅「预估 > HALF_MIN 分钟」的未完成项可半打卡；
+   - 仅「预估 > HALF_MIN 分钟」的未完成项可半打卡（v.151：门槛 15 → 20，**不含 20**）；
    - doneFrac：全完成=1、半完成=0.5、未完成=0；所有时长/完成度统计均按该分数折算；
    - 半完成不等于完成：仍留在「待完成」，不满足 allDone / 完成天数。 */
-const HALF_MIN = 15;
+const HALF_MIN = 20;
 function canHalf(t){ return !!(t && !t.done && (t.estMin||0) > HALF_MIN); }
 function isHalf(t){ return !!(t && t.halfDone && !t.done); }
 function doneFrac(t){ return t && t.done ? 1 : (t && t.halfDone ? 0.5 : 0); }
@@ -2498,10 +2498,17 @@ function wpWeekState(key, create){
   if((!s||typeof s!=="object") && create){ s=state.weekPlanWeeks[key]={ skipped:{}, done:{}, days:{} }; }
   return s||{ skipped:{}, done:{}, days:{} };
 }
+/* v.151：本周「有效可派发次数」= 模板次数 + 本周临时调整（每次 ±1，可连按）。
+   调整只写到该周状态，不影响模板/其他周。有效次数下限 0（全跳过）。 */
+function wpTimesOf(key, it){
+  const ws=wpWeekState(key);
+  const adj=((ws&&ws.adj)||{})[it.id]||0;
+  return Math.max(0, Math.min(21, ((it&&it.times)||1) + adj));
+}
 /* 本周有效项（排除本周跳过的） */
 function wpActive(key){
   const items=wpItemsFor(key), ws=wpWeekState(key);
-  return items.filter(it=>!ws.skipped[it.id]);
+  return items.filter(it=>!ws.skipped[it.id] && wpTimesOf(key,it)>0);
 }
 /* 某日所在周的 key = 该周周一（一周 = 周一~周日，清算在周日） */
 function weekKeyOf(ds){
@@ -2524,11 +2531,14 @@ function wpDoneCount(key, itemId){
   if(ws.settled) return ws.done[itemId]||0;          // 已清算：读固化结果
   return (state.todos||[])
     .filter(t=>t.wpId===itemId && weekKeyOf(t.date||key)===key)
-    .reduce((a,t)=> a + (t.done?1:(t.halfDone?0.5:0)), 0);
+    .reduce((a,t)=> a + (t.done?1:(t.halfDone?0.5:0)) * (t.wpCost||1), 0);
 }
-/* 本周「未完成」的派发数（已完成的不计入，否则会与 done 重复计数导致无法再派发） */
+/* 本周「未完成」的派发占用次数；半打卡已按 0.5 计入 wpDoneCount，这里不再重复计。
+   v.151：半打卡项再派发时该次只占 0.5 次（todo.wpCost=0.5）。 */
 function wpDispatchCount(key, itemId){
-  return (state.todos||[]).filter(t=>t.wpId===itemId && !t.done && weekKeyOf(t.date||key)===key).length;
+  return (state.todos||[])
+    .filter(t=>t.wpId===itemId && !t.done && !t.halfDone && weekKeyOf(t.date||key)===key)
+    .reduce((a,t)=> a + (t.wpCost||1), 0);
 }
 /* 周计划派发：把模板项加到某日清单（生成带 wpId 的 todo）；受「可派发次数」限制 */
 function wpDispatch(key, itemId, dayDs){
@@ -2536,15 +2546,18 @@ function wpDispatch(key, itemId, dayDs){
   const it=items.find(x=>x.id===itemId); if(!it) return;
   if(ws.skipped[itemId]){ toast("该项本周已跳过"); return; }
   if(dayDs < ymd(new Date())){ toast("只能派发到今天及以后，不能派发到过去的日期"); return; }   // v.140
-  const times=Math.max(1, it.times||1);
+  const times=wpTimesOf(key,it);
+  if(times<=0){ toast("该项本周已全部临时跳过"); return; }
   const used=wpDoneCount(key,itemId)+wpDispatchCount(key,itemId);
-  if(used>=times){ toast("本周已派发 "+used+"/"+times+" 次，达到可派发次数"); return; }
-  // v.143：允许同一天多次派发（按「可派发次数」约束），不再因同日已有未完成而拒
-  addTodo(it.subject, it.title, { date:dayDs, estMin:it.estMin, hwId:it.hwId||null, stats:true, wpId:itemId, wpKey:key });
+  if(used+1e-9>=times){ toast("本周已派发 "+used+"/"+times+" 次，达到可派发次数"); return; }
+  // v.143：同一天可多次派发；v.151：已有半打卡时，新派发只占 0.5 次
+  const hasHalf=(state.todos||[]).some(t=>t.wpId===itemId && isHalf(t) && weekKeyOf(t.date||key)===key);
+  const cost=hasHalf?0.5:1;
+  addTodo(it.subject, it.title, { date:dayDs, estMin:it.estMin, hwId:it.hwId||null, stats:true, wpId:itemId, wpKey:key, wpCost:cost });
   (ws.days[itemId]=ws.days[itemId]||[]).push(dayDs);
   ws._u=Date.now();
   bumpWP(); save(); renderList(); syncDerived();
-  toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单（本周 "+(used+1)+"/"+times+" 次）");
+  toast("已加入 "+parseDS(dayDs).getMonth()+1+"月"+parseDS(dayDs).getDate()+"日 清单（本周 "+(used+cost)+"/"+times+" 次）");
 }
 /* v.142：取消「撤回」按钮 —— 在每日清单内删除该派发项即视为撤回（见 delTodo 同步逻辑） */
 /* 从常用词添加一项到「当前查看的周」（写时复制：只改动这一周及之后继承的周） */
@@ -2597,7 +2610,20 @@ async function wpSetTimes(itemId, key){
   wpWeekState(key,true)._u=Date.now();
   bumpWP(); save(); renderList(); syncDerived(); toast("「"+it.title+"」本周起每周可派发 "+it.times+" 次");
 }
-/* 本周跳过（只影响这一周） */
+/* v.151：本周临时「跳过 / 增加」次数 —— 每次 1 次，可连续按键多次；只改本周状态。 */
+function wpAdjust(key, itemId, delta){
+  key=key||wpShownKey();
+  const it=wpItemsFor(key).find(x=>x.id===itemId); if(!it) return;
+  const ws=wpWeekState(key,true);
+  ws.adj=ws.adj||{};
+  const base=it.times||1;
+  const next=Math.max(-base, Math.min(21-base, (ws.adj[itemId]||0)+delta));
+  ws.adj[itemId]=next; ws._u=Date.now();
+  bumpWP(); save(); renderList(); syncDerived();
+  toast(next<0 ? "本周临时跳过 1 次（累计跳过 "+(-next)+" 次）"
+       : (next>0 ? "本周临时增加 1 次（累计增加 "+next+" 次）" : "本周临时调整已复位"));
+}
+/* 本周跳过（旧版布尔接口，保留兼容；UI 已改用 wpAdjust） */
 function wpToggleWaive(key, itemId){
   key=key||wpCurrentKey();
   const ws=wpWeekState(key, true);
@@ -2615,7 +2641,7 @@ function wpStats(key){
   key=key||wpCurrentKey();
   const active=wpActive(key), ws=wpWeekState(key);
   const today=ymd(new Date());
-  const timesOf=it=>Math.max(1,it.times||1);
+  const timesOf=it=>wpTimesOf(key,it);
   const total=active.reduce((a,it)=>a+it.estMin*timesOf(it),0);          // 总时间 = 各项 estMin × 次数
   const todayMin=active.reduce((a,it)=>{                                   // 今日做题时长 = 今天派发的项时长
     const days=(ws.days[it.id]||[]); return a + days.filter(d=>d===today).length*it.estMin;
@@ -2641,7 +2667,7 @@ function wpStats(key){
 /* 周计划完成判定（供星规）：模板非空 且 本周所有有效项都达到可派发次数 */
 function wpWeekComplete(key){
   const active=wpActive(key); if(!active.length) return false;
-  return active.every(it=>wpDoneCount(key,it.id)>=Math.max(1,it.times||1));
+  return active.every(it=>wpDoneCount(key,it.id)>=wpTimesOf(key,it));
 }
 /* 周日清算：把本周未完成的派发项从每日清单删除；固化结果供星规回溯；模板保留 */
 function wpSettle(key){
@@ -2692,7 +2718,8 @@ function wpMissListInMonth(y, m, todayStr){
     if(sd.getFullYear()!==y || sd.getMonth()!==m) return;
     const ws=weeks[k]||{};
     wpItemsFor(k).forEach(it=>{
-      const times=Math.max(1,it.times||1);
+      const times=wpTimesOf(k,it);
+      if(times<=0) return;                               // 本周全部临时跳过
       const done=Math.max(0, Math.min(times, (ws.done && ws.done[it.id]) || 0));
       const short=times-done;
       if(short<=0) return;                              // 该周已做够次数
@@ -2713,13 +2740,10 @@ function wpOnTodoDone(t){
   bumpWP();
 }
 
-/* UI状态：当前查看的周 key（null=跟随 viewDate 所在周） */
+/* UI状态：v.151 周计划只看本周 —— 忽略旧 wpViewKey / viewDate，不可前后翻动 */
 let wpViewKey = null;
-function wpShownKey(){ return wpViewKey || weekKeyOf(ymd(viewDate)); }
-function wpShiftWeek(delta){
-  const base=parseDS(wpShownKey()); base.setDate(base.getDate()+delta*7);
-  wpViewKey=ymd(base); renderList();
-}
+function wpShownKey(){ return weekKeyOf(ymd(new Date())); }
+function wpShiftWeek(delta){ wpViewKey=null; renderList(); }
 function wpResetWeek(){ wpViewKey=null; renderList(); }
 /* 该周是否还有可派发日期（今天及以后） */
 function wpHasDispatchable(key){
@@ -2762,7 +2786,7 @@ function weekPlanCardHtml(ds){
     return 10 + (j<0?99:j);
   };
   const ordered = planItems.map((it,i)=>{
-    const full=(wpDoneCount(key,it.id) >= Math.max(1,it.times||1));
+    const full=(wpDoneCount(key,it.id) >= wpTimesOf(key,it));
     const read=isReadAloud(it.title);
     const lvl = full ? (read?3:2) : (read?1:0);   // 0 未完成普通 / 1 未完成朗读 / 2 已完成普通 / 3 已完成朗读（已做完统一沉到朗读之后）
     return { it, i, full, read, lvl };
@@ -2773,12 +2797,12 @@ function weekPlanCardHtml(ds){
     (a.i-b.i)
   );
   ordered.forEach(({it,full,read})=>{
-    const times=Math.max(1,it.times||1);
+    const times=wpTimesOf(key,it);
     const doneN=wpDoneCount(key,it.id);        // 完成度（含半完成 0.5）
-    const dispN=wpDispatchCount(key,it.id);    // 未完成派发数（不含已完成）
-    const skipped=!!ws.skipped[it.id];
+    const dispN=wpDispatchCount(key,it.id);    // 未完成派发占用次数（半打卡已计 0.5）
+    const skipped=!!ws.skipped[it.id] || times<=0;
     const c=subjColor(it.subject);
-    const dayTxt = skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发"));
+    const dayTxt = times<=0 ? "本周全跳过" : (skipped ? "本周跳过" : (full ? "✓ 已完成" : (dispN?("已派发 "+dispN+"/"+times):"未派发")));
     const long=((it.estMin||0)>=20) && !full && !read;   // 朗读类统一黄底，不再叠长任务蓝底
     const xlong=((it.estMin||0)>=60) && !full && !read;
     const nmColor = full ? 'var(--muted)' : (read ? '#8A6D1F' : (xlong ? '#1F4B73' : c));
@@ -2790,8 +2814,9 @@ function weekPlanCardHtml(ds){
       <span class="wp-day">${Number.isInteger(doneN)?doneN:doneN.toFixed(1)}/${times} · ${dayTxt}</span>
       ${ (!skipped && !full && (doneN+dispN)<times && wpHasDispatchable(key)) ? `<button class="wp-mini" onclick="wpDispatchAsk('${key}','${it.id}')">派发</button>` : "" }
       ${ on ? `
-        <button class="wp-mini" title="本周可派发次数（从本周起生效）" onclick="wpSetTimes('${it.id}','${key}')">次数 ${it.times||1}</button>
-        <button class="wp-mini" onclick="wpToggleWaive('${key}','${it.id}')">${skipped?'恢复':'跳过本周'}</button>
+        <button class="wp-mini" title="长期次数（从本周起生效）" onclick="wpSetTimes('${it.id}','${key}')">长期 ${it.times||1}次</button>
+        <button class="wp-mini" title="本周临时跳过 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',-1)">−跳过</button>
+        <button class="wp-mini" title="本周临时增加 1 次（可连按）" onclick="wpAdjust('${key}','${it.id}',1)">＋增加</button>
         <button class="wp-mini danger" title="从周计划删除（本周及之后不再出现，更早的周不受影响）" onclick="wpRemoveItem('${key}','${it.id}')">×</button>
       ` : "" }
     </div>`;
@@ -2806,11 +2831,8 @@ function weekPlanCardHtml(ds){
     <div class="wp-head">
       <span class="wp-title">周计划</span>
       <span class="wp-nav">
-        <button onclick="wpShiftWeek(-1)" aria-label="上一周">‹</button>
-        <span class="wp-weeklabel">${label}${isCur?' · 本周':''}</span>
-        <button onclick="wpShiftWeek(1)" aria-label="下一周">›</button>
-        ${wpViewKey?'<button onclick="wpResetWeek()" title="回到本周" style="width:auto;padding:0 7px;font-size:11px;">今</button>':''}
-        <button onclick="wpToggleSettings()" title="设置：显示可派发次数 / 跳过 / 删除" style="width:auto;padding:0 7px;font-size:11px;${on?'background:#3E5A78;color:#fff;border-color:#3E5A78;':''}">⚙</button>
+        <span class="wp-weeklabel">${label} · 本周</span>
+        <button onclick="wpToggleSettings()" title="设置：本周临时跳过/增加次数、长期次数、删除" style="width:auto;padding:0 7px;font-size:11px;${on?'background:#3E5A78;color:#fff;border-color:#3E5A78;':''}">⚙</button>
       </span>
     </div>
     <div class="wp-kpis">
@@ -2824,7 +2846,7 @@ function weekPlanCardHtml(ds){
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>` }
-    <div class="wp-foot">周计划从 11 月 23 日开始；在某周做的改动（添加 / 删除 / 次数）只影响该周及之后的周，更早的周保持不变；「跳过」只影响这一周。未完成周日清算时从清单清空。<br>剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天），其他周不计入。</div>
+    <div class="wp-foot">周计划只显示本周。设置里「−跳过 / ＋增加」每次 1 次，可连按，只影响本周；长期次数与删除从本周起生效，更早的周不变。半打卡项可再派发（该次计 0.5 次）。<br>剩余每日 = 剩余工作量 ÷ 本周剩余天数（含今天）。</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5795,7 +5817,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.23.150";
+const APP_VERSION = "2026.11.25.151";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
