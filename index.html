@@ -2652,32 +2652,27 @@ function wpStats(key){
   const active=wpActive(key), ws=wpWeekState(key);
   const today=ymd(new Date());
   const viewDay=ymd(viewDate);
-  const refDay=(weekKeyOf(viewDay)===key) ? viewDay : today;   // v.157：跟随清单翻到的日期
+  const cur=weekKeyOf(today);
+  // 选择日不在该周时：未来周用该周周一（整周 7 天），过去周用今天（已过期）
+  const refDay=(weekKeyOf(viewDay)===key) ? viewDay : (key>cur ? key : today);   // v.157/v.159
   const timesOf=it=>wpTimesOf(key,it);
   const total=active.reduce((a,it)=>a+it.estMin*timesOf(it),0);          // 总时间 = 各项 estMin × 次数
   const todayMin=active.reduce((a,it)=>{                                   // 当日做题时长 = 所看日期派发的项时长
     const days=(ws.days[it.id]||[]); return a + days.filter(d=>d===refDay).length*it.estMin;
   },0);
-  const doneMin=active.reduce((a,it)=>a+wpDoneCount(key,it.id)*it.estMin,0);   // 已完成时长（半完成按 0.5）
-  const remaining=Math.max(0,total-doneMin);
-  /* v.157：剩余天数按「所看的那周」算 —— 未来周 7 天，本周含当天（当天已派发则从次日起），过去周 0。 */
-  const cur=weekKeyOf(today);
-  let leftDays=0;
-  if(key>cur) leftDays=7;
-  else if(key===cur){
-    leftDays=Math.round((parseDS(weekSunday(key))-new Date(today+"T00:00:00"))/86400000)+1;
-    const usedToday=(state.todos||[]).some(x=>x.wpId && x.date===today && weekKeyOf(x.date||today)===key);
-    if(usedToday) leftDays-=1;                                  // 今天已派发 → 从明天算起
-    if(leftDays<1) leftDays=1;
-  }
+  /* v.159：剩余时长 = 本周总时长 − 本周内、作业日 ≤ 选择日 的已完成时长（半完成折算、0.5 次派发按半量）。
+     已清算的周用固化完成快照（派发条目已从清单删除，不能直接读 todos）。 */
+  const completedToDay = ws.settled
+    ? active.reduce((a,it)=>a+(ws.done[it.id]||0)*(it.estMin||0),0)
+    : (state.todos||[]).filter(t=>t.wpId && weekKeyOf(t.date||key)===key && (t.date||"")<=refDay)
+        .reduce((a,t)=>a+(t.estMin||0)*doneFrac(t)*(t.wpCost||1),0);
+  const remaining=Math.max(0,total-completedToDay);
+  /* 剩余天数 = 选择日 → 该周周日（含选择日）；选择日不属于该周时用今天。 */
+  const leftDays=Math.max(0, Math.round((parseDS(weekSunday(key))-new Date(refDay+"T00:00:00"))/86400000)+1);
   const remainDaily = leftDays>0 ? Math.round(remaining/leftDays) : 0;
-  /* v.158：日维度剩余工作量 —— 取所看当天清单的未完成量（含半完成剩余半量），不是整周剩余。
-     周维度的 remaining / remainDaily 保留供原有统计口径使用。 */
-  const dayTs = (dayStats(refDay)||{}).ts || [];
-  const dayRemaining = (weekKeyOf(refDay)===key) ? Math.round((dayListStats(dayTs,refDay).undoneEst)||0) : 0;
-  const dayRemainDaily = leftDays>0 ? Math.round(dayRemaining/leftDays) : 0;
+  const dayRemaining=remaining, dayRemainDaily=remainDaily;   // 兼容 v.158 的两个字段
   const allN=active.length, doneN=active.filter(it=>wpDoneCount(key,it.id)>=timesOf(it)).length;
-  return { total, todayMin, remaining, remainDaily, dayRemaining, dayRemainDaily, doneN, allN, leftDays, refDay, settled:false };
+  return { total, todayMin, completedToDay, remaining, remainDaily, dayRemaining, dayRemainDaily, doneN, allN, leftDays, refDay, settled:false };
 }
 /* 周计划完成判定（供星规）：模板非空 且 本周所有有效项都达到可派发次数 */
 function wpWeekComplete(key){
@@ -2863,15 +2858,15 @@ function weekPlanCardHtml(ds){
     <div class="wp-kpis">
       <div class="wp-kpi"><div class="v">${st.total}</div><div class="k">总时间(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.todayMin}</div><div class="k">做题 ${parseDS(st.refDay).getMonth()+1}/${parseDS(st.refDay).getDate()}(分)</div></div>
-      <div class="wp-kpi"><div class="v">${st.dayRemaining}</div><div class="k">剩余时长(分) · 当日</div></div>
-      <div class="wp-kpi"><div class="v">${st.leftDays>0 ? st.dayRemainDaily : "—"}</div><div class="k">剩余每日(分) · 当日均${st.leftDays>0?` · 余${st.leftDays}天`:" · 该周已过"}</div></div>
+      <div class="wp-kpi"><div class="v">${st.remaining}</div><div class="k">剩余时长(分) · 至${parseDS(st.refDay).getMonth()+1}/${parseDS(st.refDay).getDate()}</div></div>
+      <div class="wp-kpi"><div class="v">${st.leftDays>0 ? st.remainDaily : "—"}</div><div class="k">剩余每日(分)${st.leftDays>0?` · 余${st.leftDays}天`:" · 该周已过"}</div></div>
     </div>
     <div class="wp-list">${rows}</div>
     ${ beforeStart ? "" : `<div class="wp-addrow">
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>` }
-    <div class="wp-foot">周计划跟随清单翻到的日期显示对应那一周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响所看那一周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>半打卡项可再派发（该次计 0.5 次）。「剩余时长 / 剩余每日」按所看当天的未完成量计算（剩余每日 = 当天未完成量 ÷ 该周剩余天数）。${adjLine?`<br><span class="wp-adj-sum">${adjLine}</span>`:""}</div>
+    <div class="wp-foot">周计划跟随清单翻到的日期显示对应那一周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响所看那一周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>半打卡项可再派发（该次计 0.5 次）。「剩余时长」= 本周总时长 − 本周至选择日已完成的时长；「剩余每日」= 该剩余时长 ÷ 选择日到本周日（含当天）的天数。${adjLine?`<br><span class="wp-adj-sum">${adjLine}</span>`:""}</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5842,7 +5837,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.26.158";
+const APP_VERSION = "2026.11.26.159";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
