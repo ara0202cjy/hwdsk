@@ -2671,8 +2671,13 @@ function wpStats(key){
     if(leftDays<1) leftDays=1;
   }
   const remainDaily = leftDays>0 ? Math.round(remaining/leftDays) : 0;
+  /* v.158：日维度剩余工作量 —— 取所看当天清单的未完成量（含半完成剩余半量），不是整周剩余。
+     周维度的 remaining / remainDaily 保留供原有统计口径使用。 */
+  const dayTs = (dayStats(refDay)||{}).ts || [];
+  const dayRemaining = (weekKeyOf(refDay)===key) ? Math.round((dayListStats(dayTs,refDay).undoneEst)||0) : 0;
+  const dayRemainDaily = leftDays>0 ? Math.round(dayRemaining/leftDays) : 0;
   const allN=active.length, doneN=active.filter(it=>wpDoneCount(key,it.id)>=timesOf(it)).length;
-  return { total, todayMin, remaining, remainDaily, doneN, allN, leftDays, refDay, settled:false };
+  return { total, todayMin, remaining, remainDaily, dayRemaining, dayRemainDaily, doneN, allN, leftDays, refDay, settled:false };
 }
 /* 周计划完成判定（供星规）：模板非空 且 本周所有有效项都达到可派发次数 */
 function wpWeekComplete(key){
@@ -2858,15 +2863,15 @@ function weekPlanCardHtml(ds){
     <div class="wp-kpis">
       <div class="wp-kpi"><div class="v">${st.total}</div><div class="k">总时间(分)</div></div>
       <div class="wp-kpi"><div class="v">${st.todayMin}</div><div class="k">做题 ${parseDS(st.refDay).getMonth()+1}/${parseDS(st.refDay).getDate()}(分)</div></div>
-      <div class="wp-kpi"><div class="v">${st.remaining}</div><div class="k">剩余时长(分)</div></div>
-      <div class="wp-kpi"><div class="v">${st.leftDays>0 ? st.remainDaily : "—"}</div><div class="k">剩余每日(分)${st.leftDays>0?` · 余${st.leftDays}天`:" · 仅本周"}</div></div>
+      <div class="wp-kpi"><div class="v">${st.dayRemaining}</div><div class="k">剩余时长(分) · 当日</div></div>
+      <div class="wp-kpi"><div class="v">${st.leftDays>0 ? st.dayRemainDaily : "—"}</div><div class="k">剩余每日(分) · 当日均${st.leftDays>0?` · 余${st.leftDays}天`:" · 该周已过"}</div></div>
     </div>
     <div class="wp-list">${rows}</div>
     ${ beforeStart ? "" : `<div class="wp-addrow">
       <select id="wpSubjSel">${subjList().filter(s=>!s.arc).map(s=>`<option value="${esc(s.name)}"${s.name===addSubj?' selected':''}>${esc(s.name)}</option>`).join("")}</select>
       <button onclick="wpAddAsk()">＋ 常用词添加</button>
     </div>` }
-    <div class="wp-foot">周计划跟随清单翻到的日期显示对应那一周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响所看那一周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>半打卡项可再派发（该次计 0.5 次）。剩余每日 = 剩余工作量 ÷ 该周剩余天数（含当天）。${adjLine?`<br><span class="wp-adj-sum">${adjLine}</span>`:""}</div>
+    <div class="wp-foot">周计划跟随清单翻到的日期显示对应那一周。基础次数每周固定不变；设置里「+ / −」每次调 1 次、可连按，只影响所看那一周。「次数」按钮改的是基础次数，「×」删除前有二次确认。<br>半打卡项可再派发（该次计 0.5 次）。「剩余时长 / 剩余每日」按所看当天的未完成量计算（剩余每日 = 当天未完成量 ÷ 该周剩余天数）。${adjLine?`<br><span class="wp-adj-sum">${adjLine}</span>`:""}</div>
   </div>`;
 }
 async function wpAddAsk(){
@@ -5837,7 +5842,7 @@ let toastT=null;
    线上版本由发布脚本 scripts/scrub.py 在发布时按下面这行替换为递增的发布号
    （如 2026.09.10.84），并写入 version.json 供「发现新版本」提示比对。
    因此：源码里看到的 .42 属正常，不要手改；改版本只需改 scrub.py 的映射表。 */
-const APP_VERSION = "2026.11.26.157";
+const APP_VERSION = "2026.11.26.158";
 let remoteVer = null;
 async function checkUpdate(silent){
   try{
